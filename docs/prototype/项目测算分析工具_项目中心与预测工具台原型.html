@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:,">
+<title>项目测算分析工具 · 项目中心与预测工具台</title>
+<style>
+  :root{--brand:#315dde;--brand-soft:#eef3ff;--text:#273142;--muted:#78859a;--line:#e3e7ed;--line-dark:#d4dae3;--bg:#f5f7fa;--panel:#fff;--good:#18875d;--risk:#c25c34;--warning:#a96b10}
+  *{box-sizing:border-box}html,body{height:100%;margin:0;font-family:Inter,"PingFang SC","Microsoft YaHei",sans-serif;color:var(--text);background:var(--bg);font-size:12px}
+  button,input,select{font:inherit;color:inherit}button{cursor:pointer}
+  .app{height:100%;display:flex;flex-direction:column;min-width:1180px;overflow:hidden}
+  .topbar{height:48px;flex:0 0 48px;background:#182238;color:#e9edf5;display:flex;align-items:center;padding:0 14px;border-bottom:1px solid #2b3750}
+  .brand{display:flex;align-items:center;gap:9px;width:230px}.brand-mark{width:26px;height:26px;border-radius:4px;background:#416bec;display:grid;place-items:center;font-weight:700}.brand b{font-size:13px}.brand span{font-size:9px;color:#9ca9bd;display:block;margin-top:2px}
+  .top-context{flex:1;color:#aeb9ca}.top-actions{display:flex;align-items:center;gap:7px}.sync{color:#9eb0c7;font-size:10px;margin-right:8px}
+  .btn{height:30px;border:1px solid var(--line-dark);background:#fff;border-radius:4px;padding:0 11px;font-size:11px}.btn:hover{border-color:#9fb2e9}.btn.primary{background:var(--brand);border-color:var(--brand);color:#fff}.btn.ghost-dark{background:#233049;border-color:#3d4960;color:#e8edf5}
+  .shell{flex:1;min-height:0;display:flex}.global-nav{width:188px;flex:0 0 188px;background:#f9fafc;border-right:1px solid var(--line);padding:9px 8px;overflow:auto}
+  .nav-section{margin-bottom:14px}.nav-title{padding:6px 9px;color:#9aa4b4;font-size:9px;font-weight:700;letter-spacing:.08em}.nav-item{width:100%;height:34px;border:0;background:transparent;border-radius:4px;text-align:left;padding:0 10px;color:#566277;margin:1px 0}.nav-item:hover{background:#f0f3f8}.nav-item.active{background:#eaf0ff;color:#315dde;font-weight:600}.nav-dot{display:inline-block;width:16px;color:#8996aa}
+  .db-box{margin:12px 5px;padding:9px;border:1px solid var(--line);border-radius:4px;background:#fff;color:#768399;line-height:1.6;font-size:9px}.db-box b{color:var(--good);font-size:10px}
+  .page{flex:1;min-width:0;min-height:0;overflow:auto}.page.hidden,.workspace.hidden{display:none}
+  .page-head{height:72px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 20px}.page-head h1{font-size:18px;margin:0 0 5px}.page-head p{margin:0;color:var(--muted);font-size:10px}.page-head-actions{margin-left:auto;display:flex;gap:7px}
+  .page-body{padding:14px 18px 22px}.section-bar{height:36px;display:flex;align-items:center;gap:7px;margin-bottom:9px}.search{width:260px;height:30px;border:1px solid var(--line-dark);border-radius:4px;background:#fff;padding:0 10px}.select{height:30px;border:1px solid var(--line-dark);border-radius:4px;background:#fff;padding:0 24px 0 8px}.section-bar .spacer{flex:1}
+  .summary-line{height:38px;background:#fff;border:1px solid var(--line);display:flex;align-items:center;padding:0 12px;margin-bottom:10px}.summary-line span{padding:0 20px;border-right:1px solid var(--line);color:#738096}.summary-line span:first-child{padding-left:0}.summary-line span:last-child{border:0}.summary-line b{color:#2d394c;margin-left:6px}
+  .data-panel{background:#fff;border:1px solid var(--line);border-radius:4px;overflow:hidden}.data-table{width:100%;border-collapse:collapse;table-layout:fixed}.data-table th{height:36px;background:#f8f9fb;color:#758195;text-align:left;padding:0 10px;border-bottom:1px solid var(--line);font-size:10px}.data-table td{height:48px;padding:0 10px;border-bottom:1px solid #edf0f4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.data-table tr:last-child td{border-bottom:0}.data-table tbody tr:hover{background:#f8faff}.project-name{font-weight:600;color:#2d394c}.sub{display:block;color:#929cac;font-size:9px;margin-top:4px}.status{display:inline-flex;align-items:center;height:20px;padding:0 7px;border-radius:10px;background:#eef7f3;color:var(--good);font-size:9px}.status.draft{background:#fff5e8;color:var(--warning)}.status.locked{background:#f0f2f5;color:#667287}
+  .action-link{border:0;background:transparent;color:var(--brand);padding:5px 4px}.empty-hint{padding:12px;color:#909bad;background:#fafbfc;border-top:1px solid var(--line);font-size:10px}
+  .outer-section{display:none}.outer-section.active{display:block}.master-layout{display:grid;grid-template-columns:220px minmax(0,1fr);gap:10px}.master-groups,.master-detail{background:#fff;border:1px solid var(--line);border-radius:4px}.master-detail.hidden{display:none}.master-groups{padding:8px;height:max-content}.master-group{min-height:38px;padding:7px 10px;display:flex;align-items:center;border-radius:4px;cursor:pointer}.master-group:hover{background:#f5f7fa}.master-group.active{background:var(--brand-soft);color:var(--brand)}.master-group div{min-width:0}.master-group b{display:block;font-size:10px}.master-group small{display:block;color:#929cac;font-size:8px;margin-top:3px}.master-group .count{margin-left:auto;color:#8b96a7;font-size:9px}.master-detail-head{height:44px;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 12px}.master-detail-head b{font-size:12px}.master-detail-head span{color:var(--muted);font-size:9px;margin-left:8px}.master-detail-head .actions{margin-left:auto;display:flex;gap:6px}
+  .detail-body{padding:12px}.detail-note{padding:9px 10px;background:#f7f9fc;border:1px solid var(--line);border-radius:4px;color:#748196;font-size:9px;line-height:1.6;margin-bottom:10px}.property-grid{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--line);margin-bottom:10px}.property{padding:9px 10px;border-right:1px solid var(--line)}.property:last-child{border:0}.property span{display:block;color:#8994a5;font-size:8px}.property b{display:block;margin-top:4px;font-size:10px}
+  .import-layout{display:grid;grid-template-columns:300px minmax(0,1fr);gap:10px;margin-bottom:10px}.import-panel,.mapping-panel{background:#fff;border:1px solid var(--line);border-radius:4px}.import-panel{padding:12px}.dropzone{height:116px;border:1px dashed #aebce0;background:#f8faff;border-radius:4px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;color:#65738a}.dropzone b{font-size:11px;color:#3e4c61}.dropzone span{font-size:8px;margin-top:5px;color:#8a96a8}.import-config{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:10px}.mapping-head{height:42px;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 10px}.mapping-head b{font-size:11px}.mapping-head span{margin-left:8px;color:#8994a5;font-size:8px}.mapping-head .actions{margin-left:auto}.mapping-status{display:inline-flex;padding:3px 6px;border-radius:3px;background:#eef7f3;color:var(--good);font-size:8px}.mapping-status.warn{background:#fff5e8;color:var(--warning)}
+  .template-preview{padding:12px}.sheet-tabs{height:31px;display:flex;align-items:end;border-bottom:1px solid var(--line);margin-bottom:9px}.sheet-tab{height:30px;border:1px solid transparent;border-bottom:0;background:transparent;padding:0 11px;color:#718096}.sheet-tab.active{border-color:var(--line);background:#fff;color:var(--brand);font-weight:600}.excel-preview{border:1px solid var(--line);overflow:auto}.excel-row{display:grid;grid-template-columns:170px repeat(5,1fr);min-width:700px}.excel-cell{height:30px;padding:0 7px;display:flex;align-items:center;border-right:1px solid #e8ebf0;border-bottom:1px solid #e8ebf0;font-size:9px}.excel-row.head .excel-cell{background:#eef2f7;color:#66748a;font-weight:600}.excel-row.total .excel-cell{background:#f7f9fb;font-weight:700}.excel-cell.num{justify-content:flex-end}
+  .process-line{height:38px;background:#fff;border:1px solid var(--line);display:flex;align-items:center;padding:0 12px;margin-bottom:10px}.process-step{display:flex;align-items:center;color:#7a8698;font-size:9px}.process-step b{width:19px;height:19px;border-radius:50%;display:grid;place-items:center;background:#edf1f6;margin-right:5px;font-size:8px}.process-step.active{color:var(--brand);font-weight:600}.process-step.active b{background:var(--brand);color:#fff}.process-arrow{margin:0 13px;color:#b3bcc9}
+  .modal-mask{position:fixed;inset:0;background:rgba(18,26,41,.38);z-index:40;display:none;align-items:center;justify-content:center}.modal-mask.open{display:flex}.modal{width:540px;background:#fff;border-radius:4px;box-shadow:0 16px 44px rgba(20,31,51,.22)}.modal-head{height:44px;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 14px}.modal-head b{font-size:12px}.modal-close{margin-left:auto;border:0;background:transparent;font-size:18px;color:#7d899a}.modal-body{padding:14px}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.form-item label{display:block;font-size:9px;color:#707d90;margin-bottom:5px}.form-item.full{grid-column:1/-1}.modal-foot{height:50px;border-top:1px solid var(--line);display:flex;align-items:center;justify-content:flex-end;padding:0 14px;gap:7px}
+
+  .workspace{position:relative;flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;background:#f5f7fa}.workspace-head{height:48px;flex:0 0 48px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 12px}.back-btn{height:28px;border:0;background:transparent;color:#5c687b;padding:0 8px}.project-title{font-weight:700;margin-left:7px}.workspace-head .project-version{color:#8691a3;font-size:9px;margin-left:8px}.workspace-tabs{height:100%;display:flex;margin-left:28px}.workspace-tab{height:100%;border:0;border-bottom:2px solid transparent;background:transparent;padding:0 16px;color:#6e7a8e}.workspace-tab.active{color:var(--brand);border-bottom-color:var(--brand);font-weight:600}.workspace-head-actions{margin-left:auto;display:flex;align-items:center;gap:7px}
+  .project-facts{height:38px;flex:0 0 38px;background:#fbfcfd;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 14px;color:#7c8799;font-size:9px}.project-facts span{padding:0 16px;border-right:1px solid var(--line)}.project-facts span:first-child{padding-left:0}.project-facts b{color:#384456;margin-left:5px}
+  .workspace-body{flex:1;min-height:0;display:flex;padding:8px;gap:7px}.model-nav{width:214px;flex:0 0 214px;background:#fff;border:1px solid var(--line);border-radius:4px;overflow:auto}.panel-head{height:38px;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 10px}.panel-head b{font-size:11px}.panel-head small{font-size:9px;color:var(--muted);margin-left:7px}.model-group-title{height:30px;padding:0 10px;display:flex;align-items:center;background:#fafbfc;color:#788397;font-size:9px;border-bottom:1px solid #eef1f4}.model-group-title span{margin-left:auto}.model-row{height:38px;padding:0 9px;border-bottom:1px solid #f0f2f5;display:flex;align-items:center;cursor:pointer}.model-row:hover{background:#fafbfe}.model-row.active{background:#eef3ff;color:#315dde}.model-row b{font-size:10px;font-weight:600}.model-row small{display:block;color:#929cac;font-size:8px;margin-top:3px}.type-badge{margin-left:auto;font-size:8px;color:#728098;border:1px solid #dce2ea;border-radius:3px;padding:2px 4px}
+  .forecast-main{flex:1;min-width:0;display:flex;flex-direction:column;background:#fff;border:1px solid var(--line);border-radius:4px;overflow:hidden}.forecast-toolbar{height:42px;flex:0 0 42px;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 9px;gap:6px}.forecast-toolbar .spacer{flex:1}.compile-ok{font-size:9px;color:var(--good);padding:5px 7px;background:#eef7f3;border-radius:3px}.table-wrap{flex:1;min-height:0;overflow:auto}.forecast-table{width:100%;min-width:900px;border-collapse:collapse;table-layout:fixed}.forecast-table th{height:34px;position:sticky;top:0;z-index:2;background:#f7f9fb;color:#68758a;font-size:9px;font-weight:600;border-bottom:1px solid var(--line-dark);border-right:1px solid #e7eaf0}.forecast-table td{height:31px;padding:0 8px;text-align:right;border-bottom:1px solid #edf0f3;border-right:1px solid #edf0f3;font-size:9px}.forecast-table th:first-child,.forecast-table td:first-child{width:185px;text-align:left;position:sticky;left:0;z-index:1;background:#fff}.forecast-table th:first-child{z-index:3;background:#f7f9fb}.forecast-table tr:hover td{background:#f8faff}.forecast-table tr:hover td:first-child{background:#f8faff}.forecast-table .group td{height:27px;background:#f5f7fa!important;color:#607087;font-weight:600;text-align:left}.forecast-table .total td{background:#f7f9fc;font-weight:700}.forecast-table .input-cell{background:#fffbed}.forecast-table .override{background:#f4f0ff}.forecast-table .negative{color:#c25c34}.fx{display:inline-grid;place-items:center;width:17px;height:15px;margin-right:5px;background:#edf1f7;color:#66758a;border-radius:3px;font-size:7px}
+  .metrics-strip{height:54px;flex:0 0 54px;border-top:1px solid var(--line);display:flex;align-items:center;background:#fbfcfd}.metric-inline{min-width:126px;padding:0 14px;border-right:1px solid var(--line)}.metric-inline span{display:block;color:#8590a1;font-size:8px;margin-bottom:4px}.metric-inline b{font-size:12px}.metric-inline b.good{color:var(--good)}.metric-inline b.risk{color:var(--risk)}
+  .drawer{position:absolute;right:8px;top:95px;bottom:8px;width:320px;background:#fff;border:1px solid #cfd6e0;box-shadow:none;z-index:10;display:none;flex-direction:column}.drawer.open{display:flex}.drawer-head{height:40px;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 11px}.drawer-head b{font-size:11px}.drawer-close{margin-left:auto;border:0;background:transparent;font-size:17px;color:#7e8999}.drawer-body{padding:12px;overflow:auto}.field-label{font-size:9px;color:#7d899a;margin:12px 0 5px}.field-label:first-child{margin-top:0}.field{width:100%;height:31px;border:1px solid var(--line-dark);border-radius:4px;padding:0 8px;background:#fff}.formula{padding:9px;border:1px solid #d8dfeb;background:#f8faff;border-radius:4px;line-height:1.7;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#3e5aa1}.mapping{margin-top:10px;border:1px solid var(--line);border-radius:4px}.map-row{height:31px;display:flex;align-items:center;padding:0 8px;border-bottom:1px solid #edf0f3}.map-row:last-child{border:0}.map-row span{color:#818c9d}.map-row b{margin-left:auto;font-size:9px}
+  .workspace-view{display:none;flex:1;min-height:0;position:relative}.workspace-view.active{display:flex;flex-direction:column}
+  .config-shell{flex:1;min-height:0;padding:10px;overflow:auto;transition:margin-right .18s ease}.workspace.drawer-open .config-shell{margin-right:327px}.workspace.drawer-open .calculation-flow{display:none}.config-panel{min-width:760px;background:#fff;border:1px solid var(--line);border-radius:4px;overflow:hidden}.config-head{height:43px;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 11px;gap:7px}.config-head b{font-size:11px}.config-head small{color:var(--muted)}.config-head .spacer{flex:1}.project-config{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:0;border-bottom:1px solid var(--line);background:#fbfcfd}.project-config .form-item{padding:9px 10px;border-right:1px solid var(--line);border-bottom:1px solid var(--line)}.project-config .form-item:nth-child(4n){border-right:0}.project-config .form-item:nth-last-child(-n+4){border-bottom:0}.project-config .field{height:29px}.config-table{width:100%;border-collapse:collapse;table-layout:fixed}.config-table th{height:35px;background:#f7f9fb;border-bottom:1px solid var(--line);padding:0 9px;text-align:left;color:#6c798d;font-size:9px}.config-table td{height:43px;border-bottom:1px solid #edf0f3;padding:0 9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.config-table tbody tr:hover,.config-table tbody tr.active{background:#f4f7ff}.config-name{font-weight:600}.config-desc{display:block;color:#929cad;font-size:8px;margin-top:3px}.config-summary{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#52627a;font-size:8px}.scope-chip{display:inline-flex;height:19px;align-items:center;padding:0 6px;border:1px solid #dbe1e9;border-radius:3px;color:#6f7c90;font-size:8px;background:#fff}.config-foot{height:39px;display:flex;align-items:center;padding:0 11px;background:#fbfcfd;color:#7c8798;font-size:9px}.config-foot .spacer{flex:1}.explain-line{padding:10px 12px;background:#f8faff;border-top:1px solid var(--line);color:#61718a;font-size:9px;line-height:1.7}.calculation-flow{display:inline-flex;align-items:center;height:24px;padding:0 8px;background:#f1f4f8;color:#68768a;border-radius:3px;font-size:8px}.readonly-mark{display:inline-flex;height:19px;align-items:center;padding:0 6px;border-radius:3px;background:#f0f2f5;color:#707c8e;font-size:8px}
+  .analysis-toolbar{height:49px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 12px;gap:7px}.analysis-toolbar b{font-size:11px;margin-right:8px}.analysis-toolbar .spacer{flex:1}.pivot-shell{padding:10px;overflow:auto;flex:1}.pivot-note{height:39px;background:#eef3ff;border:1px solid #dce5ff;color:#506485;display:flex;align-items:center;padding:0 11px;margin-bottom:9px}.pivot-table{width:100%;min-width:980px;border-collapse:collapse;background:#fff;border:1px solid var(--line)}.pivot-table th{height:36px;background:#f7f9fb;color:#69778b;font-size:9px;border:1px solid var(--line);padding:0 9px;text-align:right}.pivot-table td{height:35px;border:1px solid #e7ebf0;padding:0 9px;text-align:right}.pivot-table th:first-child,.pivot-table td:first-child{text-align:left;position:sticky;left:0;background:#fff}.pivot-table th:first-child{background:#f7f9fb}.pivot-table .group td{background:#f5f7fa;font-weight:700;text-align:right}.pivot-table .group td:first-child{text-align:left}.pivot-table .total td{background:#eef3ff;font-weight:700}.pivot-table.swap-view{display:none}.layout-hint{display:inline-flex;padding:4px 7px;background:#f0f2f5;color:#728096;border-radius:3px;font-size:8px}
+  .master-summary{display:flex;gap:8px;margin-bottom:10px}.master-summary-item{flex:1;background:#fff;border:1px solid var(--line);padding:10px}.master-summary-item span{display:block;color:#8792a3;font-size:8px}.master-summary-item b{display:block;margin-top:5px;font-size:13px}.system-badge{display:inline-flex;padding:3px 6px;background:#edf1f6;color:#66758b;border-radius:3px;font-size:8px}.metric-definition{margin:10px 12px 12px;border:1px solid var(--line);display:grid;grid-template-columns:150px 1fr 1fr}.metric-definition>div{padding:9px 10px;border-right:1px solid var(--line)}.metric-definition>div:last-child{border-right:0}.metric-definition span{display:block;color:#8792a3;font-size:8px;margin-bottom:4px}.metric-definition b,.metric-definition p{margin:0;font-size:9px;line-height:1.6}.metric-definition code{font-size:9px;color:#3e5aa1}
+
+  .report-toolbar{height:48px;flex:0 0 48px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 12px;gap:7px}.report-toolbar .spacer{flex:1}.report-shell{flex:1;min-height:0;display:grid;grid-template-columns:188px minmax(680px,900px);justify-content:center;gap:10px;padding:10px;overflow:auto}.report-outline{background:#fff;border:1px solid var(--line);height:max-content;position:sticky;top:0}.outline-title{height:37px;display:flex;align-items:center;padding:0 10px;border-bottom:1px solid var(--line);font-weight:600}.outline-item{height:34px;padding:0 10px;display:flex;align-items:center;color:#677488;border-left:2px solid transparent}.outline-item.active{background:#f1f5ff;color:#315dde;border-left-color:#315dde}.report-paper{background:#fff;border:1px solid var(--line);padding:28px 34px 40px}.report-kicker{font-size:8px;color:#8792a3;letter-spacing:.12em}.report-paper h1{font-size:21px;line-height:1.5;margin:8px 0}.report-meta{font-size:9px;color:#7b8799;padding-bottom:14px;border-bottom:1px solid var(--line)}.report-status{display:flex;gap:16px;padding:11px 0;border-bottom:1px solid var(--line);color:#657287;font-size:9px}.report-status b{color:#344054}.report-section{padding-top:18px}.report-section h2{font-size:13px;margin:0 0 9px}.report-section p{font-size:10px;line-height:1.9;color:#4f5c6f;margin:0}.report-metrics{display:flex;border:1px solid var(--line);margin-top:10px}.report-metric{flex:1;padding:10px;border-right:1px solid var(--line)}.report-metric:last-child{border:0}.report-metric span{display:block;color:#8490a2;font-size:8px}.report-metric b{display:block;font-size:14px;margin-top:6px}.report-table{width:100%;border-collapse:collapse;margin-top:8px}.report-table th,.report-table td{height:31px;border:1px solid var(--line);padding:0 8px;text-align:right;font-size:9px}.report-table th{background:#f7f9fb;color:#68768a}.report-table th:first-child,.report-table td:first-child{text-align:left}.scenario-bars{height:154px;border:1px solid var(--line);margin-top:8px;padding:14px;display:flex;align-items:flex-end;gap:26px}.bar-group{flex:1;height:100%;display:flex;align-items:flex-end;justify-content:center;gap:5px;position:relative;padding-bottom:22px}.bar{width:25px;border-radius:2px 2px 0 0}.bar.revenue{background:#5577df}.bar.cost{background:#aeb8c8}.bar-label{position:absolute;bottom:0;font-size:8px;color:#758196}.issues{display:grid;grid-template-columns:1fr 1fr;gap:7px}.issue{border:1px solid var(--line);padding:9px;font-size:9px;line-height:1.6;color:#657287}.issue b{color:#394659}.issue.warn{border-left:3px solid #d49b3f}
+  .toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,15px);opacity:0;background:#273247;color:#fff;padding:9px 14px;border-radius:4px;transition:.18s;z-index:50;font-size:10px}.toast.show{opacity:1;transform:translate(-50%,0)}
+  @media(max-width:1250px){.global-nav{width:166px;flex-basis:166px}.model-nav{width:190px;flex-basis:190px}.metric-inline{min-width:110px;padding:0 10px}.drawer{width:300px}.workspace.drawer-open .config-shell{margin-right:307px}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand"><div class="brand-mark">测</div><div><b>项目测算分析工具</b><span>本地财务预测工作区</span></div></div>
+    <div class="top-context" id="top-context">项目与主数据</div>
+    <div class="top-actions"><span class="sync">SQLite 本地库 · 已保存 16:08</span><button class="btn ghost-dark" data-toast="已创建本地备份">备份数据</button></div>
+  </header>
+
+  <div class="shell">
+    <aside class="global-nav" id="global-nav">
+      <div class="nav-section">
+        <div class="nav-title">项目数据</div>
+        <button class="nav-item active" data-route="projects"><span class="nav-dot">▦</span>项目列表</button>
+        <button class="nav-item" data-route="archived"><span class="nav-dot">□</span>归档项目</button>
+        <button class="nav-item" data-route="analysis"><span class="nav-dot">▥</span>跨项目分析</button>
+      </div>
+      <div class="nav-section">
+        <div class="nav-title">平台配置</div>
+        <button class="nav-item" data-route="dimensions"><span class="nav-dot">⌘</span>主数据管理</button>
+        <button class="nav-item" data-route="metrics"><span class="nav-dot">≡</span>计算指标定义</button>
+        <button class="nav-item" data-route="parameters"><span class="nav-dot">◇</span>业务参数模板</button>
+        <button class="nav-item" data-route="excel"><span class="nav-dot">▤</span>Excel 输出模板</button>
+      </div>
+      <div class="db-box"><b>● 本地存储正常</b><br>project-forecast.sqlite<br>4 个项目 · 8 个版本<br>最近备份：今天 15:30</div>
+    </aside>
+
+    <main class="page" id="outer-page">
+      <section class="outer-section active" id="projects-page">
+        <div class="page-head">
+          <div><h1>项目中心</h1><p>管理正在测算的项目；项目完成后归档，需要时可恢复继续测算。</p></div>
+          <div class="page-head-actions"><button class="btn primary" id="new-project">＋ 新建项目</button></div>
+        </div>
+        <div class="page-body">
+          <div class="section-bar"><input class="search" placeholder="搜索项目名称、客户、部门或负责人"><select class="select"><option>全部部门</option><option>互联网电视事业部</option><option>广告业务部</option></select><select class="select"><option>全部负责人</option><option>王敏</option><option>李然</option></select><span class="spacer"></span><button class="btn" data-toast="列表已刷新">刷新</button></div>
+          <div class="summary-line"><span>测算中项目<b>4</b></span><span>本月更新<b>3</b></span><span>已归档<b>2</b></span><span>最近计算<b>今天 15:42</b></span></div>
+          <div class="data-panel">
+            <table class="data-table" aria-label="项目列表">
+              <thead><tr><th style="width:25%">项目名称</th><th style="width:12%">客户</th><th style="width:13%">部门</th><th style="width:12%">预测周期</th><th style="width:10%">当前版本</th><th style="width:9%;text-align:right">收入预测</th><th style="width:9%;text-align:right">毛利预测</th><th style="width:10%">操作</th></tr></thead>
+              <tbody>
+                <tr><td><span class="project-name">河北联通云游戏 + 超高清项目</span><span class="sub">负责人：王敏 · 更新于今天 15:42</span></td><td>河北联通</td><td>互联网电视事业部</td><td>2026-08—2027-07</td><td>工作版 V1.3</td><td style="text-align:right">640.8 万</td><td style="text-align:right">204.6 万</td><td><button class="action-link enter-project">进入项目</button></td></tr>
+                <tr><td><span class="project-name">重庆移动中屏项目</span><span class="sub">负责人：李然 · 更新于昨天 18:20</span></td><td>重庆移动</td><td>互联网电视事业部</td><td>2026-07—2027-06</td><td>版本 V2.0</td><td style="text-align:right">385.2 万</td><td style="text-align:right">118.7 万</td><td><button class="action-link enter-project">进入项目</button></td></tr>
+                <tr><td><span class="project-name">河北有线互联网电视项目</span><span class="sub">负责人：王敏 · 更新于 07-24</span></td><td>河北有线</td><td>互联网电视事业部</td><td>2026-09—2027-08</td><td>工作版 V0.8</td><td style="text-align:right">—</td><td style="text-align:right">—</td><td><button class="action-link enter-project">进入项目</button></td></tr>
+                <tr><td><span class="project-name">CTV 程序化广告能力建设</span><span class="sub">负责人：李然 · 更新于 07-18</span></td><td>百视通</td><td>广告业务部</td><td>2026-06—2027-05</td><td>工作版 V0.2</td><td style="text-align:right">226.5 万</td><td style="text-align:right">61.3 万</td><td><button class="action-link enter-project">进入项目</button></td></tr>
+              </tbody>
+            </table>
+            <div class="empty-hint">项目只保留“进行测算”和“归档”两种生命周期操作；版本是计算快照，不承担审核流程。</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="outer-section" id="archived-page">
+        <div class="page-head"><div><h1>归档项目</h1><p>查看已结束或暂时停用的项目，恢复后继续以工作版本测算。</p></div></div>
+        <div class="page-body">
+          <div class="section-bar"><input class="search" placeholder="搜索归档项目"><select class="select"><option>全部归档原因</option><option>项目结束</option><option>暂缓推进</option></select><span class="spacer"></span><span style="color:var(--muted);font-size:9px">共 2 个归档项目</span></div>
+          <div class="data-panel"><table class="data-table"><thead><tr><th style="width:28%">项目名称</th><th>客户</th><th>最后版本</th><th>归档原因</th><th>归档时间</th><th>归档人</th><th>操作</th></tr></thead><tbody>
+            <tr><td><span class="project-name">辽宁 IPTV 会员增长项目</span><span class="sub">周期：2025-01—2025-12</span></td><td>辽宁移动</td><td>版本 V3.0</td><td>项目结束</td><td>2026-03-18</td><td>王敏</td><td><button class="action-link" data-toast="项目已恢复到项目列表">恢复项目</button></td></tr>
+            <tr><td><span class="project-name">华东 CDN 降本专项</span><span class="sub">周期：2025-06—2026-05</span></td><td>内部项目</td><td>工作版 V0.9</td><td>暂缓推进</td><td>2026-05-06</td><td>李然</td><td><button class="action-link" data-toast="项目已恢复到项目列表">恢复项目</button></td></tr>
+          </tbody></table><div class="empty-hint">恢复项目不会改变原版本；恢复后将以新的工作版本继续编辑。</div></div>
+        </div>
+      </section>
+
+      <section class="outer-section" id="analysis-page">
+        <div class="page-head"><div><h1>跨项目分析</h1><p>基于同一套项目预测事实表，按部门、项目、指标和年月组合查看结果。</p></div><div class="page-head-actions"><button class="btn" data-toast="当前分析视图已保存">保存视图</button><button class="btn primary" data-toast="跨项目分析明细已准备导出">导出 CSV</button></div></div>
+        <div style="height:calc(100vh - 120px);display:flex;flex-direction:column">
+          <div class="analysis-toolbar">
+            <b>分析布局</b>
+            <span style="color:var(--muted)">行</span><select class="select" id="row-dimension"><option>部门 + 项目</option><option>年月</option></select>
+            <span style="color:var(--muted)">列</span><select class="select" id="column-dimension"><option>年月</option><option>部门 + 项目</option></select>
+            <span style="color:var(--muted)">指标</span><select class="select"><option>毛利</option><option>收入合计</option><option>成本合计</option><option>净现金流</option></select>
+            <span style="color:var(--muted)">场景</span><select class="select"><option>基准方案</option><option>乐观方案</option><option>审慎方案</option></select>
+            <button class="btn" id="swap-pivot">⇄ 切换行列</button><span class="spacer"></span><span class="layout-hint">第一版固定两套表格结构</span>
+          </div>
+          <div class="pivot-shell">
+            <div class="pivot-note">当前视图：基准方案 · 各项目最新工作版本 · 指标为毛利 · 单位：万元。部门来自平台主数据，年月由项目预测周期自动生成。</div>
+            <table class="pivot-table" id="pivot-projects">
+              <thead><tr><th style="width:250px">部门 / 项目</th><th>2026-08</th><th>2026-09</th><th>2026-10</th><th>2026-11</th><th>2026-12</th><th>2027-01</th><th>2027-02</th><th>期间合计</th></tr></thead>
+              <tbody>
+                <tr class="group"><td>互联网电视事业部</td><td>12.2</td><td>18.4</td><td>24.1</td><td>29.6</td><td>35.0</td><td>40.8</td><td>46.1</td><td>412.7</td></tr>
+                <tr><td>　河北联通云游戏 + 超高清</td><td>4.9</td><td>8.2</td><td>11.4</td><td>14.7</td><td>17.9</td><td>21.2</td><td>24.4</td><td>204.6</td></tr>
+                <tr><td>　重庆移动中屏项目</td><td>4.1</td><td>5.7</td><td>7.3</td><td>8.9</td><td>10.6</td><td>12.3</td><td>14.0</td><td>118.7</td></tr>
+                <tr><td>　河北有线互联网电视</td><td>3.2</td><td>4.5</td><td>5.4</td><td>6.0</td><td>6.5</td><td>7.3</td><td>7.7</td><td>89.4</td></tr>
+                <tr class="group"><td>广告业务部</td><td>2.7</td><td>3.8</td><td>4.8</td><td>5.2</td><td>5.9</td><td>6.3</td><td>6.9</td><td>61.3</td></tr>
+                <tr><td>　CTV 程序化广告能力建设</td><td>2.7</td><td>3.8</td><td>4.8</td><td>5.2</td><td>5.9</td><td>6.3</td><td>6.9</td><td>61.3</td></tr>
+                <tr class="total"><td>全部项目</td><td>14.9</td><td>22.2</td><td>28.9</td><td>34.8</td><td>40.9</td><td>47.1</td><td>53.0</td><td>474.0</td></tr>
+              </tbody>
+            </table>
+            <table class="pivot-table swap-view" id="pivot-months">
+              <thead><tr><th style="width:190px">年月</th><th>互联网电视事业部</th><th>广告业务部</th><th>河北联通项目</th><th>重庆移动项目</th><th>河北有线项目</th><th>CTV 广告项目</th><th>全部项目</th></tr></thead>
+              <tbody>
+                <tr><td>2026-08</td><td>12.2</td><td>2.7</td><td>4.9</td><td>4.1</td><td>3.2</td><td>2.7</td><td>14.9</td></tr>
+                <tr><td>2026-09</td><td>18.4</td><td>3.8</td><td>8.2</td><td>5.7</td><td>4.5</td><td>3.8</td><td>22.2</td></tr>
+                <tr><td>2026-10</td><td>24.1</td><td>4.8</td><td>11.4</td><td>7.3</td><td>5.4</td><td>4.8</td><td>28.9</td></tr>
+                <tr><td>2026-11</td><td>29.6</td><td>5.2</td><td>14.7</td><td>8.9</td><td>6.0</td><td>5.2</td><td>34.8</td></tr>
+                <tr><td>2026-12</td><td>35.0</td><td>5.9</td><td>17.9</td><td>10.6</td><td>6.5</td><td>5.9</td><td>40.9</td></tr>
+                <tr class="total"><td>期间合计</td><td>119.3</td><td>22.4</td><td>57.1</td><td>36.6</td><td>25.6</td><td>22.4</td><td>141.7</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="outer-section" id="metrics-page">
+        <div class="page-head"><div><h1>计算指标定义</h1><p>统一定义指标编码、业务解释、计算公式和跨项目汇总口径。</p></div><div class="page-head-actions"><button class="btn primary" data-toast="新增指标抽屉将在此打开">＋ 新增指标</button></div></div>
+        <div class="page-body master-layout">
+          <div class="master-groups">
+            <div class="master-group active"><div><b>财务核心指标</b><small>收入、成本、利润</small></div><span class="count">12</span></div>
+            <div class="master-group"><div><b>业务驱动指标</b><small>用户、单价、比例</small></div><span class="count">18</span></div>
+            <div class="master-group"><div><b>现金流指标</b><small>收付与累计现金</small></div><span class="count">9</span></div>
+            <div class="master-group"><div><b>项目自定义指标</b><small>仅特定项目使用</small></div><span class="count">7</span></div>
+          </div>
+          <div class="master-detail">
+            <div class="master-detail-head"><b>财务核心指标</b><span>12 项 · 被 4 个项目引用</span><div class="actions"><input class="search" style="width:190px;height:28px" placeholder="搜索指标或解释"></div></div>
+            <table class="data-table"><thead><tr><th>指标编码</th><th>指标名称</th><th style="width:28%">业务解释</th><th>单位</th><th>默认聚合</th><th>状态</th></tr></thead><tbody>
+              <tr><td>REVENUE_TOTAL</td><td>收入合计</td><td>项目各收入行项目的不含税金额合计</td><td>万元</td><td>求和</td><td><span class="status">启用</span></td></tr>
+              <tr><td>COST_TOTAL</td><td>成本合计</td><td>项目各成本行项目的不含税金额合计</td><td>万元</td><td>求和</td><td><span class="status">启用</span></td></tr>
+              <tr class="metric-row"><td>GROSS_PROFIT</td><td>毛利</td><td>收入合计扣减成本合计后的项目经营收益</td><td>万元</td><td>求和</td><td><span class="status">启用</span></td></tr>
+              <tr><td>GROSS_MARGIN</td><td>毛利率</td><td>毛利占收入合计的比例，用于衡量盈利质量</td><td>%</td><td>加权平均</td><td><span class="status">启用</span></td></tr>
+              <tr><td>NET_CASH_FLOW</td><td>净现金流</td><td>当月现金流入扣减当月现金流出</td><td>万元</td><td>求和</td><td><span class="status">启用</span></td></tr>
+              <tr><td>CASH_BALANCE</td><td>累计现金流</td><td>从项目开始月累计至当前月的净现金流</td><td>万元</td><td>期末值</td><td><span class="status">启用</span></td></tr>
+            </tbody></table>
+            <div class="metric-definition"><div><span>当前指标</span><b>GROSS_PROFIT · 毛利</b></div><div><span>指标公式</span><code>[REVENUE_TOTAL] - [COST_TOTAL]</code></div><div><span>解释与使用边界</span><p>按相同含税口径、场景和版本计算；跨项目分析时对项目毛利直接求和。</p></div></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="outer-section" id="parameters-page">
+        <div class="page-head"><div><h1>业务参数模板</h1><p>沉淀可复用的业务驱动参数，新建项目时可以选择模板初始化。</p></div><div class="page-head-actions"><button class="btn" data-toast="请选择参数模板文件">导入模板</button><button class="btn primary" data-toast="新建参数模板将在此打开">＋ 新建模板</button></div></div>
+        <div class="page-body master-layout">
+          <div class="master-groups">
+            <div class="master-group active"><div><b>视频会员项目</b><small>用户增长 + ARPU</small></div><span class="count">8</span></div>
+            <div class="master-group"><div><b>广告收入项目</b><small>库存 + CPM + 售卖率</small></div><span class="count">7</span></div>
+            <div class="master-group"><div><b>平台建设项目</b><small>里程碑 + 实施投入</small></div><span class="count">9</span></div>
+            <div class="master-group"><div><b>空白模板</b><small>仅保留通用财务项</small></div><span class="count">4</span></div>
+          </div>
+          <div class="master-detail">
+            <div class="master-detail-head"><b>视频会员项目</b><span>版本 2.1 · 更新于 07-20</span><div class="actions"><button class="btn" data-toast="模板已复制">复制模板</button><button class="btn primary" data-toast="模板已保存">保存模板</button></div></div>
+            <div class="detail-body">
+              <div class="property-grid"><div class="property"><span>适用类型</span><b>会员订购类项目</b></div><div class="property"><span>默认周期</span><b>12 个月</b></div><div class="property"><span>被项目引用</span><b>3 个</b></div><div class="property"><span>维护人</span><b>王敏</b></div></div>
+              <table class="data-table"><thead><tr><th>参数编码</th><th>参数名称</th><th>默认值</th><th>单位</th><th>建模方式</th><th>是否必填</th></tr></thead><tbody>
+                <tr><td>START_USERS</td><td>期初用户数</td><td>2,000</td><td>人</td><td>固定输入</td><td>是</td></tr>
+                <tr><td>END_USERS</td><td>期末用户数</td><td>8,000</td><td>人</td><td>目标值</td><td>是</td></tr>
+                <tr><td>MONTHLY_ARPU</td><td>月均 ARPU</td><td>90</td><td>元</td><td>固定输入</td><td>是</td></tr>
+                <tr><td>REFUND_RATE</td><td>退款率</td><td>2.0%</td><td>%</td><td>固定输入</td><td>否</td></tr>
+                <tr><td>CP_SHARE_RATE</td><td>CP 分成比例</td><td>30.0%</td><td>%</td><td>固定输入</td><td>是</td></tr>
+                <tr><td>RECEIPT_TERM</td><td>客户回款账期</td><td>3</td><td>月</td><td>账期偏移</td><td>是</td></tr>
+              </tbody></table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="outer-section" id="dimensions-page">
+        <div class="page-head"><div><h1>主数据管理</h1><p>维护跨项目复用的分析维度；年月、场景和版本由系统内置生成。</p></div></div>
+        <div class="page-body">
+          <div class="master-summary">
+            <div class="master-summary-item"><span>可维护维度</span><b>组织部门</b></div>
+            <div class="master-summary-item"><span>自动登记维度</span><b>项目 · 4 项</b></div>
+            <div class="master-summary-item"><span>系统内置</span><b>年月 · 场景 · 版本</b></div>
+            <div class="master-summary-item"><span>维护边界</span><b>项目只读 · 部门可维护</b></div>
+          </div>
+          <div class="master-layout">
+            <div class="master-groups">
+              <div class="master-group active" data-master-view="projects"><div><b>项目主数据</b><small>保存项目后自动登记</small></div><span class="count">4</span></div>
+              <div class="master-group" data-master-view="departments"><div><b>组织部门</b><small>支持跨项目按部门分析</small></div><span class="count">6</span></div>
+              <div class="master-group" data-master-view="system"><div><b>年月</b><small>按项目周期自动生成</small></div><span class="system-badge">内置</span></div>
+              <div class="master-group" data-master-view="system"><div><b>场景</b><small>基准、乐观、审慎</small></div><span class="system-badge">内置</span></div>
+              <div class="master-group" data-master-view="system"><div><b>版本</b><small>工作版本与历史快照</small></div><span class="system-badge">内置</span></div>
+              <div class="master-group" data-master-view="system"><div><b>项目状态</b><small>测算中、已归档</small></div><span class="system-badge">内置</span></div>
+            </div>
+            <div class="master-detail" id="master-projects-detail">
+              <div class="master-detail-head"><b>项目主数据</b><span>来源于已保存项目，只读展示主要分析属性</span><div class="actions"><input class="search" style="width:210px;height:28px" placeholder="搜索项目、客户或部门"><span class="readonly-mark">系统自动登记</span></div></div>
+              <div class="detail-note" style="margin:12px">项目仍在项目中心创建、修改和归档；这里不提供编辑，只作为多维事实数据的项目维度目录，供跨项目分析和指标关联使用。</div>
+              <table class="data-table" id="project-master-table"><thead><tr><th>项目编码</th><th style="width:24%">项目名称</th><th>客户</th><th>所属部门</th><th>负责人</th><th>预测周期</th><th>状态</th><th>操作</th></tr></thead><tbody>
+                <tr data-project-name="河北联通云游戏 + 超高清项目"><td>PRJ-2026-001</td><td>河北联通云游戏 + 超高清项目</td><td>河北联通</td><td>互联网电视事业部</td><td>王敏</td><td>2026-08—2027-07</td><td><span class="status">测算中</span></td><td><button class="action-link master-project-link" data-project-name="河北联通云游戏 + 超高清项目">查看项目</button></td></tr>
+                <tr data-project-name="重庆移动中屏项目"><td>PRJ-2026-002</td><td>重庆移动中屏项目</td><td>重庆移动</td><td>互联网电视事业部</td><td>李然</td><td>2026-07—2027-06</td><td><span class="status">测算中</span></td><td><button class="action-link master-project-link" data-project-name="重庆移动中屏项目">查看项目</button></td></tr>
+                <tr data-project-name="河北有线互联网电视项目"><td>PRJ-2026-003</td><td>河北有线互联网电视项目</td><td>河北有线</td><td>互联网电视事业部</td><td>王敏</td><td>2026-09—2027-08</td><td><span class="status">测算中</span></td><td><button class="action-link master-project-link" data-project-name="河北有线互联网电视项目">查看项目</button></td></tr>
+                <tr data-project-name="CTV 程序化广告能力建设"><td>PRJ-2026-004</td><td>CTV 程序化广告能力建设</td><td>百视通</td><td>广告业务部</td><td>李然</td><td>2026-06—2027-05</td><td><span class="status">测算中</span></td><td><button class="action-link master-project-link" data-project-name="CTV 程序化广告能力建设">查看项目</button></td></tr>
+              </tbody></table>
+            </div>
+            <div class="master-detail hidden" id="master-departments-detail">
+              <div class="master-detail-head"><b>组织部门</b><span>项目创建时选择，编码保存后不建议修改</span><div class="actions"><input class="search" style="width:180px;height:28px" placeholder="搜索部门"><button class="btn primary" data-toast="新增部门行已打开">＋ 新增部门</button></div></div>
+              <div class="detail-note" style="margin:12px">部门作为平台级分析维度，可在项目中心筛选并用于跨项目汇总。第一版不提供导入导出，直接在页面表格中新增、编辑、停用。</div>
+              <table class="data-table"><thead><tr><th>部门编码</th><th>部门名称</th><th>上级部门</th><th>负责人</th><th>引用项目</th><th>状态</th><th>操作</th></tr></thead><tbody>
+                <tr><td>BU-IPTV</td><td>互联网电视事业部</td><td>业务中心</td><td>王敏</td><td>3</td><td><span class="status">启用</span></td><td><button class="action-link" data-toast="部门编辑表单已打开">编辑</button></td></tr>
+                <tr><td>BU-AD</td><td>广告业务部</td><td>业务中心</td><td>李然</td><td>1</td><td><span class="status">启用</span></td><td><button class="action-link" data-toast="部门编辑表单已打开">编辑</button></td></tr>
+                <tr><td>BU-TECH</td><td>技术平台部</td><td>业务中心</td><td>赵静</td><td>0</td><td><span class="status">启用</span></td><td><button class="action-link" data-toast="部门编辑表单已打开">编辑</button></td></tr>
+                <tr><td>FIN-FPNA</td><td>财务分析组</td><td>财务部</td><td>王敏</td><td>0</td><td><span class="status">启用</span></td><td><button class="action-link" data-toast="部门编辑表单已打开">编辑</button></td></tr>
+                <tr><td>BU-OLD</td><td>历史业务组</td><td>业务中心</td><td>—</td><td>0</td><td><span class="status locked">停用</span></td><td><button class="action-link" data-toast="部门已重新启用">启用</button></td></tr>
+              </tbody></table>
+            </div>
+            <div class="master-detail hidden" id="master-system-detail">
+              <div class="master-detail-head"><b>系统内置维度</b><span>由系统生成和控制，不提供导入或人工维护</span><div class="actions"><span class="readonly-mark">只读</span></div></div>
+              <div class="detail-note" style="margin:12px">内置维度负责统一所有项目的计算坐标。项目保存后，系统根据预测期间生成年月，创建基准场景和工作版本，并使用“测算中／已归档”两种状态。</div>
+              <table class="data-table"><thead><tr><th>维度</th><th>生成规则</th><th>项目中的使用方式</th><th>维护方式</th></tr></thead><tbody>
+                <tr><td>年月</td><td>预测开始月 + 预测周期</td><td>分月计算表格的列坐标</td><td><span class="readonly-mark">系统生成</span></td></tr>
+                <tr><td>场景</td><td>基准、乐观、审慎</td><td>参数覆盖和报告比较</td><td><span class="readonly-mark">系统内置</span></td></tr>
+                <tr><td>版本</td><td>工作版本 + 保存快照</td><td>保留不同时间的计算结果</td><td><span class="readonly-mark">系统生成</span></td></tr>
+                <tr><td>项目状态</td><td>测算中、已归档</td><td>控制项目是否继续编辑</td><td><span class="readonly-mark">系统内置</span></td></tr>
+              </tbody></table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="outer-section" id="excel-page">
+        <div class="page-head"><div><h1>Excel 输出模板</h1><p>管理统一输出模板、工作表结构和指标映射。</p></div><div class="page-head-actions"><button class="btn" data-toast="请选择 .xlsx 模板文件">导入模板</button><button class="btn primary" data-toast="新建输出模板将在此打开">＋ 新建模板</button></div></div>
+        <div class="page-body master-layout">
+          <div class="master-groups">
+            <div class="master-group active"><div><b>项目预测标准模板</b><small>当前默认 · 8 个工作表</small></div><span class="count">V3.2</span></div>
+            <div class="master-group"><div><b>对外简版报告</b><small>结论 + 主表 + 现金流</small></div><span class="count">V1.4</span></div>
+            <div class="master-group"><div><b>财务复核明细模板</b><small>包含公式与口径</small></div><span class="count">V2.0</span></div>
+          </div>
+          <div class="master-detail">
+            <div class="master-detail-head"><b>项目预测标准模板</b><span>统一模板 · 更新于 07-26</span><div class="actions"><button class="btn" data-toast="模板副本已创建">复制</button><button class="btn" data-toast="示例 Excel 已准备下载">下载示例</button><button class="btn primary" data-toast="已设为默认输出模板">设为默认</button></div></div>
+            <div class="template-preview">
+              <div class="property-grid"><div class="property"><span>模板版本</span><b>V3.2</b></div><div class="property"><span>工作表数量</span><b>8</b></div><div class="property"><span>指标映射</span><b>31 项</b></div><div class="property"><span>使用项目</span><b>4 个</b></div></div>
+              <div class="sheet-tabs"><button class="sheet-tab active">项目概览</button><button class="sheet-tab">核心假设</button><button class="sheet-tab">分月损益</button><button class="sheet-tab">现金流</button><button class="sheet-tab">方案比较</button><button class="sheet-tab">公式口径</button></div>
+              <div class="excel-preview">
+                <div class="excel-row head"><div class="excel-cell">项目概览</div><div class="excel-cell">基准方案</div><div class="excel-cell">工作版 V1.3</div><div class="excel-cell">不含税</div><div class="excel-cell">单位：万元</div><div class="excel-cell">2026-08—2027-07</div></div>
+                <div class="excel-row"><div class="excel-cell">收入合计</div><div class="excel-cell num">640.8</div><div class="excel-cell">成本合计</div><div class="excel-cell num">436.2</div><div class="excel-cell">毛利率</div><div class="excel-cell num">31.9%</div></div>
+                <div class="excel-row"><div class="excel-cell">最大垫资</div><div class="excel-cell num">128.5</div><div class="excel-cell">现金转正</div><div class="excel-cell">2027-04</div><div class="excel-cell">待确认事项</div><div class="excel-cell num">2</div></div>
+                <div class="excel-row total"><div class="excel-cell">模板字段映射</div><div class="excel-cell">PROJECT_NAME</div><div class="excel-cell">SCENARIO</div><div class="excel-cell">VERSION</div><div class="excel-cell">TAX_BASIS</div><div class="excel-cell">PERIOD_RANGE</div></div>
+              </div>
+              <div class="detail-note" style="margin-top:10px">项目只选择模板，不在平台内做客户级字体、配色或表头定制；特殊格式在导出后单独调整。</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <main class="workspace hidden" id="workspace">
+      <div class="workspace-head">
+        <button class="back-btn" id="back-projects">← 项目中心</button><span class="project-title" id="workspace-project-title">河北联通云游戏 + 超高清项目</span><span class="project-version">工作版 V1.3</span>
+        <div class="workspace-tabs"><button class="workspace-tab active" data-workspace-view="config">1　预测配置</button><button class="workspace-tab" data-workspace-view="result">2　计算表格</button><button class="workspace-tab" data-workspace-view="report">3　图表报告</button></div>
+        <div class="workspace-head-actions"><button class="btn" data-toast="已创建历史版本 V1.4">保存版本</button><button class="btn primary" id="save-project">保存项目</button><button class="btn" data-toast="项目已归档，可在归档项目中恢复">归档</button></div>
+      </div>
+      <div class="project-facts"><span>客户<b>河北联通</b></span><span>部门<b>互联网电视事业部</b></span><span>预测周期<b>2026-08—2027-07</b></span><span>负责人<b>王敏</b></span><span>默认口径<b>不含税</b></span><span>状态<b>测算中</b></span></div>
+
+      <section class="workspace-view active" id="view-config">
+        <div class="config-shell">
+          <section class="config-panel">
+            <div class="config-head"><b>项目信息</b><small>部门来自平台主数据；年月、场景和版本由系统生成</small><span class="spacer"></span><button class="btn" data-toast="项目信息编辑模式已打开">编辑项目信息</button></div>
+            <div class="project-config">
+              <div class="form-item"><label>项目编码</label><input class="field" value="PRJ-2026-001" readonly></div>
+              <div class="form-item"><label>客户</label><input class="field" value="河北联通"></div>
+              <div class="form-item"><label>部门</label><select class="field"><option>互联网电视事业部</option><option>广告业务部</option></select></div>
+              <div class="form-item"><label>负责人</label><select class="field"><option>王敏</option><option>李然</option></select></div>
+              <div class="form-item"><label>开始年月</label><input class="field" value="2026-08"></div>
+              <div class="form-item"><label>预测周期</label><select class="field"><option>12 个月</option><option>24 个月</option><option>36 个月</option></select></div>
+              <div class="form-item"><label>默认口径</label><select class="field"><option>不含税 · 万元</option><option>含税 · 万元</option></select></div>
+              <div class="form-item"><label>项目业务模块</label><input class="field" value="云游戏、超高清"></div>
+            </div>
+          </section>
+          <section class="config-panel" style="margin-top:9px">
+            <div class="config-head"><b>行测算配置</b><small>18 个行项目 · 点击任意一行在右侧配置</small><span class="spacer"></span><span class="calculation-flow">配置参数 → 校验模型 → 生成计算表格</span><select class="select"><option>全部分类</option><option>业务参数</option><option>收入</option><option>成本</option><option>现金流</option></select><button class="btn" data-toast="请选择 Excel 或 CSV 参数文件">导入预测参数</button><button class="btn" data-toast="已新增空白行项目">＋ 新增行项目</button><button class="btn primary calculate-model">保存并计算</button></div>
+            <table class="config-table" aria-label="行测算配置表">
+              <thead><tr><th style="width:12%">系统分类</th><th style="width:19%">行项目名称</th><th style="width:11%">归属模块</th><th style="width:13%">预测方式</th><th style="width:27%">主要配置信息</th><th style="width:10%">指标编码</th><th style="width:8%">状态</th></tr></thead>
+              <tbody>
+                <tr class="config-row active" data-category="业务参数" data-module="云游戏" data-name="云游戏用户数" data-type="增长规则" data-formula="线性增长(2,000, 8,000, 12个月)" data-code="GAME_USERS"><td>业务参数</td><td><span class="config-name">云游戏用户数</span><span class="config-desc">驱动收入与流量成本</span></td><td><span class="scope-chip">云游戏</span></td><td>增长规则</td><td><span class="config-summary">2,000 → 8,000 / 12个月线性增长</span></td><td>GAME_USERS</td><td><span class="status">完整</span></td></tr>
+                <tr class="config-row" data-category="业务参数" data-module="云游戏" data-name="月均 ARPU" data-type="固定值" data-formula="固定值(90元)" data-code="MONTHLY_ARPU"><td>业务参数</td><td><span class="config-name">月均 ARPU</span><span class="config-desc">会员包月单价</span></td><td><span class="scope-chip">云游戏</span></td><td>固定值</td><td><span class="config-summary">90 元 / 月</span></td><td>MONTHLY_ARPU</td><td><span class="status">完整</span></td></tr>
+                <tr class="config-row" data-category="业务参数" data-module="云游戏" data-name="退款率" data-type="固定值" data-formula="固定值(2.0%)" data-code="REFUND_RATE"><td>业务参数</td><td><span class="config-name">退款率</span><span class="config-desc">收入扣减参数</span></td><td><span class="scope-chip">云游戏</span></td><td>固定值</td><td><span class="config-summary">2.0%</span></td><td>REFUND_RATE</td><td><span class="status">完整</span></td></tr>
+                <tr class="config-row" data-category="收入" data-module="云游戏" data-name="云游戏订购收入" data-type="引用公式" data-formula="[云游戏用户数] × [月均 ARPU] × (1 - [退款率])" data-code="GAME_REVENUE"><td>收入</td><td><span class="config-name">云游戏订购收入</span><span class="config-desc">按月确认收入</span></td><td><span class="scope-chip">云游戏</span></td><td>引用公式</td><td><span class="config-summary">用户数 × ARPU × (1 - 退款率)</span></td><td>GAME_REVENUE</td><td><span class="status">完整</span></td></tr>
+                <tr class="config-row" data-category="收入" data-module="超高清" data-name="超高清产品包收入" data-type="单价×数量" data-formula="[超高清订购用户数] × 60元" data-code="UHD_REVENUE"><td>收入</td><td><span class="config-name">超高清产品包收入</span><span class="config-desc">产品包订购收入</span></td><td><span class="scope-chip">超高清</span></td><td>单价 × 数量</td><td><span class="config-summary">订购用户数 × 60 元</span></td><td>UHD_REVENUE</td><td><span class="status">完整</span></td></tr>
+                <tr class="config-row" data-category="成本" data-module="云游戏" data-name="CP 内容分成" data-type="引用公式" data-formula="[云游戏订购收入] × 30%" data-code="CP_SHARE_COST"><td>成本</td><td><span class="config-name">CP 内容分成</span><span class="config-desc">内容合作方分成</span></td><td><span class="scope-chip">云游戏</span></td><td>引用公式</td><td><span class="config-summary">云游戏订购收入 × 30%</span></td><td>CP_SHARE_COST</td><td><span class="status">完整</span></td></tr>
+                <tr class="config-row" data-category="成本" data-module="公共" data-name="CDN 与专线" data-type="引用公式" data-formula="[流量成本] + [专线固定费]" data-code="CDN_NETWORK_COST"><td>成本</td><td><span class="config-name">CDN 与专线</span><span class="config-desc">流量变动成本与固定专线</span></td><td><span class="scope-chip">公共</span></td><td>组合公式</td><td><span class="config-summary">流量成本 + 专线固定费</span></td><td>CDN_NETWORK_COST</td><td><span class="status">完整</span></td></tr>
+                <tr class="config-row" data-category="现金流" data-module="公共" data-name="客户回款" data-type="账期规则" data-formula="[收入确认] 向后偏移 3 个月" data-code="CASH_IN"><td>现金流</td><td><span class="config-name">客户回款</span><span class="config-desc">按合同回款账期</span></td><td><span class="scope-chip">公共</span></td><td>账期规则</td><td><span class="config-summary">收入确认后第 3 个月回款</span></td><td>CASH_IN</td><td><span class="status draft">待确认</span></td></tr>
+              </tbody>
+            </table>
+            <div class="config-foot"><span>已展示 8 / 18 个行项目</span><span class="spacer"></span><span>配置完整 17 项 · 待确认 1 项 · 公式依赖 6 条</span><button class="btn primary calculate-model" style="margin-left:9px">保存并计算</button></div>
+            <div class="explain-line"><b>归属说明：</b>项目信息只定义本项目允许使用的业务模块清单；每个行项目再选择一个归属模块或“公共”。系统分类、行项目名称、预测方式、公式和账期都属于行测算配置，不属于项目基本信息。</div>
+          </section>
+        </div>
+      </section>
+
+      <section class="workspace-view" id="view-result">
+        <div class="workspace-body">
+          <section class="forecast-main">
+            <div class="forecast-toolbar">
+              <select class="select" id="forecast-scenario"><option value="base">基准方案</option><option value="up">乐观方案</option><option value="down">审慎方案</option></select>
+              <select class="select"><option>工作版 V1.3</option><option>历史版本 V1.2</option></select>
+              <select class="select"><option>全部业务模块</option><option>云游戏</option><option>超高清</option></select>
+              <select class="select"><option>不含税</option><option>含税</option></select>
+              <span class="spacer"></span><span style="color:var(--muted);font-size:9px">计算批次 #RUN-0186 · 今天 15:42</span><span class="compile-ok" id="compile-status">✓ 与当前配置一致</span><button class="btn" id="back-to-config">返回修改配置</button><button class="btn" data-toast="计算表格 CSV 已准备下载">导出当前表格</button>
+            </div>
+            <div class="table-wrap">
+              <table class="forecast-table" aria-label="分月预测主表">
+                <thead><tr><th>指标 / 行项目</th><th>2026-08</th><th>2026-09</th><th>2026-10</th><th>2026-11</th><th>2026-12</th><th>2027-01</th><th>2027-02</th><th>项目合计</th></tr></thead>
+                <tbody>
+                  <tr class="group"><td colspan="9">▾ 业务驱动参数</td></tr>
+                  <tr class="editable-row" data-row="云游戏用户数"><td>云游戏用户数</td><td class="input-cell">2,000</td><td class="input-cell">2,545</td><td class="input-cell">3,091</td><td class="input-cell">3,636</td><td class="input-cell">4,182</td><td class="input-cell">4,727</td><td class="input-cell">5,273</td><td>8,000 期末</td></tr>
+                  <tr class="editable-row" data-row="月均 ARPU"><td>月均 ARPU</td><td class="input-cell">90</td><td class="input-cell">90</td><td class="input-cell">90</td><td class="input-cell">90</td><td class="input-cell">90</td><td class="input-cell">90</td><td class="input-cell">90</td><td>90 均值</td></tr>
+                  <tr class="editable-row" data-row="退款率"><td>退款率</td><td class="input-cell">2.0%</td><td class="input-cell">2.0%</td><td class="input-cell">2.0%</td><td class="input-cell">2.0%</td><td class="input-cell">2.0%</td><td class="input-cell">2.0%</td><td class="input-cell">2.0%</td><td>2.0%</td></tr>
+                  <tr class="group"><td colspan="9">▾ 收入与成本</td></tr>
+                  <tr class="editable-row" data-row="云游戏订购收入"><td><span class="fx">fx</span>云游戏订购收入</td><td>17.6</td><td>22.5</td><td>27.3</td><td>32.1</td><td>36.9</td><td>41.7</td><td>46.5</td><td data-value="gameRevenue">426.6</td></tr>
+                  <tr><td><span class="fx">fx</span>超高清产品包收入</td><td>8.2</td><td>10.1</td><td>12.0</td><td>13.9</td><td>15.8</td><td>17.7</td><td>19.6</td><td>171.0</td></tr>
+                  <tr class="total"><td>收入合计</td><td>29.8</td><td>35.3</td><td>40.8</td><td>46.3</td><td>51.8</td><td>57.3</td><td>62.8</td><td data-value="revenue">640.8</td></tr>
+                  <tr class="editable-row" data-row="CP 内容分成"><td><span class="fx">fx</span>CP 内容分成</td><td>7.8</td><td>9.2</td><td>10.7</td><td>12.1</td><td>13.6</td><td>15.1</td><td>16.5</td><td>161.4</td></tr>
+                  <tr class="editable-row" data-row="CDN 与专线"><td><span class="fx">fx</span>CDN 与专线</td><td>3.2</td><td>3.6</td><td>4.1</td><td>4.5</td><td>5.0</td><td>5.4</td><td>5.9</td><td>58.8</td></tr>
+                  <tr class="total"><td>成本合计</td><td>24.9</td><td>27.1</td><td>29.4</td><td>31.6</td><td>33.9</td><td>36.1</td><td>38.4</td><td data-value="cost">436.2</td></tr>
+                  <tr class="total"><td>毛利</td><td>4.9</td><td>8.2</td><td>11.4</td><td>14.7</td><td>17.9</td><td>21.2</td><td>24.4</td><td data-value="profit">204.6</td></tr>
+                  <tr class="group"><td colspan="9">▾ 现金流</td></tr>
+                  <tr class="editable-row" data-row="客户回款"><td><span class="fx">fx</span>客户回款</td><td>0.0</td><td>0.0</td><td>0.0</td><td>17.6</td><td>22.5</td><td>27.3</td><td>32.1</td><td>544.7</td></tr>
+                  <tr><td><span class="fx">fx</span>现金流出</td><td>20.3</td><td>25.3</td><td>27.0</td><td>29.1</td><td>31.0</td><td>32.8</td><td>34.6</td><td>436.2</td></tr>
+                  <tr class="total"><td>净现金流</td><td class="negative">-20.3</td><td class="negative">-25.3</td><td class="negative">-27.0</td><td class="negative">-11.5</td><td class="negative">-8.5</td><td class="negative">-5.5</td><td class="negative">-2.5</td><td>108.5</td></tr>
+                  <tr class="total"><td>累计现金流</td><td class="negative">-20.3</td><td class="negative">-45.6</td><td class="negative">-72.6</td><td class="negative">-84.1</td><td class="negative override">-92.6</td><td class="negative">-98.1</td><td class="negative">-100.6</td><td data-value="funding">-128.5 最低</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="metrics-strip">
+              <div class="metric-inline"><span>收入合计</span><b data-metric="revenue">640.8 万</b></div>
+              <div class="metric-inline"><span>成本合计</span><b data-metric="cost">436.2 万</b></div>
+              <div class="metric-inline"><span>毛利 / 毛利率</span><b class="good" data-metric="profit">204.6 万 / 31.9%</b></div>
+              <div class="metric-inline"><span>最大垫资</span><b class="risk" data-metric="funding">128.5 万</b></div>
+              <div class="metric-inline"><span>现金转正</span><b data-metric="positive">2027-04</b></div>
+              <div class="metric-inline"><span>当前切片</span><b id="slice-label">基准方案 · 工作版</b></div>
+            </div>
+          </section>
+        </div>
+
+        <aside class="drawer" id="model-drawer">
+          <div class="drawer-head"><b>行测算配置</b><button class="drawer-close" id="drawer-close">×</button></div>
+          <div class="drawer-body">
+            <div class="field-label">行项目名称</div><input class="field" id="drawer-name" value="云游戏用户数">
+            <div class="field-label">系统分类 / 归属模块</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:7px"><select class="field" id="drawer-category"><option>业务参数</option><option>收入</option><option>成本</option><option>现金流</option></select><select class="field" id="drawer-module"><option>云游戏</option><option>超高清</option><option>公共</option></select></div>
+            <div style="margin-top:6px;color:var(--muted);font-size:8px;line-height:1.6">归属模块只能从项目信息中定义的模块清单选择；“公共”表示该行服务于整个项目。</div>
+            <div class="field-label">建模方式</div><select class="field" id="drawer-type"><option>增长规则</option><option>固定值</option><option>逐月录入</option><option>单价×数量</option><option>引用公式</option><option>组合公式</option><option>账期规则</option></select>
+            <div class="field-label">业务公式 / 生成规则</div><div class="formula" id="drawer-formula">线性增长(2,000, 8,000, 12个月)</div>
+            <div class="field-label">生效期间 / 税务口径</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:7px"><select class="field"><option>项目全周期</option><option>指定年月</option></select><select class="field"><option>不含税 · 6%</option><option>含税 · 6%</option><option>不适用</option></select></div>
+            <div class="field-label">结构化映射</div>
+            <div class="mapping"><div class="map-row"><span>指标编码</span><b id="drawer-code">GAME_USERS</b></div><div class="map-row"><span>年月</span><b>项目周期自动展开</b></div><div class="map-row"><span>场景</span><b>基准 + 参数覆盖</b></div><div class="map-row"><span>版本</span><b>当前工作版本</b></div></div>
+            <div class="field-label">来源与说明</div><select class="field"><option>财务预测输入</option><option>Excel / CSV 参数导入</option><option>其他行项目计算</option></select>
+            <div style="margin-top:12px"><button class="btn primary" style="width:100%" data-toast="行项目设置已保存">保存设置</button></div>
+          </div>
+        </aside>
+      </section>
+
+      <section class="workspace-view" id="view-report">
+        <div class="report-toolbar"><b>统一预测报告</b><select class="select" id="report-scenario"><option value="base">基准方案</option><option value="up">乐观方案</option><option value="down">审慎方案</option></select><select class="select"><option>工作版 V1.3</option><option>历史版本 V1.2</option></select><span class="compile-ok">✓ 与计算表格使用同一结果</span><span class="spacer"></span><button class="btn" data-toast="CSV 明细已准备下载">导出 CSV</button><button class="btn primary" data-toast="统一 Excel 模板已准备下载">导出 Excel</button></div>
+        <div class="report-shell">
+          <aside class="report-outline"><div class="outline-title">报告目录</div><div class="outline-item active">01　项目结论</div><div class="outline-item">02　核心假设</div><div class="outline-item">03　分月预测</div><div class="outline-item">04　方案比较</div><div class="outline-item">05　现金流</div><div class="outline-item">06　检查事项</div></aside>
+          <article class="report-paper">
+            <div class="report-kicker">PROJECT FINANCIAL FORECAST</div>
+            <h1><span id="report-project-title">河北联通云游戏 + 超高清项目</span><br>财务预测报告</h1>
+            <div class="report-meta">预测周期：2026-08—2027-07　｜　报告方案：<span id="report-scenario-label">基准方案</span>　｜　版本：工作版 V1.3　｜　口径：不含税</div>
+            <div class="report-status"><span>模型状态 <b>计算正常</b></span><span>运行记录 <b>#RUN-0186</b></span><span>待确认事项 <b style="color:#a96b10">2 项</b></span><span>数据来源 <b>计算表格</b></span></div>
+            <section class="report-section"><h2>一、项目结论</h2><p id="report-conclusion">基准方案下，项目周期收入为 640.8 万元，毛利为 204.6 万元，毛利率 31.9%。受客户三个月回款账期影响，预计最大垫资为 128.5 万元，累计现金流于 2027 年 4 月转正。</p>
+              <div class="report-metrics"><div class="report-metric"><span>项目收入</span><b id="r-revenue">640.8</b></div><div class="report-metric"><span>项目成本</span><b id="r-cost">436.2</b></div><div class="report-metric"><span>毛利</span><b id="r-profit">204.6</b></div><div class="report-metric"><span>毛利率</span><b id="r-margin">31.9%</b></div><div class="report-metric"><span>最大垫资</span><b id="r-funding">128.5</b></div></div>
+            </section>
+            <section class="report-section"><h2>二、核心业务假设</h2><table class="report-table"><thead><tr><th>业务参数</th><th>初始值</th><th>期末值</th><th>建模方式</th><th>来源</th></tr></thead><tbody><tr><td>云游戏用户数</td><td>2,000</td><td>8,000</td><td>线性增长</td><td>业务预测</td></tr><tr><td>月均 ARPU</td><td>90 元</td><td>90 元</td><td>固定值</td><td>产品定价</td></tr><tr><td>客户回款账期</td><td>3 个月</td><td>3 个月</td><td>账期偏移</td><td>合同条款</td></tr></tbody></table></section>
+            <section class="report-section"><h2>三、分月预测摘要</h2><table class="report-table"><thead><tr><th>指标</th><th>08月</th><th>09月</th><th>10月</th><th>11月</th><th>12月</th><th>项目合计</th></tr></thead><tbody><tr><td>收入合计</td><td>29.8</td><td>35.3</td><td>40.8</td><td>46.3</td><td>51.8</td><td>640.8</td></tr><tr><td>成本合计</td><td>24.9</td><td>27.1</td><td>29.4</td><td>31.6</td><td>33.9</td><td>436.2</td></tr><tr><td>毛利</td><td>4.9</td><td>8.2</td><td>11.4</td><td>14.7</td><td>17.9</td><td>204.6</td></tr><tr><td>累计现金流</td><td>-20.3</td><td>-45.6</td><td>-72.6</td><td>-84.1</td><td>-92.6</td><td>108.5</td></tr></tbody></table></section>
+            <section class="report-section"><h2>四、方案比较</h2><p>场景分析不再作为独立工作台，统一在报告中展示基准、乐观和审慎方案的结果差异。</p><div class="scenario-bars"><div class="bar-group"><div class="bar revenue" style="height:78%"></div><div class="bar cost" style="height:54%"></div><span class="bar-label">基准方案</span></div><div class="bar-group"><div class="bar revenue" style="height:96%"></div><div class="bar cost" style="height:58%"></div><span class="bar-label">乐观方案</span></div><div class="bar-group"><div class="bar revenue" style="height:66%"></div><div class="bar cost" style="height:53%"></div><span class="bar-label">审慎方案</span></div></div><table class="report-table"><thead><tr><th>方案</th><th>收入</th><th>成本</th><th>毛利</th><th>毛利率</th><th>最大垫资</th></tr></thead><tbody><tr><td>基准方案</td><td>640.8</td><td>436.2</td><td>204.6</td><td>31.9%</td><td>128.5</td></tr><tr><td>乐观方案</td><td>782.4</td><td>469.6</td><td>312.8</td><td>40.0%</td><td>112.2</td></tr><tr><td>审慎方案</td><td>544.7</td><td>432.3</td><td>112.4</td><td>20.6%</td><td>156.7</td></tr></tbody></table></section>
+            <section class="report-section"><h2>五、检查事项</h2><div class="issues"><div class="issue warn"><b>客户回款账期</b><br>暂按三个月处理，需确认是否包含验收期。</div><div class="issue warn"><b>CP 分成口径</b><br>分成基数尚未扣除支付手续费。</div><div class="issue"><b>模型编译通过</b><br>18 个业务行项目已映射，无循环引用。</div><div class="issue"><b>口径一致</b><br>所有方案使用相同周期、单位和税务口径。</div></div></section>
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+<div class="modal-mask" id="project-modal">
+  <div class="modal">
+    <div class="modal-head"><b>新建预测项目</b><button class="modal-close" data-close-modal>×</button></div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-item full"><label>项目名称</label><input class="field" id="new-project-name" value="新建项目预测"></div>
+        <div class="form-item"><label>客户</label><input class="field" value="待填写"></div>
+        <div class="form-item"><label>归属部门</label><select class="field"><option>互联网电视事业部</option><option>广告业务部</option><option>技术平台部</option></select></div>
+        <div class="form-item"><label>负责人</label><select class="field"><option>王敏</option><option>李然</option></select></div>
+        <div class="form-item"><label>预测开始月份</label><input class="field" type="month" value="2026-08"></div>
+        <div class="form-item"><label>预测周期</label><select class="field"><option>12 个月</option><option>24 个月</option><option>36 个月</option></select></div>
+        <div class="form-item"><label>业务参数模板</label><select class="field"><option>视频会员项目</option><option>广告收入项目</option><option>平台建设项目</option><option>空白模板</option></select></div>
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn" data-close-modal>取消</button><button class="btn primary" id="create-project">创建并配置预测</button></div>
+  </div>
+</div>
+<div class="toast" id="toast">操作已触发</div>
+<script>
+  const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
+  function toast(text){const el=$('#toast');el.textContent=text;el.classList.add('show');clearTimeout(window.__toast);window.__toast=setTimeout(()=>el.classList.remove('show'),1500)}
+  $$('[data-toast]').forEach(el=>el.addEventListener('click',()=>toast(el.dataset.toast)));
+
+  const routeLabels={projects:'项目中心',archived:'归档项目',analysis:'跨项目分析',dimensions:'主数据管理',metrics:'计算指标定义',parameters:'业务参数模板',excel:'Excel 输出模板'};
+  function showRoute(route){
+    $$('.outer-section').forEach(x=>x.classList.remove('active'));$('#'+route+'-page').classList.add('active');
+    $$('.nav-item').forEach(x=>x.classList.toggle('active',x.dataset.route===route));
+    $('#top-context').textContent=routeLabels[route]||'项目与主数据';
+  }
+  function showOuter(route='projects'){
+    $('#workspace').classList.add('hidden');$('#outer-page').classList.remove('hidden');$('#global-nav').style.display='block';showRoute(route);
+  }
+  function showWorkspace(projectName='河北联通云游戏 + 超高清项目'){
+    window.__activeProjectName=projectName;
+    $('#outer-page').classList.add('hidden');$('#workspace').classList.remove('hidden');$('#global-nav').style.display='none';$('#top-context').textContent=projectName;$('#workspace-project-title').textContent=projectName;$('#report-project-title').textContent=projectName;$('#project-modal').classList.remove('open');
+    activateWorkspace('config');
+  }
+  $$('.enter-project').forEach(btn=>btn.addEventListener('click',()=>showWorkspace(btn.closest('tr').querySelector('.project-name').textContent)));
+  $('#back-projects').addEventListener('click',()=>showOuter('projects'));
+
+  $$('.nav-item').forEach(btn=>btn.addEventListener('click',()=>showRoute(btn.dataset.route)));
+  $('#new-project').addEventListener('click',()=>$('#project-modal').classList.add('open'));
+  $$('[data-close-modal]').forEach(btn=>btn.addEventListener('click',()=>$('#project-modal').classList.remove('open')));
+  $('#project-modal').addEventListener('click',e=>{if(e.target===$('#project-modal'))$('#project-modal').classList.remove('open')});
+  $('#create-project').addEventListener('click',()=>{const name=$('#new-project-name').value.trim()||'新建项目预测';toast('项目已创建，正在进入预测配置');showWorkspace(name)});
+  $$('.master-groups').forEach(group=>group.querySelectorAll('.master-group').forEach(item=>item.addEventListener('click',()=>{
+    group.querySelectorAll('.master-group').forEach(x=>x.classList.remove('active'));item.classList.add('active');
+    if(item.dataset.masterView){
+      ['projects','departments','system'].forEach(view=>$('#master-'+view+'-detail').classList.toggle('hidden',view!==item.dataset.masterView));
+    }
+  })));
+  $$('.sheet-tab').forEach(tab=>tab.addEventListener('click',()=>{$$('.sheet-tab').forEach(x=>x.classList.remove('active'));tab.classList.add('active');toast('已切换到“'+tab.textContent+'”工作表预览')}));
+
+  function activateWorkspace(view){
+    $$('.workspace-tab').forEach(x=>x.classList.remove('active'));$$('.workspace-view').forEach(x=>x.classList.remove('active'));
+    const tab=$$('.workspace-tab').find(x=>x.dataset.workspaceView===view);if(tab)tab.classList.add('active');
+    const page=$('#view-'+view);if(page)page.classList.add('active');$('#model-drawer').classList.remove('open');$('#workspace').classList.remove('drawer-open');
+  }
+  $$('.workspace-tab').forEach(btn=>btn.addEventListener('click',()=>activateWorkspace(btn.dataset.workspaceView)));
+  $('#workspace').appendChild($('#model-drawer'));
+
+  function openDrawer(item){
+    if(!item)return;
+    $$('.config-row').forEach(x=>x.classList.toggle('active',x===item));
+    $('#drawer-name').value=item.dataset.name;$('#drawer-category').value=item.dataset.category;$('#drawer-module').value=item.dataset.module;$('#drawer-type').value=item.dataset.type;$('#drawer-formula').textContent=item.dataset.formula;$('#drawer-code').textContent=item.dataset.code;
+    $('#model-drawer').classList.add('open');$('#workspace').classList.add('drawer-open');
+  }
+  $$('.config-row').forEach(row=>row.addEventListener('click',()=>openDrawer(row)));
+  $('#drawer-close').addEventListener('click',()=>{$('#model-drawer').classList.remove('open');$('#workspace').classList.remove('drawer-open')});
+  $$('.calculate-model').forEach(btn=>btn.addEventListener('click',()=>{
+    const el=$('#compile-status');btn.disabled=true;btn.textContent='计算中…';el.textContent='正在生成计算结果…';
+    setTimeout(()=>{el.textContent='✓ 与当前配置一致';$$('.calculate-model').forEach(x=>{x.disabled=false;x.textContent='保存并计算'});toast('配置已保存，计算完成：18 个行项目，0 个错误，1 个待确认事项');activateWorkspace('result')},650);
+  }));
+  $('#back-to-config').addEventListener('click',()=>activateWorkspace('config'));
+  $('#save-project').addEventListener('click',()=>{
+    const name=window.__activeProjectName||$('#workspace-project-title').textContent;
+    const tableBody=$('#project-master-table tbody');
+    const exists=[...tableBody.querySelectorAll('tr')].some(row=>row.dataset.projectName===name);
+    if(!exists){
+      const row=document.createElement('tr');row.dataset.projectName=name;
+      ['PRJ-2026-005',name,'待填写','互联网电视事业部','王敏','2026-08—2027-07'].forEach(value=>{const cell=document.createElement('td');cell.textContent=value;row.appendChild(cell)});
+      const statusCell=document.createElement('td');statusCell.innerHTML='<span class="status">测算中</span>';row.appendChild(statusCell);
+      const actionCell=document.createElement('td'),action=document.createElement('button');action.className='action-link master-project-link';action.dataset.projectName=name;action.textContent='查看项目';actionCell.appendChild(action);row.appendChild(actionCell);tableBody.appendChild(row);
+      toast('项目已保存，并自动登记到项目主数据');
+    }else toast('项目已保存，项目主数据已同步');
+  });
+  $('#project-master-table').addEventListener('click',e=>{const btn=e.target.closest('.master-project-link');if(btn)showWorkspace(btn.dataset.projectName)});
+  $('#swap-pivot').addEventListener('click',()=>{
+    const projectView=$('#pivot-projects'),monthView=$('#pivot-months'),swapped=!projectView.classList.contains('swap-view');
+    projectView.classList.toggle('swap-view',swapped);monthView.classList.toggle('swap-view',!swapped);
+    $('#row-dimension').selectedIndex=swapped?1:0;$('#column-dimension').selectedIndex=swapped?1:0;
+    toast(swapped?'已切换为年月在行':'已切换为部门与项目在行');
+  });
+  $$('.metric-row').forEach(row=>row.addEventListener('click',()=>toast('已显示“'+row.children[1].textContent+'”的公式与解释')));
+
+  const scenarios={
+    base:{label:'基准方案',gameRevenue:'426.6',revenue:'640.8',cost:'436.2',profit:'204.6',profitText:'204.6 万 / 31.9%',funding:'128.5',positive:'2027-04',margin:'31.9%',conclusion:'基准方案下，项目周期收入为 640.8 万元，毛利为 204.6 万元，毛利率 31.9%。受客户三个月回款账期影响，预计最大垫资为 128.5 万元，累计现金流于 2027 年 4 月转正。'},
+    up:{label:'乐观方案',gameRevenue:'546.4',revenue:'782.4',cost:'469.6',profit:'312.8',profitText:'312.8 万 / 40.0%',funding:'112.2',positive:'2027-02',margin:'40.0%',conclusion:'乐观方案下，用户增长高于基准，项目周期收入为 782.4 万元，毛利为 312.8 万元，毛利率 40.0%。资金占用下降，预计累计现金流于 2027 年 2 月转正。'},
+    down:{label:'审慎方案',gameRevenue:'345.1',revenue:'544.7',cost:'432.3',profit:'112.4',profitText:'112.4 万 / 20.6%',funding:'156.7',positive:'2027-06',margin:'20.6%',conclusion:'审慎方案下，项目周期收入为 544.7 万元，毛利为 112.4 万元，毛利率 20.6%。最大垫资上升至 156.7 万元，预计累计现金流于 2027 年 6 月转正。'}
+  };
+  $('#forecast-scenario').addEventListener('change',e=>{
+    const d=scenarios[e.target.value];['gameRevenue','revenue','cost'].forEach(k=>$('[data-value="'+k+'"]').textContent=d[k]);$('[data-value="profit"]').textContent=d.profit;$('[data-value="funding"]').textContent='-'+d.funding+' 最低';
+    $('[data-metric="revenue"]').textContent=d.revenue+' 万';$('[data-metric="cost"]').textContent=d.cost+' 万';$('[data-metric="profit"]').textContent=d.profitText;$('[data-metric="funding"]').textContent=d.funding+' 万';$('[data-metric="positive"]').textContent=d.positive;$('#slice-label').textContent=d.label+' · 工作版';toast('已切换'+d.label);
+  });
+  $('#report-scenario').addEventListener('change',e=>{
+    const d=scenarios[e.target.value];$('#report-scenario-label').textContent=d.label;$('#r-revenue').textContent=d.revenue;$('#r-cost').textContent=d.cost;$('#r-profit').textContent=d.profit;$('#r-margin').textContent=d.margin;$('#r-funding').textContent=d.funding;$('#report-conclusion').textContent=d.conclusion;
+  });
+</script>
+</body>
+</html>

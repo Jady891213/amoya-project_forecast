@@ -1,0 +1,14 @@
+node_modules/
+dist/
+dist-singlefile/
+.playwright-cli/
+output/
+coverage/
+*.tsbuildinfo
+.DS_Store
+*.log
+*.sqlite
+*.sqlite3
+.env
+.env.*
+!.env.example
