@@ -1,5 +1,6 @@
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm'
 import type { DatabaseClient, SqlStatement, StorageRuntimeInfo } from '../types'
+import { CURRENT_SCHEMA_VERSION } from './migrations'
 
 export class PortableSqliteClient implements DatabaseClient {
   private constructor(
@@ -70,7 +71,11 @@ export class PortableSqliteClient implements DatabaseClient {
         rowMode: 0,
         callback: (row: unknown[]) => { versions.push(Number(row[0])) },
       })
-      if (versions[0] !== 1) {
+      if (
+        !Number.isInteger(versions[0]) ||
+        versions[0] < 1 ||
+        versions[0] > CURRENT_SCHEMA_VERSION
+      ) {
         throw new Error('数据库结构版本不受当前应用支持')
       }
     } finally {

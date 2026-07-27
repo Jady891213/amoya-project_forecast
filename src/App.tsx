@@ -23,7 +23,7 @@ import { DimensionRepository } from './repositories/dimensionRepository'
 import { FactRepository } from './repositories/factRepository'
 import { MetricRepository } from './repositories/metricRepository'
 import { ProjectRepository } from './repositories/projectRepository'
-import { DemoDatasetService } from './services/demoDatasetService'
+import { ReferenceDatasetService } from './services/referenceDatasetService'
 import { DatabaseBackupService } from './services/databaseBackupService'
 import { ProjectCenterPage } from './pages/ProjectCenterPage'
 import { DataFoundationPage } from './pages/DataFoundationPage'
@@ -52,7 +52,6 @@ const emptySnapshot: AppSnapshot = {
   versions: [],
   metrics: [],
   facts: [],
-  demoState: 'missing',
   storage: bootStorage,
 }
 
@@ -90,8 +89,7 @@ export default function App() {
     if (!client) return
     const projectsRepo = new ProjectRepository(client)
     const dimensions = new DimensionRepository(client)
-    const demo = new DemoDatasetService(client)
-    const [departments, projects, periods, scenarios, versions, metrics, facts, demoState] =
+    const [departments, projects, periods, scenarios, versions, metrics, facts] =
       await Promise.all([
         new DepartmentRepository(client).list(),
         projectsRepo.list(),
@@ -100,7 +98,6 @@ export default function App() {
         dimensions.listVersions(),
         new MetricRepository(client).list(),
         new FactRepository(client).list(),
-        demo.getState(),
       ])
     const moduleGroups = await Promise.all(projects.map((project) => projectsRepo.listModules(project.id)))
     setSnapshot({
@@ -112,7 +109,6 @@ export default function App() {
       versions,
       metrics,
       facts,
-      demoState,
       storage: { ...client.runtime },
     })
   }, [database])
@@ -127,7 +123,7 @@ export default function App() {
           await client.close()
           return
         }
-        await new DemoDatasetService(client).ensureInitialized()
+        await new ReferenceDatasetService(client).ensureInitialized()
         if (!cancelled) {
           setDatabase(client)
           await refresh(client)
@@ -176,7 +172,7 @@ export default function App() {
   }
 
   if (loading) {
-    return <div className="app-loading"><Database size={30} /><h1>正在启动 SQLite 数据基座</h1><p>加载 WASM、校验数据库结构并初始化演示数据…</p></div>
+    return <div className="app-loading"><Database size={30} /><h1>正在启动 SQLite 数据基座</h1><p>加载 WASM、校验数据库结构并初始化基础数据…</p></div>
   }
   if (fatalError || !database) {
     return <div className="app-loading error-state"><Database size={30} /><h1>应用初始化失败</h1><p>{fatalError}</p><button className="btn primary" onClick={() => window.location.reload()}>重新加载</button></div>
@@ -226,7 +222,7 @@ export default function App() {
               <b><HardDrive size={14} /> {snapshot.storage.label}</b>
               <span>SQLite {snapshot.storage.sqliteVersion}</span>
               <span>Schema v{snapshot.storage.schemaVersion}</span>
-              <span>真实项目 {snapshot.projects.filter((item) => item.origin === 'user').length} 个</span>
+              <span>项目 {snapshot.projects.length} 个</span>
               <span>基础事实 {snapshot.facts.length} 条</span>
             </div>
           </aside>

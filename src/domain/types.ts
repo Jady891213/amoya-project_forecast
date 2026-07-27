@@ -9,7 +9,7 @@ export type VersionStatus = 'working' | 'snapshot'
 
 export const BASELINE_SCENARIO_CODE = 'baseline'
 export const WORKING_VERSION_CODE = 'working'
-export const DEMO_DATASET_ID = 'p0-demo-v1'
+export const REFERENCE_DATASET_ID = 'p0-reference-v2'
 
 export type BaseMetricCode =
   | 'revenue'
@@ -74,23 +74,23 @@ export interface PeriodDimension {
   sortKey: number
 }
 
-export interface Scenario extends OriginFields {
+export interface Scenario {
   id: string
-  projectId: string
   code: string
   name: string
   isDefault: boolean
+  origin: 'system'
   createdAt: string
   updatedAt: string
 }
 
-export interface Version extends OriginFields {
+export interface Version {
   id: string
-  projectId: string
   code: string
   name: string
   status: VersionStatus
   isMutable: boolean
+  origin: 'system'
   createdAt: string
   updatedAt: string
 }

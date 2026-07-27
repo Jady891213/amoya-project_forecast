@@ -1,7 +1,7 @@
 import { SYSTEM_METRICS } from '../../domain/metrics'
 import { formatPeriod } from '../../domain/periods'
 import type { DatabaseClient, SqlStatement } from '../types'
-import { CURRENT_SCHEMA_VERSION, SCHEMA_V1 } from './migrations'
+import { CURRENT_SCHEMA_VERSION, SCHEMA_V1, SCHEMA_V2 } from './migrations'
 
 function periodStatements(): SqlStatement[] {
   const rows: SqlStatement[] = []
@@ -63,35 +63,69 @@ function metricStatements(): SqlStatement[] {
   }))
 }
 
+function globalDimensionStatements(now: string): SqlStatement[] {
+  return [
+    {
+      sql: `INSERT INTO dim_scenario
+        (id, code, name, is_default, origin, created_at, updated_at)
+        VALUES ('baseline', 'baseline', '基准场景', 1, 'system', ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          code = excluded.code, name = excluded.name,
+          is_default = excluded.is_default, updated_at = excluded.updated_at`,
+      params: [now, now],
+    },
+    {
+      sql: `INSERT INTO dim_version
+        (id, code, name, status, is_mutable, origin, created_at, updated_at)
+        VALUES ('working', 'working', '工作版', 'working', 1, 'system', ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          code = excluded.code, name = excluded.name, status = excluded.status,
+          is_mutable = excluded.is_mutable, updated_at = excluded.updated_at`,
+      params: [now, now],
+    },
+  ]
+}
+
 export async function initializeSqliteDatabase(
   database: DatabaseClient,
 ): Promise<void> {
-  await database.execute(SCHEMA_V1)
-  const migrations = await database.query<{ version: number }>(
-    'SELECT version FROM sys_schema_migration WHERE version = ?',
-    [CURRENT_SCHEMA_VERSION],
-  )
   const now = new Date().toISOString()
+  const migrationTable = await database.query<{ name: string }>(
+    `SELECT name FROM sqlite_master
+     WHERE type = 'table' AND name = 'sys_schema_migration'`,
+  )
+  if (migrationTable.length === 0) {
+    await database.execute(SCHEMA_V1)
+  }
+  const migrations = await database.query<{ version: number }>(
+    'SELECT version FROM sys_schema_migration ORDER BY version',
+  )
+  const applied = new Set(migrations.map((item) => item.version))
+  if (!applied.has(1)) {
+    await database.execute(
+      `INSERT INTO sys_schema_migration (version, description, applied_at)
+       VALUES (1, 'P0 SQLite维度、事实与指标模型', ?)`,
+      [now],
+    )
+  }
+  if (!applied.has(2)) {
+    await database.execute(SCHEMA_V2)
+    await database.execute(
+      `INSERT INTO sys_schema_migration (version, description, applied_at)
+       VALUES (2, '场景与版本调整为全局维度', ?)`,
+      [now],
+    )
+  }
   const statements = [
     ...periodStatements(),
     ...metricStatements(),
+    ...globalDimensionStatements(now),
     {
       sql: `INSERT OR REPLACE INTO sys_app_metadata (key, value, updated_at)
         VALUES ('database:version', ?, ?)`,
       params: [String(CURRENT_SCHEMA_VERSION), now],
     },
   ]
-  if (migrations.length === 0) {
-    statements.push({
-      sql: `INSERT INTO sys_schema_migration (version, description, applied_at)
-        VALUES (?, ?, ?)`,
-      params: [
-        CURRENT_SCHEMA_VERSION,
-        'P0 SQLite维度、事实与指标模型',
-        now,
-      ],
-    })
-  }
   await database.batch(statements)
   database.runtime.schemaVersion = CURRENT_SCHEMA_VERSION
 }

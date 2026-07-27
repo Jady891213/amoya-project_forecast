@@ -5,7 +5,6 @@ import type { Project, ProjectInput } from '../domain/types'
 import type { AppSnapshot } from '../app/types'
 import { ProjectRepository } from '../repositories/projectRepository'
 import { ProjectDialog } from '../ui/ProjectDialog'
-import { OriginBadge } from '../ui/OriginBadge'
 import { formatDateTime } from '../ui/formatters'
 
 interface ProjectCenterPageProps {
@@ -143,12 +142,12 @@ export function ProjectCenterPage({
             <b>{snapshot.projects.filter((item) => item.status === 'archived').length}</b>
           </span>
           <span>
-            真实项目
-            <b>{snapshot.projects.filter((item) => item.origin === 'user').length}</b>
+            已有事实
+            <b>{snapshot.projects.filter((project) => snapshot.facts.some((fact) => fact.projectId === project.id)).length}</b>
           </span>
           <span>
-            演示项目
-            <b>{snapshot.projects.filter((item) => item.origin === 'demo').length}</b>
+            暂无事实
+            <b>{snapshot.projects.filter((project) => !snapshot.facts.some((fact) => fact.projectId === project.id)).length}</b>
           </span>
         </div>
 
@@ -187,7 +186,6 @@ export function ProjectCenterPage({
                       {project.startPeriod}—{periodEnd(project.startPeriod, project.durationMonths)}
                     </td>
                     <td>
-                      <OriginBadge origin={project.origin} />
                       <span className="sub">{factCount > 0 ? `${factCount} 条事实` : '暂无事实'}</span>
                     </td>
                     <td>

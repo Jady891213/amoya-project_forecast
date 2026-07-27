@@ -9,7 +9,6 @@ import type {
 import type { AppSnapshot } from '../app/types'
 import { ProjectReportService } from '../services/projectReportService'
 import { formatPercent, formatReportPeriod, formatWan } from '../ui/formatters'
-import { OriginBadge } from '../ui/OriginBadge'
 
 type MonthlyField = keyof Omit<MonthlyMetricRow, 'period'>
 type ViewMode = 'calculation' | 'report'
@@ -87,12 +86,8 @@ export function ProjectReportPage({ database, snapshot, requestedProjectId, view
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const service = useMemo(() => new ProjectReportService(database), [database])
-  const scenario = snapshot.scenarios.find(
-    (item) => item.projectId === requestedProjectId && item.isDefault,
-  )
-  const version = snapshot.versions.find(
-    (item) => item.projectId === requestedProjectId && item.status === 'working',
-  )
+  const scenario = snapshot.scenarios.find((item) => item.isDefault)
+  const version = snapshot.versions.find((item) => item.status === 'working')
 
   useEffect(() => setBusinessModuleId(''), [requestedProjectId])
   useEffect(() => {
@@ -133,7 +128,7 @@ export function ProjectReportPage({ database, snapshot, requestedProjectId, view
           {view === 'calculation' ? <TableProperties size={16} /> : <FileChartColumn size={16} />}
           <div>
             <b>{view === 'calculation' ? '计算表格' : '项目报表'}</b>
-            <span>{view === 'calculation' ? 'Mock基础事实与系统计算指标只读预览' : '项目周期财务结果与指标说明'}</span>
+            <span>{view === 'calculation' ? '基础事实与系统计算指标只读预览' : '项目周期财务结果与指标说明'}</span>
           </div>
         </div>
         <span className="spacer" />
@@ -147,7 +142,6 @@ export function ProjectReportPage({ database, snapshot, requestedProjectId, view
         <span className="readonly-mark">{report.version.name}</span>
       </div>
       <div className="project-facts">
-        <div><span>来源</span><OriginBadge origin={report.project.origin} /></div>
         <div><span>部门</span><strong>{report.department?.name ?? '未找到部门'}</strong></div>
         <div><span>场景</span><strong>{report.scenario.name}</strong></div>
         <div><span>版本</span><strong>{report.version.name}</strong></div>
@@ -157,7 +151,7 @@ export function ProjectReportPage({ database, snapshot, requestedProjectId, view
         <section className="empty-report-card workspace-empty">
           <Calculator size={34} />
           <h2>当前项目尚无事实数据</h2>
-          <p>P0 不会为真实项目生成虚假结果。预测配置将在后续阶段把用户输入转换为同一套基础事实。</p>
+          <p>当前项目尚未录入基础事实。后续预测配置会把项目参数转换为同一套分月事实数据。</p>
         </section>
       ) : (
         <div className="report-scroll">

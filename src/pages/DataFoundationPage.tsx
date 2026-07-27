@@ -7,16 +7,12 @@ import {
   Milestone,
   PackageOpen,
   Plus,
-  RotateCcw,
-  Trash2,
 } from 'lucide-react'
 import type { DatabaseClient } from '../storage/types'
 import type { AppSnapshot } from '../app/types'
 import type { Department } from '../domain/types'
 import { DepartmentRepository } from '../repositories/departmentRepository'
-import { DemoDatasetService } from '../services/demoDatasetService'
 import { DepartmentDialog } from '../ui/DepartmentDialog'
-import { OriginBadge } from '../ui/OriginBadge'
 import { formatDateTime } from '../ui/formatters'
 
 type DataTab = 'projects' | 'departments' | 'modules' | 'periods' | 'scenarios' | 'versions'
@@ -26,8 +22,8 @@ const tabs = [
   { key: 'departments' as const, label: '部门', note: '可新增、编辑与停用', icon: Building2 },
   { key: 'modules' as const, label: '业务模块', note: '项目级清单，只读查看', icon: Layers3 },
   { key: 'periods' as const, label: '期间', note: '2020-01 至 2035-12', icon: CalendarRange },
-  { key: 'scenarios' as const, label: '场景', note: 'P0 每项目一个基准场景', icon: GitBranch },
-  { key: 'versions' as const, label: '版本', note: 'P0 每项目一个工作版', icon: Milestone },
+  { key: 'scenarios' as const, label: '场景', note: '平台级场景维度', icon: GitBranch },
+  { key: 'versions' as const, label: '版本', note: '平台级版本维度', icon: Milestone },
 ]
 
 interface Props {
@@ -44,7 +40,6 @@ export function DataFoundationPage({ database, snapshot, onRefresh, onOpenReport
   const [selectedYear, setSelectedYear] = useState(2026)
   const [pageError, setPageError] = useState('')
   const departments = useMemo(() => new DepartmentRepository(database), [database])
-  const demo = useMemo(() => new DemoDatasetService(database), [database])
   const projectName = (id: string) =>
     snapshot.projects.find((project) => project.id === id)?.name ?? '未知项目'
   const departmentName = (id: string) =>
@@ -69,22 +64,6 @@ export function DataFoundationPage({ database, snapshot, onRefresh, onOpenReport
           <h1>主数据管理</h1>
           <p>只维护六类业务维度；事实与计算结果回到具体项目中查看。</p>
         </div>
-        <div className="page-head-actions">
-          <button className="btn" onClick={() => run(() => demo.initialize())}>
-            <RotateCcw size={14} /> 重置演示数据
-          </button>
-          <button
-            className="btn danger"
-            disabled={snapshot.demoState !== 'initialized'}
-            onClick={() => {
-              if (window.confirm('确认清除全部演示数据？用户数据不会被删除。')) {
-                void run(() => demo.clear())
-              }
-            }}
-          >
-            <Trash2 size={14} /> 清除演示数据
-          </button>
-        </div>
       </header>
       <div className="page-body">
         <div className="master-summary">
@@ -92,7 +71,7 @@ export function DataFoundationPage({ database, snapshot, onRefresh, onOpenReport
           <div className="master-summary-item"><span>部门</span><b>{snapshot.departments.length}</b><small>dim_department</small></div>
           <div className="master-summary-item"><span>业务模块</span><b>{snapshot.modules.length}</b><small>含每项目公共模块</small></div>
           <div className="master-summary-item"><span>期间</span><b>{snapshot.periods.length}</b><small>dim_period</small></div>
-          <div className="master-summary-item"><span>演示数据集</span><b>{snapshot.demoState === 'initialized' ? '已加载' : '已清除'}</b><small>p0-demo-v1</small></div>
+          <div className="master-summary-item"><span>场景 / 版本</span><b>{snapshot.scenarios.length} / {snapshot.versions.length}</b><small>平台级分析维度</small></div>
         </div>
         {pageError && <div className="page-alert">{pageError}</div>}
         <section className="master-layout">
@@ -132,10 +111,10 @@ export function DataFoundationPage({ database, snapshot, onRefresh, onOpenReport
             <div className="table-wrap tall-table">
               {activeTab === 'projects' && (
                 <table>
-                  <thead><tr><th>来源</th><th>项目编码</th><th>项目名称</th><th>客户</th><th>部门</th><th>负责人</th><th>开始期间</th><th>月数</th><th>状态</th><th>操作</th></tr></thead>
+                  <thead><tr><th>项目编码</th><th>项目名称</th><th>客户</th><th>部门</th><th>负责人</th><th>开始期间</th><th>月数</th><th>状态</th><th>操作</th></tr></thead>
                   <tbody>{snapshot.projects.map((project) => (
                     <tr key={project.id}>
-                      <td><OriginBadge origin={project.origin} /></td><td>{project.code ?? '—'}</td>
+                      <td>{project.code ?? '—'}</td>
                       <td className="strong-cell">{project.name}</td><td>{project.customer || '—'}</td>
                       <td>{departmentName(project.departmentId)}</td><td>{project.owner || '—'}</td>
                       <td>{project.startPeriod}</td><td>{project.durationMonths}</td>
@@ -147,10 +126,10 @@ export function DataFoundationPage({ database, snapshot, onRefresh, onOpenReport
               )}
               {activeTab === 'departments' && (
                 <table>
-                  <thead><tr><th>来源</th><th>部门编码</th><th>部门名称</th><th>状态</th><th>更新时间</th><th>操作</th></tr></thead>
+                  <thead><tr><th>部门编码</th><th>部门名称</th><th>状态</th><th>更新时间</th><th>操作</th></tr></thead>
                   <tbody>{snapshot.departments.map((department) => (
                     <tr key={department.id}>
-                      <td><OriginBadge origin={department.origin} /></td><td>{department.code}</td>
+                      <td>{department.code}</td>
                       <td className="strong-cell">{department.name}</td>
                       <td><span className={`status status-${department.status}`}>{department.status === 'active' ? '启用' : '停用'}</span></td>
                       <td>{formatDateTime(department.updatedAt)}</td>
@@ -164,9 +143,9 @@ export function DataFoundationPage({ database, snapshot, onRefresh, onOpenReport
               )}
               {activeTab === 'modules' && (
                 <table>
-                  <thead><tr><th>来源</th><th>项目</th><th>模块编码</th><th>模块名称</th><th>类型</th></tr></thead>
+                  <thead><tr><th>项目</th><th>模块编码</th><th>模块名称</th><th>类型</th></tr></thead>
                   <tbody>{snapshot.modules.map((module) => (
-                    <tr key={module.id}><td><OriginBadge origin={module.origin} /></td><td>{projectName(module.projectId)}</td><td>{module.code}</td><td className="strong-cell">{module.name}</td><td>{module.isCommon ? '系统公共模块' : '项目业务模块'}</td></tr>
+                    <tr key={module.id}><td>{projectName(module.projectId)}</td><td>{module.code}</td><td className="strong-cell">{module.name}</td><td>{module.isCommon ? '系统公共模块' : '项目业务模块'}</td></tr>
                   ))}</tbody>
                 </table>
               )}
@@ -180,17 +159,17 @@ export function DataFoundationPage({ database, snapshot, onRefresh, onOpenReport
               )}
               {activeTab === 'scenarios' && (
                 <table>
-                  <thead><tr><th>来源</th><th>项目</th><th>场景编码</th><th>场景名称</th><th>默认场景</th></tr></thead>
+                  <thead><tr><th>场景编码</th><th>场景名称</th><th>默认场景</th><th>维护方式</th></tr></thead>
                   <tbody>{snapshot.scenarios.map((scenario) => (
-                    <tr key={scenario.id}><td><OriginBadge origin={scenario.origin} /></td><td>{projectName(scenario.projectId)}</td><td>{scenario.code}</td><td className="strong-cell">{scenario.name}</td><td>{scenario.isDefault ? '是' : '否'}</td></tr>
+                    <tr key={scenario.id}><td>{scenario.code}</td><td className="strong-cell">{scenario.name}</td><td>{scenario.isDefault ? '是' : '否'}</td><td>系统内置</td></tr>
                   ))}</tbody>
                 </table>
               )}
               {activeTab === 'versions' && (
                 <table>
-                  <thead><tr><th>来源</th><th>项目</th><th>版本编码</th><th>版本名称</th><th>类型</th><th>可修改</th></tr></thead>
+                  <thead><tr><th>版本编码</th><th>版本名称</th><th>类型</th><th>可修改</th><th>维护方式</th></tr></thead>
                   <tbody>{snapshot.versions.map((version) => (
-                    <tr key={version.id}><td><OriginBadge origin={version.origin} /></td><td>{projectName(version.projectId)}</td><td>{version.code}</td><td className="strong-cell">{version.name}</td><td>{version.status === 'working' ? '工作版本' : '只读快照'}</td><td>{version.isMutable ? '是' : '否'}</td></tr>
+                    <tr key={version.id}><td>{version.code}</td><td className="strong-cell">{version.name}</td><td>{version.status === 'working' ? '工作版本' : '只读快照'}</td><td>{version.isMutable ? '是' : '否'}</td><td>系统内置</td></tr>
                   ))}</tbody>
                 </table>
               )}

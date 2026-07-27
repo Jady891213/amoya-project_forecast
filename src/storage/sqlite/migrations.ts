@@ -1,4 +1,4 @@
-export const CURRENT_SCHEMA_VERSION = 1
+export const CURRENT_SCHEMA_VERSION = 2
 
 export const SCHEMA_V1 = `
 PRAGMA foreign_keys = ON;
@@ -144,4 +144,94 @@ CREATE INDEX IF NOT EXISTS idx_fact_project_query
   ON fact_metric_value(project_id, scenario_id, version_id, period);
 CREATE INDEX IF NOT EXISTS idx_demo_project ON dim_project(dataset_id);
 CREATE INDEX IF NOT EXISTS idx_demo_fact ON fact_metric_value(dataset_id);
+`
+
+export const SCHEMA_V2 = `
+PRAGMA foreign_keys = OFF;
+BEGIN IMMEDIATE;
+
+CREATE TABLE dim_scenario_v2 (
+  id TEXT PRIMARY KEY,
+  code TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1)),
+  origin TEXT NOT NULL DEFAULT 'system' CHECK (origin = 'system'),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE dim_version_v2 (
+  id TEXT PRIMARY KEY,
+  code TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('working', 'snapshot')),
+  is_mutable INTEGER NOT NULL DEFAULT 1 CHECK (is_mutable IN (0, 1)),
+  origin TEXT NOT NULL DEFAULT 'system' CHECK (origin = 'system'),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+INSERT INTO dim_scenario_v2
+  (id, code, name, is_default, origin, created_at, updated_at)
+VALUES
+  ('baseline', 'baseline', '基准场景', 1, 'system',
+   '2026-07-28T00:00:00.000Z', '2026-07-28T00:00:00.000Z');
+
+INSERT INTO dim_version_v2
+  (id, code, name, status, is_mutable, origin, created_at, updated_at)
+VALUES
+  ('working', 'working', '工作版', 'working', 1, 'system',
+   '2026-07-28T00:00:00.000Z', '2026-07-28T00:00:00.000Z');
+
+CREATE TABLE fact_metric_value_v2 (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES dim_project(id) ON DELETE CASCADE,
+  department_id TEXT NOT NULL REFERENCES dim_department(id),
+  business_module_id TEXT NOT NULL REFERENCES dim_business_module(id) ON DELETE CASCADE,
+  period TEXT NOT NULL REFERENCES dim_period(period),
+  scenario_id TEXT NOT NULL REFERENCES dim_scenario_v2(id),
+  version_id TEXT NOT NULL REFERENCES dim_version_v2(id),
+  metric_code TEXT NOT NULL REFERENCES dim_metric(code),
+  value_text TEXT NOT NULL,
+  source_label TEXT NOT NULL DEFAULT '',
+  origin TEXT NOT NULL CHECK (origin IN ('user', 'demo')),
+  dataset_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (
+    project_id,
+    department_id,
+    business_module_id,
+    period,
+    scenario_id,
+    version_id,
+    metric_code
+  )
+);
+
+INSERT INTO fact_metric_value_v2 (
+  id, project_id, department_id, business_module_id, period,
+  scenario_id, version_id, metric_code, value_text, source_label,
+  origin, dataset_id, created_at, updated_at
+)
+SELECT
+  id, project_id, department_id, business_module_id, period,
+  'baseline', 'working', metric_code, value_text, source_label,
+  origin, dataset_id, created_at, updated_at
+FROM fact_metric_value;
+
+DROP TABLE fact_metric_value;
+DROP TABLE dim_scenario;
+DROP TABLE dim_version;
+
+ALTER TABLE dim_scenario_v2 RENAME TO dim_scenario;
+ALTER TABLE dim_version_v2 RENAME TO dim_version;
+ALTER TABLE fact_metric_value_v2 RENAME TO fact_metric_value;
+
+CREATE INDEX idx_fact_project_query
+  ON fact_metric_value(project_id, scenario_id, version_id, period);
+CREATE INDEX idx_demo_fact ON fact_metric_value(dataset_id);
+
+COMMIT;
+PRAGMA foreign_keys = ON;
 `

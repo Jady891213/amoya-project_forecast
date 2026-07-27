@@ -2,6 +2,7 @@
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm'
 import type { SqliteRequest, SqliteResponse } from './protocol'
 import type { StorageRuntimeInfo } from '../types'
+import { CURRENT_SCHEMA_VERSION } from './migrations'
 
 const scope = self as unknown as DedicatedWorkerGlobalScope
 const DATABASE_FILENAME = '/project-forecast-p0.sqlite3'
@@ -80,7 +81,11 @@ async function importDatabase(bytes: Uint8Array) {
         versions.push(Number(row[0]))
       },
     })
-    if (versions[0] !== 1) {
+    if (
+      !Number.isInteger(versions[0]) ||
+      versions[0] < 1 ||
+      versions[0] > CURRENT_SCHEMA_VERSION
+    ) {
       throw new Error('数据库结构版本不受当前应用支持')
     }
   } finally {

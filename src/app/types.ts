@@ -19,6 +19,5 @@ export interface AppSnapshot {
   versions: Version[]
   metrics: MetricDefinition[]
   facts: BaseFact[]
-  demoState: 'initialized' | 'cleared' | 'missing'
   storage: StorageRuntimeInfo
 }

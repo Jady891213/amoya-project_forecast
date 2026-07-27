@@ -36,11 +36,11 @@ export class DimensionRepository {
     return this.projects.listModules(projectId)
   }
 
-  listScenarios(projectId?: string): Promise<Scenario[]> {
-    return this.projects.listScenarios(projectId)
+  listScenarios(): Promise<Scenario[]> {
+    return this.projects.listScenarios()
   }
 
-  listVersions(projectId?: string): Promise<Version[]> {
-    return this.projects.listVersions(projectId)
+  listVersions(): Promise<Version[]> {
+    return this.projects.listVersions()
   }
 }

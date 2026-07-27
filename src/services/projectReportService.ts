@@ -27,15 +27,15 @@ export class ProjectReportService {
       await Promise.all([
         this.departments.get(project.departmentId),
         this.projects.listModules(project.id),
-        this.projects.listScenarios(project.id),
-        this.projects.listVersions(project.id),
+        this.projects.listScenarios(),
+        this.projects.listVersions(),
         this.metrics.list(),
         this.facts.query(query),
       ])
     const scenario = scenarios.find((item) => item.id === query.scenarioId)
     const version = versions.find((item) => item.id === query.versionId)
-    if (!scenario) throw new Error('场景不存在或不属于当前项目')
-    if (!version) throw new Error('版本不存在或不属于当前项目')
+    if (!scenario) throw new Error('场景不存在')
+    if (!version) throw new Error('版本不存在')
 
     const selectedModule = query.businessModuleId
       ? modules.find((module) => module.id === query.businessModuleId)

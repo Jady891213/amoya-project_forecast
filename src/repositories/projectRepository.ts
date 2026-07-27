@@ -6,10 +6,6 @@ import type {
   Scenario,
   Version,
 } from '../domain/types'
-import {
-  BASELINE_SCENARIO_CODE,
-  WORKING_VERSION_CODE,
-} from '../domain/types'
 
 interface ProjectRow {
   id: string
@@ -43,25 +39,21 @@ interface ModuleRow {
 
 interface ScenarioRow {
   id: string
-  project_id: string
   code: string
   name: string
   is_default: number
   origin: Scenario['origin']
-  dataset_id: string | null
   created_at: string
   updated_at: string
 }
 
 interface VersionRow {
   id: string
-  project_id: string
   code: string
   name: string
   status: Version['status']
   is_mutable: number
   origin: Version['origin']
-  dataset_id: string | null
   created_at: string
   updated_at: string
 }
@@ -103,12 +95,10 @@ function moduleFromRow(row: ModuleRow): ProjectModule {
 export function scenarioFromRow(row: ScenarioRow): Scenario {
   return {
     id: row.id,
-    projectId: row.project_id,
     code: row.code,
     name: row.name,
     isDefault: Boolean(row.is_default),
     origin: row.origin,
-    datasetId: row.dataset_id ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
@@ -117,13 +107,11 @@ export function scenarioFromRow(row: ScenarioRow): Scenario {
 export function versionFromRow(row: VersionRow): Version {
   return {
     id: row.id,
-    projectId: row.project_id,
     code: row.code,
     name: row.name,
     status: row.status,
     isMutable: Boolean(row.is_mutable),
     origin: row.origin,
-    datasetId: row.dataset_id ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
@@ -174,22 +162,18 @@ export class ProjectRepository {
     ).map(moduleFromRow)
   }
 
-  async listScenarios(projectId?: string): Promise<Scenario[]> {
+  async listScenarios(): Promise<Scenario[]> {
     const rows = await this.database.query<ScenarioRow>(
       `SELECT * FROM dim_scenario
-       ${projectId ? 'WHERE project_id = ?' : ''}
-       ORDER BY project_id, is_default DESC, code`,
-      projectId ? [projectId] : [],
+       ORDER BY is_default DESC, code`,
     )
     return rows.map(scenarioFromRow)
   }
 
-  async listVersions(projectId?: string): Promise<Version[]> {
+  async listVersions(): Promise<Version[]> {
     const rows = await this.database.query<VersionRow>(
       `SELECT * FROM dim_version
-       ${projectId ? 'WHERE project_id = ?' : ''}
-       ORDER BY project_id, status, code`,
-      projectId ? [projectId] : [],
+       ORDER BY status, code`,
     )
     return rows.map(versionFromRow)
   }
@@ -229,7 +213,6 @@ export class ProjectRepository {
     }
 
     const existing = input.id ? await this.get(input.id) : undefined
-    if (existing?.origin === 'demo') throw new Error('演示项目为只读数据')
     const projectId = existing?.id ?? crypto.randomUUID()
     const now = new Date().toISOString()
     const project: Project = {
@@ -329,34 +312,6 @@ export class ProjectRepository {
         }),
       )
 
-    statements.push(
-      {
-        sql: `INSERT OR IGNORE INTO dim_scenario (
-          id, project_id, code, name, is_default, origin, dataset_id,
-          created_at, updated_at
-        ) VALUES (?, ?, ?, '基准场景', 1, 'user', NULL, ?, ?)`,
-        params: [
-          `${projectId}:${BASELINE_SCENARIO_CODE}`,
-          projectId,
-          BASELINE_SCENARIO_CODE,
-          now,
-          now,
-        ],
-      },
-      {
-        sql: `INSERT OR IGNORE INTO dim_version (
-          id, project_id, code, name, status, is_mutable, origin, dataset_id,
-          created_at, updated_at
-        ) VALUES (?, ?, ?, '工作版', 'working', 1, 'user', NULL, ?, ?)`,
-        params: [
-          `${projectId}:${WORKING_VERSION_CODE}`,
-          projectId,
-          WORKING_VERSION_CODE,
-          now,
-          now,
-        ],
-      },
-    )
     await this.database.batch(statements)
     return project
   }
@@ -372,7 +327,6 @@ export class ProjectRepository {
   private async setStatus(id: string, status: Project['status']): Promise<Project> {
     const project = await this.get(id)
     if (!project) throw new Error('项目不存在')
-    if (project.origin === 'demo') throw new Error('演示项目为只读数据')
     const updatedAt = new Date().toISOString()
     await this.database.execute(
       'UPDATE dim_project SET status = ?, updated_at = ? WHERE id = ?',
