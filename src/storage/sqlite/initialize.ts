@@ -1,7 +1,12 @@
 import { SYSTEM_METRICS } from '../../domain/metrics'
 import { formatPeriod } from '../../domain/periods'
 import type { DatabaseClient, SqlStatement } from '../types'
-import { CURRENT_SCHEMA_VERSION, SCHEMA_V1, SCHEMA_V2 } from './migrations'
+import {
+  CURRENT_SCHEMA_VERSION,
+  SCHEMA_V1,
+  SCHEMA_V2,
+  SCHEMA_V3,
+} from './migrations'
 
 function periodStatements(): SqlStatement[] {
   const rows: SqlStatement[] = []
@@ -113,6 +118,14 @@ export async function initializeSqliteDatabase(
     await database.execute(
       `INSERT INTO sys_schema_migration (version, description, applied_at)
        VALUES (2, '场景与版本调整为全局维度', ?)`,
+      [now],
+    )
+  }
+  if (!applied.has(3)) {
+    await database.execute(SCHEMA_V3)
+    await database.execute(
+      `INSERT INTO sys_schema_migration (version, description, applied_at)
+       VALUES (3, 'P1A预测配置、行项目事实与计算批次', ?)`,
       [now],
     )
   }

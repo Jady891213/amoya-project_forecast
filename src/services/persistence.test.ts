@@ -1,12 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { initializeSqliteDatabase } from '../storage/sqlite/initialize'
-import { SCHEMA_V1 } from '../storage/sqlite/migrations'
+import { SCHEMA_V1, SCHEMA_V2 } from '../storage/sqlite/migrations'
 import { DepartmentRepository } from '../repositories/departmentRepository'
 import { ProjectRepository } from '../repositories/projectRepository'
 import { FactRepository } from '../repositories/factRepository'
 import { ReferenceDatasetService } from './referenceDatasetService'
 import { ProjectReportService } from './projectReportService'
 import { NodeSqliteClient } from '../test/nodeSqliteClient'
+import { CalculationService } from './calculationService'
+import { ForecastLineValueRepository } from '../repositories/forecastLineValueRepository'
 
 let database: NodeSqliteClient
 
@@ -35,14 +37,18 @@ describe('SQLite repositories and reference data isolation', () => {
         'dim_scenario',
         'dim_version',
         'dim_metric',
+        'cfg_forecast_line',
+        'cfg_forecast_value',
         'fact_metric_value',
+        'fact_forecast_line_value',
+        'sys_calculation_run',
         'sys_app_metadata',
         'sys_schema_migration',
       ]),
     )
     expect(
       await database.query('SELECT * FROM sys_schema_migration'),
-    ).toHaveLength(2)
+    ).toHaveLength(3)
   })
 
   it('Schema v1 可迁移为全局场景和版本维度', async () => {
@@ -63,6 +69,43 @@ describe('SQLite repositories and reference data isolation', () => {
     expect(versionColumns.some((column) => column.name === 'project_id')).toBe(false)
     expect(await legacy.query('SELECT * FROM dim_scenario')).toHaveLength(1)
     expect(await legacy.query('SELECT * FROM dim_version')).toHaveLength(1)
+    expect(
+      await legacy.query(
+        `SELECT name FROM sqlite_master
+         WHERE type = 'table' AND name = 'cfg_forecast_line'`,
+      ),
+    ).toHaveLength(1)
+    await legacy.close()
+  })
+
+  it('Schema v2 可迁移到预测配置和计算批次结构', async () => {
+    const legacy = await NodeSqliteClient.create()
+    await legacy.execute(SCHEMA_V1)
+    await legacy.execute(
+      `INSERT INTO sys_schema_migration (version, description, applied_at)
+       VALUES (1, 'legacy', '2026-07-27T00:00:00.000Z')`,
+    )
+    await legacy.execute(SCHEMA_V2)
+    await legacy.execute(
+      `INSERT INTO sys_schema_migration (version, description, applied_at)
+       VALUES (2, 'global dimensions', '2026-07-28T00:00:00.000Z')`,
+    )
+    await initializeSqliteDatabase(legacy)
+    expect(
+      await legacy.query('SELECT * FROM sys_schema_migration'),
+    ).toHaveLength(3)
+    const factColumns = await legacy.query<{ name: string }>(
+      'PRAGMA table_info(fact_metric_value)',
+    )
+    expect(
+      factColumns.some((column) => column.name === 'calculation_run_id'),
+    ).toBe(true)
+    const lineFactColumns = await legacy.query<{ name: string }>(
+      'PRAGMA table_info(fact_forecast_line_value)',
+    )
+    expect(lineFactColumns.map((column) => column.name)).toEqual(
+      expect.arrayContaining(['line_code', 'line_name', 'line_category']),
+    )
     await legacy.close()
   })
 
@@ -169,8 +212,181 @@ describe('SQLite repositories and reference data isolation', () => {
     })).rejects.toThrow('已存在')
   })
 
-  it('SQLite导出后可恢复全部项目与事实', async () => {
+  it('预测配置保存、计算、结果过期与项目隔离形成闭环', async () => {
     await new ReferenceDatasetService(database).initialize()
+    const projects = new ProjectRepository(database)
+    const project = await projects.get('project-hebei-unicom-cloud')
+    expect(project).toBeDefined()
+    const modules = await projects.listModules(project!.id)
+    const publicModule = modules.find((module) => module.isCommon)!
+    const cloudModule = modules.find((module) => module.code === 'CLOUD_GAME')!
+    const calculation = new CalculationService(database)
+    const result = await calculation.saveAndCalculate(project!.id, [
+      {
+        name: '云游戏包盘收入',
+        category: 'revenue',
+        businessModuleId: cloudModule.id,
+        forecastMethod: 'fixed_monthly',
+        startPeriod: '2026-08',
+        endPeriod: '2026-10',
+        fixedMonthlyValue: '200000',
+        assumption: '固定月收入',
+        sortOrder: 1,
+        monthlyValues: {},
+      },
+      {
+        name: '公共运营成本',
+        category: 'cost',
+        businessModuleId: publicModule.id,
+        forecastMethod: 'monthly_input',
+        startPeriod: '2026-08',
+        endPeriod: '2026-10',
+        assumption: '逐月填写',
+        sortOrder: 2,
+        monthlyValues: {
+          '2026-08': '80000',
+          '2026-09': '90000',
+        },
+      },
+    ])
+    expect(result.success).toBe(true)
+    expect(result.issues.some((issue) => issue.severity === 'warning')).toBe(true)
+    const state = await calculation.getProjectState(project!.id)
+    expect(state.lines).toHaveLength(2)
+    expect(state.isResultCurrent).toBe(true)
+    const breakdown = await new ForecastLineValueRepository(database).listBreakdown(
+      result.run.id,
+    )
+    expect(breakdown.map((item) => item.lineCode)).toEqual([
+      'LINE-001',
+      'LINE-002',
+    ])
+
+    const facts = await new FactRepository(database).list(project!.id)
+    expect(facts.every((fact) => fact.calculationRunId === result.run.id)).toBe(true)
+    expect(
+      facts
+        .filter((fact) => fact.metricCode === 'revenue')
+        .reduce((sum, fact) => sum + Number(fact.value), 0),
+    ).toBe(600000)
+    expect(
+      facts
+        .filter((fact) => fact.metricCode === 'cost')
+        .reduce((sum, fact) => sum + Number(fact.value), 0),
+    ).toBe(170000)
+
+    const otherFacts = await new FactRepository(database).list(
+      'project-hebei-cable-iptv',
+    )
+    expect(otherFacts).toHaveLength(20)
+
+    const drafts = state.lines.map((line) => ({
+      id: line.id,
+      code: line.code,
+      name: line.name,
+      category: line.category,
+      businessModuleId: line.businessModuleId,
+      forecastMethod: line.forecastMethod,
+      startPeriod: line.startPeriod,
+      endPeriod: line.endPeriod,
+      fixedMonthlyValue:
+        line.category === 'revenue' ? '210000' : line.fixedMonthlyValue,
+      assumption: line.assumption,
+      sortOrder: line.sortOrder,
+      monthlyValues: Object.fromEntries(
+        state.values
+          .filter((value) => value.lineId === line.id)
+          .map((value) => [value.period, value.value]),
+      ),
+    }))
+    await calculation.saveDraft(project!.id, drafts)
+    const staleState = await calculation.getProjectState(project!.id)
+    expect(staleState.isResultCurrent).toBe(false)
+    expect(await new FactRepository(database).list(project!.id)).toEqual(facts)
+
+    await calculation.saveDraft(
+      project!.id,
+      drafts
+        .slice()
+        .reverse()
+        .slice(0, 1)
+        .map((draft) => ({
+          ...draft,
+          name: '已修改但尚未计算的名称',
+          sortOrder: 1,
+        })),
+    )
+    const historicalBreakdown =
+      await new ForecastLineValueRepository(database).listBreakdown(result.run.id)
+    expect(historicalBreakdown.map((item) => item.lineName)).toEqual([
+      '云游戏包盘收入',
+      '公共运营成本',
+    ])
+  })
+
+  it('预测计算失败时保留上一批成功事实', async () => {
+    const departments = new DepartmentRepository(database)
+    const projects = new ProjectRepository(database)
+    const department = await departments.save({ code: 'CALC', name: '测算部' })
+    const project = await projects.save({
+      code: 'CALC-001',
+      name: '事务测试项目',
+      customer: '',
+      departmentId: department.id,
+      owner: '',
+      startPeriod: '2026-01',
+      durationMonths: 3,
+      remark: '',
+      modules: [],
+    })
+    const module = (await projects.listModules(project.id))[0]
+    const calculation = new CalculationService(database)
+    const validDraft = {
+      name: '固定收入',
+      category: 'revenue' as const,
+      businessModuleId: module.id,
+      forecastMethod: 'fixed_monthly' as const,
+      startPeriod: '2026-01',
+      endPeriod: '2026-03',
+      fixedMonthlyValue: '100000',
+      assumption: '',
+      sortOrder: 1,
+      monthlyValues: {},
+    }
+    const success = await calculation.saveAndCalculate(project.id, [validDraft])
+    expect(success.success).toBe(true)
+    const beforeFacts = await new FactRepository(database).list(project.id)
+    const failed = await calculation.saveAndCalculate(project.id, [
+      { ...validDraft, fixedMonthlyValue: 'not-a-number' },
+    ])
+    expect(failed.success).toBe(false)
+    expect(await new FactRepository(database).list(project.id)).toEqual(beforeFacts)
+    expect((await calculation.getProjectState(project.id)).isResultCurrent).toBe(false)
+  })
+
+  it('SQLite导出后可恢复项目、预测配置、批次与事实', async () => {
+    await new ReferenceDatasetService(database).initialize()
+    const projects = new ProjectRepository(database)
+    const project = (await projects.list())[0]
+    const module = (await projects.listModules(project.id))[0]
+    const result = await new CalculationService(database).saveAndCalculate(
+      project.id,
+      [
+        {
+          name: '备份测试收入',
+          category: 'revenue',
+          businessModuleId: module.id,
+          forecastMethod: 'fixed_monthly',
+          startPeriod: project.startPeriod,
+          endPeriod: project.startPeriod,
+          fixedMonthlyValue: '12345.67',
+          assumption: '',
+          sortOrder: 1,
+          monthlyValues: {},
+        },
+      ],
+    )
+    expect(result.success).toBe(true)
     const beforeProjects = await new ProjectRepository(database).list()
     const beforeFacts = await new FactRepository(database).list()
     const bytes = await database.exportDatabase()
@@ -179,6 +395,11 @@ describe('SQLite repositories and reference data isolation', () => {
     await restored.importDatabase(bytes)
     expect(await new ProjectRepository(restored).list()).toHaveLength(beforeProjects.length)
     expect(await new FactRepository(restored).list()).toHaveLength(beforeFacts.length)
+    expect(await restored.query('SELECT * FROM cfg_forecast_line')).toHaveLength(1)
+    expect(await restored.query('SELECT * FROM sys_calculation_run')).toHaveLength(1)
+    expect(
+      await restored.query('SELECT * FROM fact_forecast_line_value'),
+    ).toHaveLength(1)
     await restored.close()
   })
 })

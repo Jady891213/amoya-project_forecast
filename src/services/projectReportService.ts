@@ -60,6 +60,11 @@ export class ProjectReportService {
       summary: calculation.summary,
       metricDefinitions,
       calculatedFacts: calculation.calculatedFacts,
+      hasCashFacts: facts.some(
+        (fact) =>
+          fact.metricCode === 'cash_inflow' ||
+          fact.metricCode === 'cash_outflow',
+      ),
     }
   }
 }

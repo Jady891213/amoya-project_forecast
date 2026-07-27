@@ -238,7 +238,7 @@ export function ProjectCenterPage({
             </tbody>
           </table>
           <div className="empty-hint">
-            项目只使用“测算中／已归档”两种状态；P0 不包含审核流、预测配置或跨项目分析。
+            项目只使用“测算中／已归档”两种状态；当前阶段不包含审核流或跨项目分析。
           </div>
         </div>
       </div>

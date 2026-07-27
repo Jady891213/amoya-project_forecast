@@ -14,7 +14,7 @@ export function MetricDefinitionsPage({ metrics }: { metrics: MetricDefinition[]
           <p>基础指标与系统计算指标使用同一张指标维度表统一管理。</p>
         </div>
         <span className="readonly-mark">
-          <LockKeyhole size={14} /> P0 系统维护
+          <LockKeyhole size={14} /> 系统维护
         </span>
       </header>
       <div className="page-body">

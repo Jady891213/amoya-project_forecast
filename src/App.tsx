@@ -29,10 +29,11 @@ import { ProjectCenterPage } from './pages/ProjectCenterPage'
 import { DataFoundationPage } from './pages/DataFoundationPage'
 import { MetricDefinitionsPage } from './pages/MetricDefinitionsPage'
 import { ProjectReportPage } from './pages/ProjectReportPage'
+import { ForecastConfigPage } from './pages/ForecastConfigPage'
 import { ProjectDialog } from './ui/ProjectDialog'
 
 type AppRoute = 'projects' | 'archived' | 'master-data' | 'metrics'
-type WorkspaceView = 'calculation' | 'report'
+type WorkspaceView = 'forecast' | 'calculation' | 'report'
 
 const bootStorage: StorageRuntimeInfo = {
   mode: 'transient',
@@ -66,7 +67,7 @@ export default function App() {
   const [database, setDatabase] = useState<DatabaseClient>()
   const [route, setRoute] = useState<AppRoute>('projects')
   const [workspaceProjectId, setWorkspaceProjectId] = useState('')
-  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>('calculation')
+  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>('forecast')
   const [snapshot, setSnapshot] = useState<AppSnapshot>(emptySnapshot)
   const [loading, setLoading] = useState(true)
   const [fatalError, setFatalError] = useState('')
@@ -193,7 +194,7 @@ export default function App() {
           <button className="top-icon-button" aria-label="导出SQLite数据库" title="导出SQLite数据库" onClick={() => void backupService?.download()}><Download size={15} /></button>
           <button className="top-icon-button" aria-label="导入SQLite数据库" title="导入SQLite数据库" onClick={() => importInput.current?.click()}><Upload size={15} /></button>
           <input ref={importInput} hidden type="file" accept=".sqlite,.sqlite3,application/vnd.sqlite3" onChange={(event) => void restoreDatabase(event.target.files?.[0])} />
-          <span className="phase-badge">P0 · SQLite数据与报表版</span>
+          <span className="phase-badge">P1A · 预测配置闭环</span>
         </div>
       </header>
 
@@ -235,7 +236,11 @@ export default function App() {
               <span className="project-title">{workspaceProject.name}</span>
               <span className="project-version">基准场景 · 工作版</span>
               <div className="workspace-tabs">
-                <button className="workspace-tab disabled" disabled><Calculator size={14} />预测配置 <small>P1</small></button>
+                <button
+                  className={`workspace-tab ${workspaceView === 'forecast' ? 'active' : ''}`}
+                  disabled={workspaceProject.status === 'archived'}
+                  onClick={() => setWorkspaceView('forecast')}
+                ><Calculator size={14} />预测配置</button>
                 <button className={`workspace-tab ${workspaceView === 'calculation' ? 'active' : ''}`} onClick={() => setWorkspaceView('calculation')}><TableProperties size={14} />计算表格</button>
                 <button className={`workspace-tab ${workspaceView === 'report' ? 'active' : ''}`} onClick={() => setWorkspaceView('report')}><FileChartColumn size={14} />项目报表</button>
               </div>
@@ -244,11 +249,29 @@ export default function App() {
                 {workspaceProject.origin === 'user' && workspaceProject.status === 'calculating' && <button className="btn" onClick={() => void archiveWorkspaceProject()}><Archive size={14} />归档</button>}
               </div>
             </div>
-            <ProjectReportPage database={database} snapshot={snapshot} requestedProjectId={workspaceProject.id} view={workspaceView} />
+            {workspaceView === 'forecast' ? (
+              <ForecastConfigPage
+                database={database}
+                project={workspaceProject}
+                modules={snapshot.modules.filter((module) => module.projectId === workspaceProject.id)}
+                onCalculated={async () => {
+                  await refresh()
+                  setWorkspaceView('calculation')
+                }}
+              />
+            ) : (
+              <ProjectReportPage
+                database={database}
+                snapshot={snapshot}
+                requestedProjectId={workspaceProject.id}
+                view={workspaceView}
+                onReturnToForecast={() => setWorkspaceView('forecast')}
+              />
+            )}
           </main>
         ) : (
           <main className="page">
-            {route === 'projects' && <ProjectCenterPage database={database} snapshot={snapshot} mode="active" onRefresh={refresh} onOpenProject={(id) => { setWorkspaceProjectId(id); setWorkspaceView('calculation') }} />}
+            {route === 'projects' && <ProjectCenterPage database={database} snapshot={snapshot} mode="active" onRefresh={refresh} onOpenProject={(id) => { setWorkspaceProjectId(id); setWorkspaceView('forecast') }} />}
             {route === 'archived' && <ProjectCenterPage database={database} snapshot={snapshot} mode="archived" onRefresh={refresh} onOpenProject={(id) => { setWorkspaceProjectId(id); setWorkspaceView('report') }} />}
             {route === 'master-data' && <DataFoundationPage database={database} snapshot={snapshot} onRefresh={refresh} onOpenReport={(id) => { setWorkspaceProjectId(id); setWorkspaceView('calculation') }} />}
             {route === 'metrics' && <MetricDefinitionsPage metrics={snapshot.metrics} />}

@@ -6,6 +6,9 @@ export type MetricValueType = 'currency' | 'percentage'
 export type MetricType = 'base' | 'calculated'
 export type PeriodAggregation = 'sum' | 'recompute' | 'ending'
 export type VersionStatus = 'working' | 'snapshot'
+export type ForecastMethod = 'monthly_input' | 'fixed_monthly'
+export type ForecastCategory = 'revenue' | 'cost'
+export type CalculationRunStatus = 'success' | 'failed'
 
 export const BASELINE_SCENARIO_CODE = 'baseline'
 export const WORKING_VERSION_CODE = 'working'
@@ -122,8 +125,98 @@ export interface BaseFact extends OriginFields {
   metricCode: BaseMetricCode
   value: string
   sourceLabel: string
+  calculationRunId?: string
   createdAt?: string
   updatedAt?: string
+}
+
+export interface ForecastLine {
+  id: string
+  projectId: string
+  code: string
+  name: string
+  category: ForecastCategory
+  metricCode: Extract<BaseMetricCode, 'revenue' | 'cost'>
+  businessModuleId: string
+  forecastMethod: ForecastMethod
+  startPeriod: string
+  endPeriod: string
+  fixedMonthlyValue?: string
+  assumption: string
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ForecastMonthlyValue {
+  lineId: string
+  period: string
+  value: string
+}
+
+export interface ForecastLineDraft {
+  id?: string
+  code?: string
+  name: string
+  category: ForecastCategory
+  businessModuleId: string
+  forecastMethod: ForecastMethod
+  startPeriod: string
+  endPeriod: string
+  fixedMonthlyValue?: string
+  assumption: string
+  sortOrder: number
+  monthlyValues: Record<string, string>
+}
+
+export interface CompiledLineValue {
+  lineId: string
+  projectId: string
+  departmentId: string
+  businessModuleId: string
+  period: string
+  scenarioId: string
+  versionId: string
+  metricCode: Extract<BaseMetricCode, 'revenue' | 'cost'>
+  value: string
+}
+
+export interface CalculationIssue {
+  severity: 'error' | 'warning'
+  lineId?: string
+  field?: string
+  period?: string
+  message: string
+}
+
+export interface CalculationRun {
+  id: string
+  projectId: string
+  scenarioId: string
+  versionId: string
+  runNumber: number
+  status: CalculationRunStatus
+  configHash: string
+  issueCount: number
+  issues: CalculationIssue[]
+  startedAt: string
+  completedAt: string
+}
+
+export interface ForecastProjectState {
+  lines: ForecastLine[]
+  values: ForecastMonthlyValue[]
+  latestRun?: CalculationRun
+  isResultCurrent: boolean
+}
+
+export interface ForecastLineBreakdown {
+  lineId: string
+  lineCode: string
+  lineName: string
+  category: ForecastCategory
+  values: Array<{ period: string; value: string }>
+  total: string
 }
 
 export interface CalculatedFact {
@@ -211,4 +304,5 @@ export interface ProjectReport {
   summary: ReportSummary
   metricDefinitions: MetricDefinition[]
   calculatedFacts: CalculatedFact[]
+  hasCashFacts: boolean
 }

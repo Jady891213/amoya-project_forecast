@@ -126,7 +126,7 @@ export function ProjectDialog({
             <p className="eyebrow">真实项目主数据</p>
             <h2>{project ? '编辑项目' : '新建项目'}</h2>
             <p className="muted">
-              P0仅保存项目信息；新项目不会自动产生任何收入、成本或现金流数据。
+              项目信息保存后，可在项目工作区维护收入、成本预测行。
             </p>
           </div>
           <button type="button" className="icon-button" onClick={onClose} aria-label="关闭">
@@ -224,7 +224,7 @@ export function ProjectDialog({
           <div className="section-heading">
             <div>
               <h3>业务模块</h3>
-              <p className="muted">P0只维护清单，暂不参与预测配置。</p>
+              <p className="muted">预测行项目可归属到下列业务模块；系统始终保留“公共”模块。</p>
             </div>
             <button type="button" className="button ghost" onClick={addModule}>
               <Plus size={14} /> 添加模块
