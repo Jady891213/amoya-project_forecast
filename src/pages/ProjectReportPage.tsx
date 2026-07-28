@@ -7,6 +7,7 @@ import type {
   ProjectReport,
   ForecastLineBreakdown,
   ForecastProjectState,
+  ForecastCategory,
 } from '../domain/types'
 import type { AppSnapshot } from '../app/types'
 import { ProjectReportService } from '../services/projectReportService'
@@ -42,6 +43,12 @@ const cashRows: ReportTableMetric[] = [
   { field: 'netCashFlow', code: 'net_cash_flow', name: '净现金流', format: 'currency', total: (r) => r.summary.netCashFlow },
   { field: 'cumulativeCashFlow', code: 'cumulative_cash_flow', name: '累计现金流', format: 'currency', total: (r) => r.summary.cumulativeCashFlow },
 ]
+const categoryLabels: Record<ForecastCategory, string> = {
+  revenue: '收入',
+  cost: '成本',
+  cash_inflow: '收款',
+  cash_outflow: '付款',
+}
 
 function renderValue(value: string | null, format: ReportTableMetric['format']) {
   return format === 'percentage'
@@ -220,7 +227,7 @@ export function ProjectReportPage({
         <section className="empty-report-card workspace-empty">
           <Calculator size={34} />
           <h2>当前项目尚无事实数据</h2>
-          <p>请返回预测配置新增收入或成本行项目，并执行“保存并计算”。</p>
+          <p>请返回预测配置新增损益或现金计划行项目，并执行“保存并计算”。</p>
         </section>
       ) : (
         <div className="report-scroll">
@@ -249,7 +256,7 @@ export function ProjectReportPage({
               {lineBreakdown.length > 0 && (
                 <section className="report-section">
                   <div className="section-heading">
-                    <div><h2>预测行项目明细</h2><p className="muted">用于追溯收入、成本基础事实的组成。</p></div>
+                    <div><h2>预测行项目明细</h2><p className="muted">用于追溯损益与现金流基础事实的组成。</p></div>
                   </div>
                   <div className="report-table-wrap">
                     <table className="report-table line-breakdown-table">
@@ -264,7 +271,7 @@ export function ProjectReportPage({
                           <tr key={item.lineId}>
                             <th className="sticky-column metric-column">
                               <span>{item.lineName}</span>
-                              <small>{item.category === 'revenue' ? '收入' : '成本'} · {item.lineCode}</small>
+                              <small>{categoryLabels[item.category]} · {item.lineCode}</small>
                             </th>
                             {report.monthly.map((month) => (
                               <td key={month.period} className="number-cell">

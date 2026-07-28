@@ -2,12 +2,17 @@ import type { DatabaseClient, SqlStatement } from '../storage/types'
 import { REFERENCE_DATASET_ID } from '../domain/types'
 import {
   REFERENCE_DEPARTMENTS,
-  REFERENCE_FACTS,
   REFERENCE_MODULES,
   REFERENCE_PROJECTS,
 } from '../mocks/p0ReferenceDataset'
+import { HISTORICAL_PROJECT_CONFIGS } from '../mocks/historicalProjectConfigs'
+import { CalculationService } from './calculationService'
 
-const LEGACY_DATASET_IDS = ['p0-demo-v1', 'p0-reference-v1']
+const LEGACY_DATASET_IDS = [
+  'p0-demo-v1',
+  'p0-reference-v1',
+  'p0-reference-v2',
+]
 const STATE_KEY = `reference-dataset:${REFERENCE_DATASET_ID}`
 
 export class ReferenceDatasetService {
@@ -57,27 +62,26 @@ export class ReferenceDatasetService {
         ],
       }),
     )
-    REFERENCE_FACTS.forEach((row) =>
-      statements.push({
-        sql: `INSERT OR REPLACE INTO fact_metric_value (
-          id, project_id, department_id, business_module_id, period,
-          scenario_id, version_id, metric_code, value_text, source_label,
-          origin, dataset_id, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        params: [
-          row.id, row.projectId, row.departmentId, row.businessModuleId,
-          row.period, row.scenarioId, row.versionId, row.metricCode, row.value,
-          row.sourceLabel, row.origin, row.datasetId, row.createdAt,
-          row.updatedAt,
-        ],
-      }),
-    )
-    statements.push({
-      sql: `INSERT OR REPLACE INTO sys_app_metadata (key, value, updated_at)
-            VALUES (?, 'initialized', ?)`,
-      params: [STATE_KEY, new Date().toISOString()],
-    })
     await this.database.batch(statements)
+    const calculation = new CalculationService(this.database)
+    for (const config of HISTORICAL_PROJECT_CONFIGS) {
+      const result = await calculation.saveAndCalculate(
+        config.projectId,
+        config.lines,
+      )
+      if (!result.success) {
+        throw new Error(
+          `历史项目配置计算失败：${config.projectId}（${result.issues
+            .map((issue) => issue.message)
+            .join('；')}）`,
+        )
+      }
+    }
+    await this.database.execute(
+      `INSERT OR REPLACE INTO sys_app_metadata (key, value, updated_at)
+       VALUES (?, 'initialized', ?)`,
+      [STATE_KEY, new Date().toISOString()],
+    )
   }
 
   async clear(): Promise<void> {
@@ -106,16 +110,16 @@ export class ReferenceDatasetService {
   private deleteStatements(): SqlStatement[] {
     return [
       {
-        sql: 'DELETE FROM fact_metric_value WHERE dataset_id IN (?, ?, ?)',
+        sql: 'DELETE FROM fact_metric_value WHERE dataset_id IN (?, ?, ?, ?)',
         params: [REFERENCE_DATASET_ID, ...LEGACY_DATASET_IDS],
       },
       {
-        sql: 'DELETE FROM dim_project WHERE dataset_id IN (?, ?, ?)',
+        sql: 'DELETE FROM dim_project WHERE dataset_id IN (?, ?, ?, ?)',
         params: [REFERENCE_DATASET_ID, ...LEGACY_DATASET_IDS],
       },
       {
         sql: `DELETE FROM dim_department
-              WHERE dataset_id IN (?, ?, ?)
+              WHERE dataset_id IN (?, ?, ?, ?)
               AND NOT EXISTS (
                 SELECT 1 FROM dim_project WHERE department_id = dim_department.id
               )`,

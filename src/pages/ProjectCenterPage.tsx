@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Archive, FolderOpen, Pencil, Plus, RotateCcw } from 'lucide-react'
+import { Archive, FolderOpen, Plus, RotateCcw } from 'lucide-react'
 import type { DatabaseClient } from '../storage/types'
 import type { Project, ProjectInput } from '../domain/types'
 import type { AppSnapshot } from '../app/types'
@@ -30,7 +30,6 @@ export function ProjectCenterPage({
 }: ProjectCenterPageProps) {
   const [query, setQuery] = useState('')
   const [departmentId, setDepartmentId] = useState('')
-  const [editingProject, setEditingProject] = useState<Project | undefined>()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [error, setError] = useState('')
   const projectRepository = useMemo(
@@ -65,7 +64,6 @@ export function ProjectCenterPage({
       setError('请先在“主数据管理”中新增一个启用状态的用户部门')
       return
     }
-    setEditingProject(undefined)
     setDialogOpen(true)
   }
 
@@ -201,17 +199,6 @@ export function ProjectCenterPage({
                         >
                           <FolderOpen size={13} /> 进入项目
                         </button>
-                        {project.origin === 'user' && mode === 'active' && (
-                          <button
-                            className="action-link"
-                            onClick={() => {
-                              setEditingProject(project)
-                              setDialogOpen(true)
-                            }}
-                          >
-                            <Pencil size={13} /> 编辑
-                          </button>
-                        )}
                         {project.origin === 'user' && (
                           <button
                             className="action-link muted-action"
@@ -245,12 +232,8 @@ export function ProjectCenterPage({
 
       {dialogOpen && (
         <ProjectDialog
-          project={editingProject}
           departments={snapshot.departments}
-          modules={snapshot.modules.filter(
-            (module) =>
-              module.projectId === editingProject?.id && !module.isCommon,
-          )}
+          modules={[]}
           onClose={() => setDialogOpen(false)}
           onSave={saveProject}
         />

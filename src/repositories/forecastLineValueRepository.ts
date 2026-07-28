@@ -1,12 +1,15 @@
 import Decimal from 'decimal.js'
-import type { ForecastLineBreakdown } from '../domain/types'
+import type {
+  ForecastCategory,
+  ForecastLineBreakdown,
+} from '../domain/types'
 import type { DatabaseClient } from '../storage/types'
 
 interface LineValueRow {
   forecast_line_id: string
   line_code: string
   line_name: string
-  line_category: 'revenue' | 'cost'
+  line_category: ForecastCategory
   period: string
   value_text: string
 }

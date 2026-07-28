@@ -132,6 +132,12 @@ function normalizeModules(modules: ProjectInput['modules']) {
     })
 }
 
+function endPeriod(startPeriod: string, durationMonths: number) {
+  const [year, month] = startPeriod.split('-').map(Number)
+  const date = new Date(year, month - 1 + durationMonths - 1, 1)
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+}
+
 export class ProjectRepository {
   constructor(private readonly database: DatabaseClient) {}
 
@@ -234,6 +240,37 @@ export class ProjectRepository {
     const existingModules = existing ? await this.listModules(projectId) : []
     const normalizedModules = normalizeModules(input.modules)
     const requestedCodes = new Set(['PUBLIC', ...normalizedModules.map((m) => m.code)])
+    if (
+      existing &&
+      (existing.startPeriod !== startPeriod ||
+        existing.durationMonths !== input.durationMonths)
+    ) {
+      const periodConflicts = await this.database.query<{ count: number }>(
+        `SELECT COUNT(*) AS count
+         FROM cfg_forecast_line
+         WHERE project_id = ?
+           AND (start_period < ? OR end_period > ?)`,
+        [projectId, startPeriod, endPeriod(startPeriod, input.durationMonths)],
+      )
+      if ((periodConflicts[0]?.count ?? 0) > 0) {
+        throw new Error('新项目周期无法覆盖已有预测行，请先调整行项目生效期间')
+      }
+    }
+    const removedModuleIds = existingModules
+      .filter((module) => !requestedCodes.has(module.code))
+      .map((module) => module.id)
+    if (removedModuleIds.length > 0) {
+      const placeholders = removedModuleIds.map(() => '?').join(', ')
+      const moduleConflicts = await this.database.query<{ count: number }>(
+        `SELECT COUNT(*) AS count
+         FROM cfg_forecast_line
+         WHERE business_module_id IN (${placeholders})`,
+        removedModuleIds,
+      )
+      if ((moduleConflicts[0]?.count ?? 0) > 0) {
+        throw new Error('待删除业务模块已被预测行引用，请先调整对应行项目')
+      }
+    }
     const statements: SqlStatement[] = [
       {
         sql: `INSERT INTO dim_project (

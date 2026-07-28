@@ -9,7 +9,6 @@ import {
   Download,
   FileChartColumn,
   HardDrive,
-  Pencil,
   Sigma,
   TableProperties,
   Upload,
@@ -17,7 +16,6 @@ import {
 import { createDatabase } from './storage/createDatabase'
 import type { DatabaseClient, StorageRuntimeInfo } from './storage/types'
 import type { AppSnapshot } from './app/types'
-import type { Project } from './domain/types'
 import { DepartmentRepository } from './repositories/departmentRepository'
 import { DimensionRepository } from './repositories/dimensionRepository'
 import { FactRepository } from './repositories/factRepository'
@@ -30,7 +28,6 @@ import { DataFoundationPage } from './pages/DataFoundationPage'
 import { MetricDefinitionsPage } from './pages/MetricDefinitionsPage'
 import { ProjectReportPage } from './pages/ProjectReportPage'
 import { ForecastConfigPage } from './pages/ForecastConfigPage'
-import { ProjectDialog } from './ui/ProjectDialog'
 
 type AppRoute = 'projects' | 'archived' | 'master-data' | 'metrics'
 type WorkspaceView = 'forecast' | 'calculation' | 'report'
@@ -71,8 +68,6 @@ export default function App() {
   const [snapshot, setSnapshot] = useState<AppSnapshot>(emptySnapshot)
   const [loading, setLoading] = useState(true)
   const [fatalError, setFatalError] = useState('')
-  const [editingProject, setEditingProject] = useState<Project>()
-  const [projectDialogOpen, setProjectDialogOpen] = useState(false)
   const [actionError, setActionError] = useState('')
   const [notice, setNotice] = useState('')
   const importInput = useRef<HTMLInputElement>(null)
@@ -142,6 +137,16 @@ export default function App() {
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (snapshot.storage.mode !== 'portable') return
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', warnBeforeUnload)
+    return () => window.removeEventListener('beforeunload', warnBeforeUnload)
+  }, [snapshot.storage.mode])
+
   const workspaceProject = snapshot.projects.find((project) => project.id === workspaceProjectId)
   const storageTone = snapshot.storage.persistent ? 'healthy' : 'warning'
 
@@ -201,7 +206,7 @@ export default function App() {
       {snapshot.storage.mode === 'portable' && (
         <div className="portable-banner">
           <HardDrive size={14} />
-          当前为便携模式：修改只保存在内存中，关闭页面前请导出 .sqlite3 文件。
+          当前为便携模式：可正常保存并计算，但刷新或关闭页面会重置内存数据；离开前请导出 .sqlite3 文件。
           <button onClick={() => void backupService?.download()}>立即导出</button>
         </div>
       )}
@@ -245,7 +250,6 @@ export default function App() {
                 <button className={`workspace-tab ${workspaceView === 'report' ? 'active' : ''}`} onClick={() => setWorkspaceView('report')}><FileChartColumn size={14} />项目报表</button>
               </div>
               <div className="workspace-head-actions">
-                {workspaceProject.origin === 'user' && <button className="btn" onClick={() => { setEditingProject(workspaceProject); setProjectDialogOpen(true) }}><Pencil size={14} />编辑项目</button>}
                 {workspaceProject.origin === 'user' && workspaceProject.status === 'calculating' && <button className="btn" onClick={() => void archiveWorkspaceProject()}><Archive size={14} />归档</button>}
               </div>
             </div>
@@ -253,7 +257,12 @@ export default function App() {
               <ForecastConfigPage
                 database={database}
                 project={workspaceProject}
+                departments={snapshot.departments}
                 modules={snapshot.modules.filter((module) => module.projectId === workspaceProject.id)}
+                onProjectSave={async (input) => {
+                  await projectRepository?.save(input)
+                  await refresh()
+                }}
                 onCalculated={async () => {
                   await refresh()
                   setWorkspaceView('calculation')
@@ -279,15 +288,6 @@ export default function App() {
         )}
       </div>
 
-      {projectDialogOpen && editingProject && projectRepository && (
-        <ProjectDialog
-          project={editingProject}
-          departments={snapshot.departments}
-          modules={snapshot.modules.filter((module) => module.projectId === editingProject.id && !module.isCommon)}
-          onClose={() => setProjectDialogOpen(false)}
-          onSave={async (input) => { await projectRepository.save(input); await refresh() }}
-        />
-      )}
       {actionError && <div className="toast-error">{actionError}<button onClick={() => setActionError('')}>关闭</button></div>}
       {notice && <div className="toast-success">{notice}<button onClick={() => setNotice('')}>关闭</button></div>}
     </div>

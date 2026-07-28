@@ -110,7 +110,7 @@ export function compileForecast(
   if (lines.length === 0) {
     issues.push({
       severity: 'error',
-      message: '至少需要一个收入或成本行项目',
+      message: '至少需要一个收入、成本或现金流行项目',
     })
   }
 

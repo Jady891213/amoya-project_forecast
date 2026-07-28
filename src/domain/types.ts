@@ -7,12 +7,16 @@ export type MetricType = 'base' | 'calculated'
 export type PeriodAggregation = 'sum' | 'recompute' | 'ending'
 export type VersionStatus = 'working' | 'snapshot'
 export type ForecastMethod = 'monthly_input' | 'fixed_monthly'
-export type ForecastCategory = 'revenue' | 'cost'
+export type ForecastCategory =
+  | 'revenue'
+  | 'cost'
+  | 'cash_inflow'
+  | 'cash_outflow'
 export type CalculationRunStatus = 'success' | 'failed'
 
 export const BASELINE_SCENARIO_CODE = 'baseline'
 export const WORKING_VERSION_CODE = 'working'
-export const REFERENCE_DATASET_ID = 'p0-reference-v2'
+export const REFERENCE_DATASET_ID = 'historical-project-config-v1'
 
 export type BaseMetricCode =
   | 'revenue'
@@ -136,7 +140,7 @@ export interface ForecastLine {
   code: string
   name: string
   category: ForecastCategory
-  metricCode: Extract<BaseMetricCode, 'revenue' | 'cost'>
+  metricCode: BaseMetricCode
   businessModuleId: string
   forecastMethod: ForecastMethod
   startPeriod: string
@@ -177,7 +181,7 @@ export interface CompiledLineValue {
   period: string
   scenarioId: string
   versionId: string
-  metricCode: Extract<BaseMetricCode, 'revenue' | 'cost'>
+  metricCode: BaseMetricCode
   value: string
 }
 

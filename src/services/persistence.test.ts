@@ -48,7 +48,7 @@ describe('SQLite repositories and reference data isolation', () => {
     )
     expect(
       await database.query('SELECT * FROM sys_schema_migration'),
-    ).toHaveLength(3)
+    ).toHaveLength(4)
   })
 
   it('Schema v1 可迁移为全局场景和版本维度', async () => {
@@ -93,7 +93,7 @@ describe('SQLite repositories and reference data isolation', () => {
     await initializeSqliteDatabase(legacy)
     expect(
       await legacy.query('SELECT * FROM sys_schema_migration'),
-    ).toHaveLength(3)
+    ).toHaveLength(4)
     const factColumns = await legacy.query<{ name: string }>(
       'PRAGMA table_info(fact_metric_value)',
     )
@@ -129,9 +129,68 @@ describe('SQLite repositories and reference data isolation', () => {
       scenarioId: 'baseline',
       versionId: 'working',
     })
-    expect(cloud.factCount).toBe(136)
-    expect(tv.factCount).toBe(20)
+    expect(cloud.factCount).toBe(91)
+    expect(tv.factCount).toBe(10)
     expect(cloud.summary.revenue).not.toBe(tv.summary.revenue)
+  })
+
+  it('四个历史项目由已保存配置计算并与源表关键结果核对', async () => {
+    await new ReferenceDatasetService(database).initialize()
+    const reports = new ProjectReportService(database)
+    const expectations = [
+      {
+        projectId: 'project-hebei-unicom-cloud',
+        revenue: 400.943396226415,
+        cost: 174.141289214644,
+        cashInflow: 425,
+        cashOutflow: 193.5355,
+      },
+      {
+        projectId: 'project-chongqing-mobile-screen',
+        revenue: 198.31,
+        cost: 176.25,
+        cashInflow: 0,
+        cashOutflow: 0,
+      },
+      {
+        projectId: 'project-hebei-cable-iptv',
+        revenue: 29.9094339622641,
+        cost: 19.735241509434,
+        cashInflow: 0,
+        cashOutflow: 0,
+      },
+      {
+        projectId: 'project-bestv-ctv-ad',
+        revenue: 4999.69811320755,
+        cost: 6149.54318279578,
+        cashInflow: 28498.4905660377,
+        cashOutflow: 26121.02498269,
+      },
+    ]
+    for (const expected of expectations) {
+      const report = await reports.build({
+        projectId: expected.projectId,
+        scenarioId: 'baseline',
+        versionId: 'working',
+      })
+      expect(Number(report.summary.revenue) / 10_000).toBeCloseTo(expected.revenue, 2)
+      expect(Number(report.summary.cost) / 10_000).toBeCloseTo(expected.cost, 2)
+      expect(Number(report.summary.cashInflow) / 10_000).toBeCloseTo(expected.cashInflow, 2)
+      expect(Number(report.summary.cashOutflow) / 10_000).toBeCloseTo(expected.cashOutflow, 2)
+      expect(
+        await database.query(
+          'SELECT id FROM cfg_forecast_line WHERE project_id = ?',
+          [expected.projectId],
+        ),
+      ).not.toHaveLength(0)
+      expect(
+        await database.query(
+          `SELECT id FROM sys_calculation_run
+           WHERE project_id = ? AND status = 'success'`,
+          [expected.projectId],
+        ),
+      ).toHaveLength(1)
+    }
   })
 
   it('用户项目自动创建公共模块并复用全局场景与版本', async () => {
@@ -212,6 +271,61 @@ describe('SQLite repositories and reference data isolation', () => {
     })).rejects.toThrow('已存在')
   })
 
+  it('项目信息修改会保护被预测行引用的期间和业务模块', async () => {
+    const departments = new DepartmentRepository(database)
+    const projects = new ProjectRepository(database)
+    const department = await departments.save({ code: 'SAFE', name: '安全校验部' })
+    const project = await projects.save({
+      code: 'SAFE-001',
+      name: '引用保护项目',
+      customer: '',
+      departmentId: department.id,
+      owner: '',
+      startPeriod: '2026-01',
+      durationMonths: 12,
+      remark: '',
+      modules: [{ code: 'SERVICE', name: '服务模块' }],
+    })
+    const serviceModule = (await projects.listModules(project.id))
+      .find((module) => module.code === 'SERVICE')!
+    await new CalculationService(database).saveDraft(project.id, [{
+      name: '服务收入',
+      category: 'revenue',
+      businessModuleId: serviceModule.id,
+      forecastMethod: 'fixed_monthly',
+      startPeriod: '2026-01',
+      endPeriod: '2026-12',
+      fixedMonthlyValue: '10000',
+      assumption: '',
+      sortOrder: 1,
+      monthlyValues: {},
+    }])
+    await expect(projects.save({
+      id: project.id,
+      code: project.code,
+      name: project.name,
+      customer: project.customer,
+      departmentId: project.departmentId,
+      owner: project.owner,
+      startPeriod: '2026-02',
+      durationMonths: 11,
+      remark: project.remark,
+      modules: [{ code: 'SERVICE', name: '服务模块' }],
+    })).rejects.toThrow('无法覆盖已有预测行')
+    await expect(projects.save({
+      id: project.id,
+      code: project.code,
+      name: project.name,
+      customer: project.customer,
+      departmentId: project.departmentId,
+      owner: project.owner,
+      startPeriod: project.startPeriod,
+      durationMonths: project.durationMonths,
+      remark: project.remark,
+      modules: [],
+    })).rejects.toThrow('已被预测行引用')
+  })
+
   it('预测配置保存、计算、结果过期与项目隔离形成闭环', async () => {
     await new ReferenceDatasetService(database).initialize()
     const projects = new ProjectRepository(database)
@@ -257,10 +371,8 @@ describe('SQLite repositories and reference data isolation', () => {
     const breakdown = await new ForecastLineValueRepository(database).listBreakdown(
       result.run.id,
     )
-    expect(breakdown.map((item) => item.lineCode)).toEqual([
-      'LINE-001',
-      'LINE-002',
-    ])
+    expect(breakdown).toHaveLength(2)
+    expect(new Set(breakdown.map((item) => item.lineCode)).size).toBe(2)
 
     const facts = await new FactRepository(database).list(project!.id)
     expect(facts.every((fact) => fact.calculationRunId === result.run.id)).toBe(true)
@@ -278,7 +390,7 @@ describe('SQLite repositories and reference data isolation', () => {
     const otherFacts = await new FactRepository(database).list(
       'project-hebei-cable-iptv',
     )
-    expect(otherFacts).toHaveLength(20)
+    expect(otherFacts).toHaveLength(10)
 
     const drafts = state.lines.map((line) => ({
       id: line.id,
@@ -389,17 +501,26 @@ describe('SQLite repositories and reference data isolation', () => {
     expect(result.success).toBe(true)
     const beforeProjects = await new ProjectRepository(database).list()
     const beforeFacts = await new FactRepository(database).list()
+    const beforeLineCount = (
+      await database.query('SELECT id FROM cfg_forecast_line')
+    ).length
+    const beforeRunCount = (
+      await database.query('SELECT id FROM sys_calculation_run')
+    ).length
+    const beforeLineFactCount = (
+      await database.query('SELECT id FROM fact_forecast_line_value')
+    ).length
     const bytes = await database.exportDatabase()
 
     const restored = await NodeSqliteClient.create()
     await restored.importDatabase(bytes)
     expect(await new ProjectRepository(restored).list()).toHaveLength(beforeProjects.length)
     expect(await new FactRepository(restored).list()).toHaveLength(beforeFacts.length)
-    expect(await restored.query('SELECT * FROM cfg_forecast_line')).toHaveLength(1)
-    expect(await restored.query('SELECT * FROM sys_calculation_run')).toHaveLength(1)
+    expect(await restored.query('SELECT * FROM cfg_forecast_line')).toHaveLength(beforeLineCount)
+    expect(await restored.query('SELECT * FROM sys_calculation_run')).toHaveLength(beforeRunCount)
     expect(
       await restored.query('SELECT * FROM fact_forecast_line_value'),
-    ).toHaveLength(1)
+    ).toHaveLength(beforeLineFactCount)
     await restored.close()
   })
 })

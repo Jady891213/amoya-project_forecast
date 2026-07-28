@@ -191,7 +191,7 @@ export class CalculationService {
       {
         moduleId: string
         period: string
-        metricCode: Extract<BaseMetricCode, 'revenue' | 'cost'>
+        metricCode: BaseMetricCode
         value: Decimal
       }
     >()

@@ -17,17 +17,36 @@ import type {
   ForecastLineDraft,
   ForecastProjectState,
   Project,
+  Department,
+  ProjectInput,
   ProjectModule,
 } from '../domain/types'
 import type { DatabaseClient } from '../storage/types'
 import { CalculationService } from '../services/calculationService'
 import { formatWan } from '../ui/formatters'
+import { ProjectInformationEditor } from '../ui/ProjectInformationEditor'
 
 interface Props {
   database: DatabaseClient
   project: Project
+  departments: Department[]
   modules: ProjectModule[]
+  onProjectSave: (input: ProjectInput) => Promise<void>
   onCalculated: () => Promise<void>
+}
+
+const categoryLabels: Record<ForecastCategory, string> = {
+  revenue: '收入',
+  cost: '成本',
+  cash_inflow: '收款',
+  cash_outflow: '付款',
+}
+
+const categoryPlaceholders: Record<ForecastCategory, string> = {
+  revenue: '例如：云游戏收入',
+  cost: '例如：服务器租赁费',
+  cash_inflow: '例如：项目回款',
+  cash_outflow: '例如：供应商付款',
 }
 
 function toDrafts(state: ForecastProjectState): ForecastLineDraft[] {
@@ -106,7 +125,9 @@ function methodSummary(
 export function ForecastConfigPage({
   database,
   project,
+  departments,
   modules,
+  onProjectSave,
   onCalculated,
 }: Props) {
   const service = useMemo(() => new CalculationService(database), [database])
@@ -262,12 +283,18 @@ export function ForecastConfigPage({
 
   return (
     <div className="forecast-workspace">
+      <ProjectInformationEditor
+        project={project}
+        departments={departments}
+        modules={modules}
+        onSave={onProjectSave}
+      />
       <div className="forecast-toolbar">
         <div className="toolbar-title">
           <Calculator size={16} />
           <div>
             <b>预测配置</b>
-            <span>维护收入、成本行项目并生成分月计算结果</span>
+            <span>维护损益与现金流行项目并生成分月计算结果</span>
           </div>
         </div>
         <div className="forecast-status">
@@ -287,6 +314,12 @@ export function ForecastConfigPage({
         </button>
         <button className="btn" onClick={() => addLine('cost')} disabled={saving}>
           <Plus size={14} />新增成本项
+        </button>
+        <button className="btn" onClick={() => addLine('cash_inflow')} disabled={saving}>
+          <Plus size={14} />新增收款项
+        </button>
+        <button className="btn" onClick={() => addLine('cash_outflow')} disabled={saving}>
+          <Plus size={14} />新增付款项
         </button>
         <button className="btn" onClick={() => void saveDraftOnly()} disabled={saving || !dirty}>
           <Save size={14} />保存草稿
@@ -346,7 +379,7 @@ export function ForecastConfigPage({
                     className={draft.id === selectedId ? 'selected' : ''}
                     onClick={() => setSelectedId(draft.id ?? '')}
                   >
-                    <td><span className={`forecast-category ${draft.category}`}>{draft.category === 'revenue' ? '收入' : '成本'}</span></td>
+                    <td><span className={`forecast-category ${draft.category}`}>{categoryLabels[draft.category]}</span></td>
                     <td><strong>{draft.name || '未命名行项目'}</strong><small>{draft.code || '保存后生成编码'}</small></td>
                     <td>{modules.find((module) => module.id === draft.businessModuleId)?.name ?? '—'}</td>
                     <td>{draft.forecastMethod === 'fixed_monthly' ? '固定月金额' : '逐月填写'}</td>
@@ -366,7 +399,7 @@ export function ForecastConfigPage({
               {drafts.length === 0 && (
                 <tr>
                   <td colSpan={8} className="empty-cell">
-                    当前还没有预测行项目，请新增收入项或成本项
+                    当前还没有预测行项目，请新增损益或现金流项目
                   </td>
                 </tr>
               )}
@@ -385,7 +418,7 @@ export function ForecastConfigPage({
                 <input
                   value={selected.name}
                   onChange={(event) => changeSelected({ name: event.target.value })}
-                  placeholder={selected.category === 'revenue' ? '例如：云游戏收入' : '例如：服务器租赁费'}
+                  placeholder={categoryPlaceholders[selected.category]}
                 />
               </label>
               <div className="forecast-form-row">
@@ -398,6 +431,8 @@ export function ForecastConfigPage({
                   >
                     <option value="revenue">收入</option>
                     <option value="cost">成本</option>
+                    <option value="cash_inflow">收款</option>
+                    <option value="cash_outflow">付款</option>
                   </select>
                 </label>
                 <label>业务模块

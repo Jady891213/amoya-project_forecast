@@ -126,7 +126,7 @@ export function ProjectDialog({
             <p className="eyebrow">真实项目主数据</p>
             <h2>{project ? '编辑项目' : '新建项目'}</h2>
             <p className="muted">
-              项目信息保存后，可在项目工作区维护收入、成本预测行。
+              项目信息保存后，可在项目工作区直接维护项目信息、损益与现金计划行。
             </p>
           </div>
           <button type="button" className="icon-button" onClick={onClose} aria-label="关闭">

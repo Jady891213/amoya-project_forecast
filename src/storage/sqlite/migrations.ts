@@ -1,4 +1,4 @@
-export const CURRENT_SCHEMA_VERSION = 3
+export const CURRENT_SCHEMA_VERSION = 4
 
 export const SCHEMA_V1 = `
 PRAGMA foreign_keys = ON;
@@ -312,4 +312,76 @@ CREATE INDEX IF NOT EXISTS idx_calculation_run_project
 CREATE INDEX IF NOT EXISTS idx_fact_forecast_line_run
   ON fact_forecast_line_value(calculation_run_id, forecast_line_id, period);
 COMMIT;
+`
+
+export const SCHEMA_V4 = `
+PRAGMA foreign_keys = OFF;
+BEGIN IMMEDIATE;
+
+CREATE TABLE cfg_forecast_line_v4 (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES dim_project(id) ON DELETE CASCADE,
+  code TEXT NOT NULL,
+  name TEXT NOT NULL,
+  category TEXT NOT NULL CHECK (
+    category IN ('revenue', 'cost', 'cash_inflow', 'cash_outflow')
+  ),
+  metric_code TEXT NOT NULL CHECK (
+    metric_code IN ('revenue', 'cost', 'cash_inflow', 'cash_outflow')
+  ),
+  business_module_id TEXT NOT NULL REFERENCES dim_business_module(id),
+  forecast_method TEXT NOT NULL CHECK (
+    forecast_method IN ('monthly_input', 'fixed_monthly')
+  ),
+  start_period TEXT NOT NULL REFERENCES dim_period(period),
+  end_period TEXT NOT NULL REFERENCES dim_period(period),
+  fixed_monthly_value_text TEXT,
+  assumption TEXT NOT NULL DEFAULT '',
+  sort_order INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (project_id, code)
+);
+
+INSERT INTO cfg_forecast_line_v4
+SELECT * FROM cfg_forecast_line;
+
+CREATE TABLE fact_forecast_line_value_v4 (
+  id TEXT PRIMARY KEY,
+  calculation_run_id TEXT NOT NULL REFERENCES sys_calculation_run(id) ON DELETE CASCADE,
+  project_id TEXT NOT NULL REFERENCES dim_project(id) ON DELETE CASCADE,
+  forecast_line_id TEXT NOT NULL,
+  line_code TEXT NOT NULL,
+  line_name TEXT NOT NULL,
+  line_category TEXT NOT NULL CHECK (
+    line_category IN ('revenue', 'cost', 'cash_inflow', 'cash_outflow')
+  ),
+  department_id TEXT NOT NULL REFERENCES dim_department(id),
+  business_module_id TEXT NOT NULL REFERENCES dim_business_module(id),
+  period TEXT NOT NULL REFERENCES dim_period(period),
+  scenario_id TEXT NOT NULL REFERENCES dim_scenario(id),
+  version_id TEXT NOT NULL REFERENCES dim_version(id),
+  metric_code TEXT NOT NULL CHECK (
+    metric_code IN ('revenue', 'cost', 'cash_inflow', 'cash_outflow')
+  ),
+  value_text TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE (calculation_run_id, forecast_line_id, period)
+);
+
+INSERT INTO fact_forecast_line_value_v4
+SELECT * FROM fact_forecast_line_value;
+
+DROP TABLE fact_forecast_line_value;
+DROP TABLE cfg_forecast_line;
+ALTER TABLE cfg_forecast_line_v4 RENAME TO cfg_forecast_line;
+ALTER TABLE fact_forecast_line_value_v4 RENAME TO fact_forecast_line_value;
+
+CREATE INDEX idx_cfg_forecast_line_project
+  ON cfg_forecast_line(project_id, sort_order);
+CREATE INDEX idx_fact_forecast_line_run
+  ON fact_forecast_line_value(calculation_run_id, forecast_line_id, period);
+
+COMMIT;
+PRAGMA foreign_keys = ON;
 `
