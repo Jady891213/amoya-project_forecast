@@ -6,7 +6,13 @@ export type MetricValueType = 'currency' | 'percentage'
 export type MetricType = 'base' | 'calculated'
 export type PeriodAggregation = 'sum' | 'recompute' | 'ending'
 export type VersionStatus = 'working' | 'snapshot'
-export type ForecastMethod = 'monthly_input' | 'fixed_monthly'
+export type ForecastMethod = 'monthly_input' | 'fixed_monthly' | 'formula'
+export type ParameterType = 'fixed' | 'monthly'
+export type ParameterValueType =
+  | 'currency'
+  | 'quantity'
+  | 'percentage'
+  | 'number'
 export type ForecastCategory =
   | 'revenue'
   | 'cost'
@@ -16,7 +22,7 @@ export type CalculationRunStatus = 'success' | 'failed'
 
 export const BASELINE_SCENARIO_CODE = 'baseline'
 export const WORKING_VERSION_CODE = 'working'
-export const REFERENCE_DATASET_ID = 'historical-project-config-v1'
+export const REFERENCE_DATASET_ID = 'historical-project-config-v2'
 
 export type BaseMetricCode =
   | 'revenue'
@@ -146,6 +152,7 @@ export interface ForecastLine {
   startPeriod: string
   endPeriod: string
   fixedMonthlyValue?: string
+  formulaExpression?: string
   assumption: string
   sortOrder: number
   createdAt: string
@@ -168,9 +175,49 @@ export interface ForecastLineDraft {
   startPeriod: string
   endPeriod: string
   fixedMonthlyValue?: string
+  formulaExpression?: string
   assumption: string
   sortOrder: number
   monthlyValues: Record<string, string>
+}
+
+export interface ProjectParameter {
+  id: string
+  projectId: string
+  code: string
+  name: string
+  parameterType: ParameterType
+  valueType: ParameterValueType
+  unit: string
+  fixedValue?: string
+  description: string
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ProjectParameterValue {
+  parameterId: string
+  period: string
+  value: string
+}
+
+export interface ProjectParameterDraft {
+  id?: string
+  code?: string
+  name: string
+  parameterType: ParameterType
+  valueType: ParameterValueType
+  unit: string
+  fixedValue?: string
+  description: string
+  sortOrder: number
+  monthlyValues: Record<string, string>
+}
+
+export interface ForecastProjectDraft {
+  lines: ForecastLineDraft[]
+  parameters: ProjectParameterDraft[]
 }
 
 export interface CompiledLineValue {
@@ -188,6 +235,7 @@ export interface CompiledLineValue {
 export interface CalculationIssue {
   severity: 'error' | 'warning'
   lineId?: string
+  parameterId?: string
   field?: string
   period?: string
   message: string
@@ -203,6 +251,7 @@ export interface CalculationRun {
   configHash: string
   issueCount: number
   issues: CalculationIssue[]
+  configSnapshotJson: string
   startedAt: string
   completedAt: string
 }
@@ -210,6 +259,8 @@ export interface CalculationRun {
 export interface ForecastProjectState {
   lines: ForecastLine[]
   values: ForecastMonthlyValue[]
+  parameters: ProjectParameter[]
+  parameterValues: ProjectParameterValue[]
   latestRun?: CalculationRun
   isResultCurrent: boolean
 }
@@ -219,6 +270,9 @@ export interface ForecastLineBreakdown {
   lineCode: string
   lineName: string
   category: ForecastCategory
+  forecastMethod?: ForecastMethod
+  sourceSummary?: string
+  dependencies?: string[]
   values: Array<{ period: string; value: string }>
   total: string
 }

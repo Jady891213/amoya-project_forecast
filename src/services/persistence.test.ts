@@ -39,6 +39,8 @@ describe('SQLite repositories and reference data isolation', () => {
         'dim_metric',
         'cfg_forecast_line',
         'cfg_forecast_value',
+        'cfg_parameter',
+        'cfg_parameter_value',
         'fact_metric_value',
         'fact_forecast_line_value',
         'sys_calculation_run',
@@ -48,7 +50,7 @@ describe('SQLite repositories and reference data isolation', () => {
     )
     expect(
       await database.query('SELECT * FROM sys_schema_migration'),
-    ).toHaveLength(4)
+    ).toHaveLength(5)
   })
 
   it('Schema v1 可迁移为全局场景和版本维度', async () => {
@@ -93,7 +95,7 @@ describe('SQLite repositories and reference data isolation', () => {
     await initializeSqliteDatabase(legacy)
     expect(
       await legacy.query('SELECT * FROM sys_schema_migration'),
-    ).toHaveLength(4)
+    ).toHaveLength(5)
     const factColumns = await legacy.query<{ name: string }>(
       'PRAGMA table_info(fact_metric_value)',
     )
@@ -105,6 +107,18 @@ describe('SQLite repositories and reference data isolation', () => {
     )
     expect(lineFactColumns.map((column) => column.name)).toEqual(
       expect.arrayContaining(['line_code', 'line_name', 'line_category']),
+    )
+    const lineColumns = await legacy.query<{ name: string }>(
+      'PRAGMA table_info(cfg_forecast_line)',
+    )
+    expect(lineColumns.map((column) => column.name)).toContain(
+      'formula_expression_text',
+    )
+    const runColumns = await legacy.query<{ name: string }>(
+      'PRAGMA table_info(sys_calculation_run)',
+    )
+    expect(runColumns.map((column) => column.name)).toContain(
+      'config_snapshot_json',
     )
     await legacy.close()
   })
@@ -474,6 +488,115 @@ describe('SQLite repositories and reference data isolation', () => {
     expect(failed.success).toBe(false)
     expect(await new FactRepository(database).list(project.id)).toEqual(beforeFacts)
     expect((await calculation.getProjectState(project.id)).isResultCurrent).toBe(false)
+  })
+
+  it('项目参数和行项目公式形成可追溯计算闭环', async () => {
+    const departments = new DepartmentRepository(database)
+    const projects = new ProjectRepository(database)
+    const department = await departments.save({ code: 'FORMULA', name: '公式测试部' })
+    const project = await projects.save({
+      code: 'FORMULA-001',
+      name: '参数公式项目',
+      customer: '',
+      departmentId: department.id,
+      owner: '',
+      startPeriod: '2026-01',
+      durationMonths: 2,
+      remark: '',
+      modules: [],
+    })
+    const module = (await projects.listModules(project.id))[0]
+    const calculation = new CalculationService(database)
+    const draft = {
+      parameters: [
+        {
+          code: 'PAR-001',
+          name: '用户数',
+          parameterType: 'fixed' as const,
+          valueType: 'quantity' as const,
+          unit: '户',
+          fixedValue: '100',
+          description: '',
+          sortOrder: 1,
+          monthlyValues: {},
+        },
+        {
+          code: 'PAR-002',
+          name: '月单价',
+          parameterType: 'fixed' as const,
+          valueType: 'currency' as const,
+          unit: '元',
+          fixedValue: '10',
+          description: '',
+          sortOrder: 2,
+          monthlyValues: {},
+        },
+        {
+          code: 'PAR-003',
+          name: '分成比例',
+          parameterType: 'fixed' as const,
+          valueType: 'percentage' as const,
+          unit: '%',
+          fixedValue: '20',
+          description: '',
+          sortOrder: 3,
+          monthlyValues: {},
+        },
+      ],
+      lines: [
+        {
+          code: 'LINE-001',
+          name: '业务收入',
+          category: 'revenue' as const,
+          businessModuleId: module.id,
+          forecastMethod: 'formula' as const,
+          startPeriod: '2026-01',
+          endPeriod: '2026-02',
+          formulaExpression: 'PARAM("PAR-001") * PARAM("PAR-002")',
+          assumption: '',
+          sortOrder: 1,
+          monthlyValues: {},
+        },
+        {
+          code: 'LINE-002',
+          name: '渠道分成',
+          category: 'cost' as const,
+          businessModuleId: module.id,
+          forecastMethod: 'formula' as const,
+          startPeriod: '2026-01',
+          endPeriod: '2026-02',
+          formulaExpression: 'LINE("LINE-001") * PARAM("PAR-003")',
+          assumption: '',
+          sortOrder: 2,
+          monthlyValues: {},
+        },
+      ],
+    }
+    const result = await calculation.saveAndCalculate(project.id, draft)
+    expect(result.success).toBe(true)
+    const state = await calculation.getProjectState(project.id)
+    expect(state.parameters.find((item) => item.code === 'PAR-003')?.fixedValue)
+      .toBe('0.2')
+    expect(result.run.configSnapshotJson).toContain('formulaExpression')
+    expect(state.isResultCurrent).toBe(true)
+    const facts = await new FactRepository(database).list(project.id)
+    expect(
+      facts
+        .filter((fact) => fact.metricCode === 'revenue')
+        .reduce((sum, fact) => sum + Number(fact.value), 0),
+    ).toBe(2000)
+    expect(
+      facts
+        .filter((fact) => fact.metricCode === 'cost')
+        .reduce((sum, fact) => sum + Number(fact.value), 0),
+    ).toBe(400)
+
+    await expect(
+      calculation.saveDraft(project.id, {
+        lines: draft.lines,
+        parameters: draft.parameters.slice(0, 2),
+      }),
+    ).rejects.toThrow('正在被行项目')
   })
 
   it('SQLite导出后可恢复项目、预测配置、批次与事实', async () => {

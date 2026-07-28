@@ -12,6 +12,7 @@ const LEGACY_DATASET_IDS = [
   'p0-demo-v1',
   'p0-reference-v1',
   'p0-reference-v2',
+  'historical-project-config-v1',
 ]
 const STATE_KEY = `reference-dataset:${REFERENCE_DATASET_ID}`
 
@@ -67,7 +68,10 @@ export class ReferenceDatasetService {
     for (const config of HISTORICAL_PROJECT_CONFIGS) {
       const result = await calculation.saveAndCalculate(
         config.projectId,
-        config.lines,
+        {
+          lines: config.lines,
+          parameters: config.parameters,
+        },
       )
       if (!result.success) {
         throw new Error(
@@ -89,9 +93,10 @@ export class ReferenceDatasetService {
       ...this.deleteStatements(),
       {
         sql: `DELETE FROM sys_app_metadata
-              WHERE key IN (?, ?, ?)`,
+              WHERE key IN (?, ?, ?, ?)`,
         params: [
           STATE_KEY,
+          'reference-dataset:historical-project-config-v1',
           'reference-dataset:p0-reference-v1',
           'demo-dataset:p0-demo-v1',
         ],
@@ -108,22 +113,25 @@ export class ReferenceDatasetService {
   }
 
   private deleteStatements(): SqlStatement[] {
+    const datasetIds = [REFERENCE_DATASET_ID, ...LEGACY_DATASET_IDS]
+    const placeholders = datasetIds.map(() => '?').join(', ')
     return [
       {
-        sql: 'DELETE FROM fact_metric_value WHERE dataset_id IN (?, ?, ?, ?)',
-        params: [REFERENCE_DATASET_ID, ...LEGACY_DATASET_IDS],
+        sql: `DELETE FROM fact_metric_value
+              WHERE dataset_id IN (${placeholders})`,
+        params: datasetIds,
       },
       {
-        sql: 'DELETE FROM dim_project WHERE dataset_id IN (?, ?, ?, ?)',
-        params: [REFERENCE_DATASET_ID, ...LEGACY_DATASET_IDS],
+        sql: `DELETE FROM dim_project WHERE dataset_id IN (${placeholders})`,
+        params: datasetIds,
       },
       {
         sql: `DELETE FROM dim_department
-              WHERE dataset_id IN (?, ?, ?, ?)
+              WHERE dataset_id IN (${placeholders})
               AND NOT EXISTS (
                 SELECT 1 FROM dim_project WHERE department_id = dim_department.id
               )`,
-        params: [REFERENCE_DATASET_ID, ...LEGACY_DATASET_IDS],
+        params: datasetIds,
       },
     ]
   }

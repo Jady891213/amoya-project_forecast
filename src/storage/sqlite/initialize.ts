@@ -7,6 +7,7 @@ import {
   SCHEMA_V2,
   SCHEMA_V3,
   SCHEMA_V4,
+  SCHEMA_V5,
 } from './migrations'
 
 function periodStatements(): SqlStatement[] {
@@ -135,6 +136,14 @@ export async function initializeSqliteDatabase(
     await database.execute(
       `INSERT INTO sys_schema_migration (version, description, applied_at)
        VALUES (4, '基础事实配置扩展到损益与现金流', ?)`,
+      [now],
+    )
+  }
+  if (!applied.has(5)) {
+    await database.execute(SCHEMA_V5)
+    await database.execute(
+      `INSERT INTO sys_schema_migration (version, description, applied_at)
+       VALUES (5, 'P1B项目参数、行项目公式与配置快照', ?)`,
       [now],
     )
   }

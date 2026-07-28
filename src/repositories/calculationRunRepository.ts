@@ -13,6 +13,7 @@ interface CalculationRunRow {
   config_hash: string
   issue_count: number
   issues_json: string
+  config_snapshot_json: string
   started_at: string
   completed_at: string
 }
@@ -28,6 +29,7 @@ function fromRow(row: CalculationRunRow): CalculationRun {
     configHash: row.config_hash,
     issueCount: row.issue_count,
     issues: JSON.parse(row.issues_json),
+    configSnapshotJson: row.config_snapshot_json,
     startedAt: row.started_at,
     completedAt: row.completed_at,
   }
@@ -38,7 +40,8 @@ export function calculationRunInsert(run: CalculationRun): SqlStatement {
     sql: `INSERT INTO sys_calculation_run (
       id, project_id, scenario_id, version_id, run_number, status,
       config_hash, issue_count, issues_json, started_at, completed_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      , config_snapshot_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     params: [
       run.id,
       run.projectId,
@@ -51,6 +54,7 @@ export function calculationRunInsert(run: CalculationRun): SqlStatement {
       JSON.stringify(run.issues),
       run.startedAt,
       run.completedAt,
+      run.configSnapshotJson,
     ],
   }
 }

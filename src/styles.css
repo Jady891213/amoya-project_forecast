@@ -743,6 +743,36 @@ button, input, select, textarea, table { font-size: 12px; }
   border-color: #e6d19d;
   background: #fff8e6;
 }
+.calculation-snapshot {
+  margin-bottom: 10px;
+  border: 1px solid var(--line);
+  background: #fff;
+}
+.calculation-snapshot > div {
+  min-height: 40px;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  background: #f8fafc;
+}
+.calculation-snapshot > div span { color: var(--muted); }
+.calculation-snapshot pre {
+  max-height: 260px;
+  margin: 0;
+  padding: 10px;
+  overflow: auto;
+  color: #344054;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.line-source-summary {
+  overflow: hidden;
+  color: #4d6b92 !important;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .cashflow-pending {
   min-height: 72px;
   display: flex;
@@ -863,6 +893,46 @@ button, input, select, textarea, table { font-size: 12px; }
 }
 .project-module-draft .icon-button { width: 28px; height: 30px; }
 .btn.compact { height: 30px; }
+.forecast-section-tabs {
+  min-height: 38px;
+  flex: 0 0 38px;
+  display: flex;
+  align-items: end;
+  gap: 4px;
+  padding: 0 14px;
+  background: #fff;
+  border-bottom: 1px solid var(--line);
+}
+.forecast-section-tabs button {
+  height: 37px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 13px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+.forecast-section-tabs button.active {
+  color: var(--brand);
+  border-bottom-color: var(--brand);
+  font-weight: 600;
+}
+.forecast-section-tabs button span {
+  min-width: 19px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: #eef1f5;
+  color: #68768a;
+  font-size: 10px;
+}
 .forecast-toolbar {
   min-height: 52px;
   flex: 0 0 52px;
@@ -958,6 +1028,7 @@ button, input, select, textarea, table { font-size: 12px; }
   color: #8995a7;
   font-size: 11px;
 }
+.parameter-table { min-width: 820px; }
 .forecast-category, .complete-mark, .incomplete-mark {
   min-height: 21px;
   display: inline-flex;
@@ -1055,6 +1126,89 @@ button, input, select, textarea, table { font-size: 12px; }
 }
 .monthly-value-list label:last-child { border: 0; }
 .monthly-value-list input { text-align: right; }
+.formula-editor-section {
+  display: grid;
+  gap: 10px;
+}
+.formula-template-row,
+.formula-operator-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.formula-reference-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+.formula-reference-picker > span {
+  width: 56px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.reference-chip,
+.operator-button {
+  min-height: 26px;
+  border: 1px solid #cfd7e3;
+  border-radius: 3px;
+  background: #f8fafc;
+  color: #35547b;
+  font: inherit;
+  cursor: pointer;
+}
+.reference-chip {
+  max-width: 145px;
+  padding: 0 7px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.operator-button {
+  min-width: 30px;
+  padding: 0 6px;
+  color: var(--text);
+  background: #fff;
+}
+.reference-chip:hover,
+.operator-button:hover {
+  border-color: #8da7c9;
+  background: #eef4fc;
+}
+.formula-preview-card {
+  display: grid;
+  gap: 5px;
+  padding: 9px;
+  border: 1px solid #dce4ef;
+  border-radius: 4px;
+  background: #f7faff;
+}
+.formula-preview-card span,
+.formula-preview-card small { color: var(--muted); }
+.formula-preview-card strong {
+  color: #284e7d;
+  font-weight: 600;
+  word-break: break-word;
+}
+.formula-preview-error { color: #a8493d !important; }
+.formula-month-preview {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+  margin-top: 3px;
+}
+.formula-month-preview > span {
+  display: grid;
+  gap: 2px;
+  padding: 5px 6px;
+  border: 1px solid #e0e7f0;
+  background: #fff;
+}
+.formula-month-preview b {
+  color: var(--text);
+  font-size: 11px;
+  text-align: right;
+}
 .forecast-panel-actions {
   min-height: 48px;
   flex: 0 0 48px;

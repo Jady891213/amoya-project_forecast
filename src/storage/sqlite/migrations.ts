@@ -1,4 +1,4 @@
-export const CURRENT_SCHEMA_VERSION = 4
+export const CURRENT_SCHEMA_VERSION = 5
 
 export const SCHEMA_V1 = `
 PRAGMA foreign_keys = ON;
@@ -381,6 +381,91 @@ CREATE INDEX idx_cfg_forecast_line_project
   ON cfg_forecast_line(project_id, sort_order);
 CREATE INDEX idx_fact_forecast_line_run
   ON fact_forecast_line_value(calculation_run_id, forecast_line_id, period);
+
+COMMIT;
+PRAGMA foreign_keys = ON;
+`
+
+export const SCHEMA_V5 = `
+PRAGMA foreign_keys = OFF;
+BEGIN IMMEDIATE;
+
+CREATE TABLE IF NOT EXISTS cfg_parameter (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES dim_project(id) ON DELETE CASCADE,
+  code TEXT NOT NULL,
+  name TEXT NOT NULL,
+  parameter_type TEXT NOT NULL CHECK (parameter_type IN ('fixed', 'monthly')),
+  value_type TEXT NOT NULL CHECK (
+    value_type IN ('currency', 'quantity', 'percentage', 'number')
+  ),
+  unit TEXT NOT NULL DEFAULT '',
+  fixed_value_text TEXT,
+  description TEXT NOT NULL DEFAULT '',
+  sort_order INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (project_id, code)
+);
+
+CREATE TABLE IF NOT EXISTS cfg_parameter_value (
+  parameter_id TEXT NOT NULL REFERENCES cfg_parameter(id) ON DELETE CASCADE,
+  period TEXT NOT NULL REFERENCES dim_period(period),
+  value_text TEXT NOT NULL,
+  PRIMARY KEY (parameter_id, period)
+);
+
+CREATE TABLE cfg_forecast_line_v5 (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES dim_project(id) ON DELETE CASCADE,
+  code TEXT NOT NULL,
+  name TEXT NOT NULL,
+  category TEXT NOT NULL CHECK (
+    category IN ('revenue', 'cost', 'cash_inflow', 'cash_outflow')
+  ),
+  metric_code TEXT NOT NULL CHECK (
+    metric_code IN ('revenue', 'cost', 'cash_inflow', 'cash_outflow')
+  ),
+  business_module_id TEXT NOT NULL REFERENCES dim_business_module(id),
+  forecast_method TEXT NOT NULL CHECK (
+    forecast_method IN ('monthly_input', 'fixed_monthly', 'formula')
+  ),
+  start_period TEXT NOT NULL REFERENCES dim_period(period),
+  end_period TEXT NOT NULL REFERENCES dim_period(period),
+  fixed_monthly_value_text TEXT,
+  formula_expression_text TEXT,
+  assumption TEXT NOT NULL DEFAULT '',
+  sort_order INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (project_id, code)
+);
+
+INSERT INTO cfg_forecast_line_v5 (
+  id, project_id, code, name, category, metric_code,
+  business_module_id, forecast_method, start_period, end_period,
+  fixed_monthly_value_text, formula_expression_text, assumption,
+  sort_order, created_at, updated_at
+)
+SELECT
+  id, project_id, code, name, category, metric_code,
+  business_module_id, forecast_method, start_period, end_period,
+  fixed_monthly_value_text, NULL, assumption,
+  sort_order, created_at, updated_at
+FROM cfg_forecast_line;
+
+DROP TABLE cfg_forecast_line;
+ALTER TABLE cfg_forecast_line_v5 RENAME TO cfg_forecast_line;
+
+ALTER TABLE sys_calculation_run
+  ADD COLUMN config_snapshot_json TEXT NOT NULL DEFAULT '{}';
+
+CREATE INDEX idx_cfg_forecast_line_project
+  ON cfg_forecast_line(project_id, sort_order);
+CREATE INDEX idx_cfg_parameter_project
+  ON cfg_parameter(project_id, sort_order);
+CREATE INDEX idx_cfg_parameter_value_parameter
+  ON cfg_parameter_value(parameter_id, period);
 
 COMMIT;
 PRAGMA foreign_keys = ON;

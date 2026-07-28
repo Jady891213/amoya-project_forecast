@@ -199,7 +199,7 @@ export default function App() {
           <button className="top-icon-button" aria-label="导出SQLite数据库" title="导出SQLite数据库" onClick={() => void backupService?.download()}><Download size={15} /></button>
           <button className="top-icon-button" aria-label="导入SQLite数据库" title="导入SQLite数据库" onClick={() => importInput.current?.click()}><Upload size={15} /></button>
           <input ref={importInput} hidden type="file" accept=".sqlite,.sqlite3,application/vnd.sqlite3" onChange={(event) => void restoreDatabase(event.target.files?.[0])} />
-          <span className="phase-badge">P1A · 预测配置闭环</span>
+          <span className="phase-badge">P1B · 参数公式闭环</span>
         </div>
       </header>
 

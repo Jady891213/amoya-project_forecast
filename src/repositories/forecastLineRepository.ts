@@ -16,6 +16,7 @@ interface ForecastLineRow {
   start_period: string
   end_period: string
   fixed_monthly_value_text: string | null
+  formula_expression_text: string | null
   assumption: string
   sort_order: number
   created_at: string
@@ -35,6 +36,7 @@ function fromRow(row: ForecastLineRow): ForecastLine {
     startPeriod: row.start_period,
     endPeriod: row.end_period,
     fixedMonthlyValue: row.fixed_monthly_value_text ?? undefined,
+    formulaExpression: row.formula_expression_text ?? undefined,
     assumption: row.assumption,
     sortOrder: row.sort_order,
     createdAt: row.created_at,
@@ -72,6 +74,7 @@ export class ForecastLineRepository {
   ): Promise<ForecastLine[]> {
     const existing = await this.list(projectId)
     const existingById = new Map(existing.map((line) => [line.id, line]))
+    const existingByCode = new Map(existing.map((line) => [line.code, line]))
     const usedCodes = new Set(existing.map((line) => line.code))
     let sequence = existing.reduce((max, line) => {
       const matched = /^LINE-(\d+)$/.exec(line.code)
@@ -79,7 +82,11 @@ export class ForecastLineRepository {
     }, 0)
     const now = new Date().toISOString()
     const resolved = drafts.map((draft, index) => {
-      const previous = draft.id ? existingById.get(draft.id) : undefined
+      const previous =
+        (draft.id ? existingById.get(draft.id) : undefined) ??
+        (draft.code
+          ? existingByCode.get(draft.code.trim().toUpperCase())
+          : undefined)
       let code = previous?.code ?? draft.code?.trim().toUpperCase() ?? ''
       if (!code || (!previous && usedCodes.has(code))) {
         ;[code, sequence] = nextLineCode(usedCodes, sequence)
@@ -97,8 +104,21 @@ export class ForecastLineRepository {
 
     const statements: SqlStatement[] = []
     const retainedIds = new Set(resolved.map((item) => item.id))
-    existing
-      .filter((line) => !retainedIds.has(line.id))
+    const removed = existing.filter((line) => !retainedIds.has(line.id))
+    for (const line of removed) {
+      const escaped = line.code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const referencedBy = resolved.find(({ draft }) =>
+        new RegExp(`LINE\\(\\s*"${escaped}"\\s*\\)`, 'i').test(
+          draft.formulaExpression ?? '',
+        ),
+      )
+      if (referencedBy) {
+        throw new Error(
+          `行项目“${line.name}”正在被“${referencedBy.draft.name || referencedBy.code}”引用，不能删除`,
+        )
+      }
+    }
+    removed
       .forEach((line) =>
         statements.push({
           sql: 'DELETE FROM cfg_forecast_line WHERE id = ? AND project_id = ?',
@@ -111,8 +131,9 @@ export class ForecastLineRepository {
         sql: `INSERT INTO cfg_forecast_line (
           id, project_id, code, name, category, metric_code,
           business_module_id, forecast_method, start_period, end_period,
-          fixed_monthly_value_text, assumption, sort_order, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          fixed_monthly_value_text, formula_expression_text, assumption,
+          sort_order, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           name = excluded.name,
           category = excluded.category,
@@ -122,6 +143,7 @@ export class ForecastLineRepository {
           start_period = excluded.start_period,
           end_period = excluded.end_period,
           fixed_monthly_value_text = excluded.fixed_monthly_value_text,
+          formula_expression_text = excluded.formula_expression_text,
           assumption = excluded.assumption,
           sort_order = excluded.sort_order,
           updated_at = excluded.updated_at`,
@@ -138,6 +160,9 @@ export class ForecastLineRepository {
           draft.endPeriod,
           draft.forecastMethod === 'fixed_monthly'
             ? draft.fixedMonthlyValue?.trim() || null
+            : null,
+          draft.forecastMethod === 'formula'
+            ? draft.formulaExpression?.trim() || null
             : null,
           draft.assumption.trim(),
           sortOrder,

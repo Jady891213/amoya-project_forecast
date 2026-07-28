@@ -3,13 +3,67 @@ import { generatePeriods } from '../domain/periods'
 import type {
   ForecastCategory,
   ForecastLineDraft,
+  ParameterValueType,
+  ProjectParameterDraft,
 } from '../domain/types'
 
 interface HistoricalProjectConfig {
   projectId: string
   lines: ForecastLineDraft[]
+  parameters: ProjectParameterDraft[]
   sourceWorkbook: string
   sourceSheets: string[]
+}
+
+function fixedParameter(
+  projectId: string,
+  sequence: number,
+  name: string,
+  valueType: ParameterValueType,
+  unit: string,
+  value: Decimal.Value,
+  description: string,
+): ProjectParameterDraft {
+  return {
+    id: `historical-parameter:${projectId}:${sequence}`,
+    code: `PAR-${String(sequence).padStart(3, '0')}`,
+    name,
+    parameterType: 'fixed',
+    valueType,
+    unit,
+    fixedValue: new Decimal(value).toString(),
+    description,
+    sortOrder: sequence,
+    monthlyValues: {},
+  }
+}
+
+function monthlyParameter(
+  projectId: string,
+  sequence: number,
+  name: string,
+  valueType: ParameterValueType,
+  unit: string,
+  periods: string[],
+  values: Decimal.Value[],
+  description: string,
+): ProjectParameterDraft {
+  return {
+    id: `historical-parameter:${projectId}:${sequence}`,
+    code: `PAR-${String(sequence).padStart(3, '0')}`,
+    name,
+    parameterType: 'monthly',
+    valueType,
+    unit,
+    description,
+    sortOrder: sequence,
+    monthlyValues: Object.fromEntries(
+      periods.map((period, index) => [
+        period,
+        new Decimal(values[index] ?? 0).toString(),
+      ]),
+    ),
+  }
 }
 
 function yuanFromWan(value: Decimal.Value): string {
@@ -80,43 +134,74 @@ function monthlyLine(
   }
 }
 
+function formulaLine(
+  projectId: string,
+  sequence: number,
+  name: string,
+  category: ForecastCategory,
+  moduleId: string,
+  startPeriod: string,
+  endPeriod: string,
+  expression: string,
+  assumption: string,
+): ForecastLineDraft {
+  return {
+    id: `historical-line:${projectId}:${sequence}`,
+    code: `LINE-${String(sequence).padStart(3, '0')}`,
+    name,
+    category,
+    businessModuleId: moduleId,
+    forecastMethod: 'formula',
+    startPeriod,
+    endPeriod,
+    formulaExpression: expression,
+    assumption,
+    sortOrder: sequence,
+    monthlyValues: {},
+  }
+}
+
 function hebeiCable(): HistoricalProjectConfig {
   const projectId = 'project-hebei-cable-iptv'
   const moduleId = 'module-hebei-cable-iptv-iptv'
   const start = '2026-08'
   const end = '2026-12'
-  const monthlyRevenue = new Decimal(24).times(2642).div(1.06).div(10_000)
-  const wechatFee = monthlyRevenue.times(0.01)
-  const channelShare = monthlyRevenue.minus(wechatFee).times(0.3)
-  const cdn = new Decimal(1.34).times(2642).div(1.06).div(10_000)
   return {
     projectId,
     sourceWorkbook: '河北有线互联网电视项目测算20260721.xlsx',
     sourceSheets: ['总表', 'CDN明细'],
+    parameters: [
+      fixedParameter(projectId, 1, '会员月单价', 'currency', '元/户/月', 24, '总表会员价格。'),
+      fixedParameter(projectId, 2, '订购用户数', 'quantity', '户', 2642, '总表订购用户数。'),
+      fixedParameter(projectId, 3, '不含税换算系数', 'number', '', 1.06, '历史源表当前换算口径；正式税规则留待P1C。'),
+      fixedParameter(projectId, 4, '微信支付费率', 'percentage', '%', 1, '不含税收入的1%。'),
+      fixedParameter(projectId, 5, '渠道分成比例', 'percentage', '%', 30, '扣除支付手续费后收入的30%。'),
+      fixedParameter(projectId, 6, 'CDN户均月单价', 'currency', '元/户/月', 1.34, 'CDN明细户均价格。'),
+    ],
     lines: [
-      fixedLine(
+      formulaLine(
         projectId, 1, '互联网电视会员收入', 'revenue', moduleId, start, end,
-        monthlyRevenue,
+        'PARAM("PAR-001") * PARAM("PAR-002") / PARAM("PAR-003")',
         '24元/月 × 2,642户 ÷ 1.06；来源：总表第16行。',
       ),
-      fixedLine(
+      formulaLine(
         projectId, 2, '微信支付手续费', 'cost', moduleId, start, end,
-        wechatFee,
+        'LINE("LINE-001") * PARAM("PAR-004")',
         '不含税收入的1%；来源：总表第18行。',
       ),
-      fixedLine(
+      formulaLine(
         projectId, 3, '河北有线收入分成', 'cost', moduleId, start, end,
-        channelShare,
+        '(LINE("LINE-001") - LINE("LINE-002")) * PARAM("PAR-005")',
         '扣除微信手续费后的收入 × 30%；来源：总表第19行。',
       ),
-      fixedLine(
+      formulaLine(
         projectId, 4, '当贝收入分成', 'cost', moduleId, start, end,
-        channelShare,
+        '(LINE("LINE-001") - LINE("LINE-002")) * PARAM("PAR-005")',
         '扣除微信手续费后的收入 × 30%；来源：总表第20行。',
       ),
-      fixedLine(
+      formulaLine(
         projectId, 5, 'CDN成本', 'cost', moduleId, start, end,
-        cdn,
+        'PARAM("PAR-006") * PARAM("PAR-002") / PARAM("PAR-003")',
         '1.34元/户/月 × 2,642户 ÷ 1.06；来源：总表第21行和CDN明细。',
       ),
     ],
@@ -131,41 +216,58 @@ function chongqingMobile(): HistoricalProjectConfig {
     0.41, 0.82, 1.23, 1.64, 2.06, 2.48,
     2.9, 3.32, 3.74, 4.16, 4.58, 5,
   ]
-  const revenue = registeredUsers.map((users) =>
-    new Decimal(users).times(6.5).div(1.06),
-  )
   return {
     projectId,
     sourceWorkbook: '重庆移动中屏0717.xlsx',
     sourceSheets: ['总表'],
+    parameters: [
+      monthlyParameter(
+        projectId,
+        1,
+        '注册用户数',
+        'quantity',
+        '户',
+        periods,
+        registeredUsers.map((value) => new Decimal(value).times(10_000)),
+        '逐月取自总表第26行，源表单位万户，进入参数时换算为户。',
+      ),
+      fixedParameter(projectId, 2, '用户月单价', 'currency', '元/户/月', 6.5, '源表月单价。'),
+      fixedParameter(projectId, 3, '不含税换算系数', 'number', '', 1.06, '历史源表当前换算口径。'),
+      fixedParameter(projectId, 4, '爱奇艺APK年度成本', 'currency', '元/年', new Decimal(87.8).times(10_000), '源表年度金额。'),
+      fixedParameter(projectId, 5, '专线年度成本', 'currency', '元/年', new Decimal(56.6).times(10_000), '源表年度金额。'),
+      fixedParameter(projectId, 6, '服务器年度成本', 'currency', '元/年', new Decimal(3.89).times(10_000), '源表年度金额。'),
+      fixedParameter(projectId, 7, '频道年度成本', 'currency', '元/年', new Decimal(19.4).times(10_000), '源表年度金额。'),
+      fixedParameter(projectId, 8, 'FAST云年度成本', 'currency', '元/年', new Decimal(8.56).times(10_000), '源表年度金额。'),
+    ],
     lines: [
-      monthlyLine(
-        projectId, 1, '中屏业务收入', 'revenue', moduleId, periods, revenue,
+      formulaLine(
+        projectId, 1, '中屏业务收入', 'revenue', moduleId, periods[0], periods[11],
+        'PARAM("PAR-001") * PARAM("PAR-002") / PARAM("PAR-003")',
         '注册用户 × 6.5元 ÷ 1.06；注册用户逐月取自总表第26行。',
       ),
-      fixedLine(
+      formulaLine(
         projectId, 2, '爱奇艺APK成本', 'cost', moduleId, periods[0], periods[11],
-        new Decimal(87.8).div(12),
+        'PARAM("PAR-004") / 12',
         '源表只给出年度87.8万元，按12个月均匀展开。',
       ),
-      fixedLine(
+      formulaLine(
         projectId, 3, '专线成本', 'cost', moduleId, periods[0], periods[11],
-        new Decimal(56.6).div(12),
+        'PARAM("PAR-005") / 12',
         '源表年度56.6万元，按12个月均匀展开。',
       ),
-      fixedLine(
+      formulaLine(
         projectId, 4, '服务器成本', 'cost', moduleId, periods[0], periods[11],
-        new Decimal(3.89).div(12),
+        'PARAM("PAR-006") / 12',
         '源表年度3.89万元，按12个月均匀展开。',
       ),
-      fixedLine(
+      formulaLine(
         projectId, 5, '频道成本', 'cost', moduleId, periods[0], periods[11],
-        new Decimal(19.4).div(12),
+        'PARAM("PAR-007") / 12',
         '源表年度19.4万元，按12个月均匀展开。',
       ),
-      fixedLine(
+      formulaLine(
         projectId, 6, 'FAST云成本', 'cost', moduleId, periods[0], periods[11],
-        new Decimal(8.56).div(12),
+        'PARAM("PAR-008") / 12',
         '源表年度8.56万元，按12个月均匀展开。',
       ),
     ],
@@ -211,6 +313,11 @@ function hebeiUnicom(): HistoricalProjectConfig {
     projectId,
     sourceWorkbook: '河北联通云游戏+超高清项目测算20260707.xlsx',
     sourceSheets: ['总表', '云游戏分月测算明细'],
+    parameters: [
+      fixedParameter(projectId, 1, '云游戏技术服务月费', 'currency', '元/月', yuanFromWan(tech), '7.2万元/年 ÷ 12 ÷ 1.06。'),
+      fixedParameter(projectId, 2, 'IDC机柜月租', 'currency', '元/月', yuanFromWan(idc), '2万元/月（含税）÷1.06。'),
+      fixedParameter(projectId, 3, '100M专线月费', 'currency', '元/月', yuanFromWan(line100m), '0.3万元/月（含税）÷1.09。'),
+    ],
     lines: [
       fixedLine(
         projectId, 1, '云游戏收入', 'revenue', cloudModule,
@@ -227,19 +334,19 @@ function hebeiUnicom(): HistoricalProjectConfig {
         cloudModule, profitPeriods, server,
         '逐月取自云游戏分月测算明细第5行。',
       ),
-      fixedLine(
+      formulaLine(
         projectId, 4, '云游戏技术服务费', 'cost', cloudModule,
-        profitPeriods[0], profitPeriods[16], tech,
+        profitPeriods[0], profitPeriods[16], 'PARAM("PAR-001")',
         '7.2万元/年 ÷ 12 ÷ 1.06。',
       ),
-      fixedLine(
+      formulaLine(
         projectId, 5, 'IDC机柜租赁费', 'cost', cloudModule,
-        profitPeriods[0], profitPeriods[16], idc,
+        profitPeriods[0], profitPeriods[16], 'PARAM("PAR-002")',
         '2万元/月（含税）÷1.06。',
       ),
-      fixedLine(
+      formulaLine(
         projectId, 6, '100M专线费', 'cost', cloudModule,
-        profitPeriods[0], profitPeriods[16], line100m,
+        profitPeriods[0], profitPeriods[16], 'PARAM("PAR-003")',
         '0.3万元/月（含税）÷1.09。',
       ),
       monthlyLine(
@@ -313,6 +420,7 @@ function bestvCtv(): HistoricalProjectConfig {
     projectId,
     sourceWorkbook: '百视通CTV程序化广告能力建设项目财务数据预估-20260520提交版.xlsx',
     sourceSheets: ['项目预算表', '月度资金计划'],
+    parameters: [],
     lines: [
       monthlyLine(
         projectId, 1, '程序化广告平台净收入', 'revenue',
@@ -344,4 +452,3 @@ export const HISTORICAL_PROJECT_CONFIGS: HistoricalProjectConfig[] = [
   hebeiCable(),
   bestvCtv(),
 ]
-

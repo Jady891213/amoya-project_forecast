@@ -3,8 +3,13 @@ import type {
   BaseMetricCode,
   CalculationIssue,
   CalculationRun,
+  ForecastLine,
+  ForecastProjectDraft,
   ForecastLineDraft,
   ForecastProjectState,
+  Project,
+  ProjectModule,
+  ProjectParameter,
 } from '../domain/types'
 import type { DatabaseClient, SqlStatement } from '../storage/types'
 import {
@@ -14,6 +19,7 @@ import {
 import { ForecastLineRepository } from '../repositories/forecastLineRepository'
 import { ForecastValueRepository } from '../repositories/forecastValueRepository'
 import { ProjectRepository } from '../repositories/projectRepository'
+import { ParameterRepository } from '../repositories/parameterRepository'
 import {
   buildForecastConfigHash,
   compileForecast,
@@ -23,6 +29,85 @@ export interface SaveAndCalculateResult {
   success: boolean
   run: CalculationRun
   issues: CalculationIssue[]
+}
+
+export function previewForecastDraft(
+  project: Project,
+  modules: ProjectModule[],
+  draft: ForecastProjectDraft,
+) {
+  const now = new Date(0).toISOString()
+  const lines: ForecastLine[] = draft.lines.map((line, index) => ({
+    id: line.id ?? line.code ?? `preview-line-${index + 1}`,
+    projectId: project.id,
+    code: line.code ?? `LINE-${String(index + 1).padStart(3, '0')}`,
+    name: line.name,
+    category: line.category,
+    metricCode: line.category,
+    businessModuleId: line.businessModuleId,
+    forecastMethod: line.forecastMethod,
+    startPeriod: line.startPeriod,
+    endPeriod: line.endPeriod,
+    fixedMonthlyValue: line.fixedMonthlyValue,
+    formulaExpression: line.formulaExpression,
+    assumption: line.assumption,
+    sortOrder: line.sortOrder,
+    createdAt: now,
+    updatedAt: now,
+  }))
+  const parameters: ProjectParameter[] = draft.parameters.map(
+    (parameter, index) => ({
+      id: parameter.id ?? parameter.code ?? `preview-parameter-${index + 1}`,
+      projectId: project.id,
+      code: parameter.code ?? `PAR-${String(index + 1).padStart(3, '0')}`,
+      name: parameter.name,
+      parameterType: parameter.parameterType,
+      valueType: parameter.valueType,
+      unit: parameter.unit,
+      fixedValue:
+        parameter.parameterType === 'fixed' && parameter.fixedValue?.trim()
+          ? parameter.valueType === 'percentage'
+            ? new Decimal(parameter.fixedValue).div(100).toString()
+            : parameter.fixedValue
+          : undefined,
+      description: parameter.description,
+      sortOrder: parameter.sortOrder,
+      createdAt: now,
+      updatedAt: now,
+    }),
+  )
+  const values = draft.lines.flatMap((line, index) =>
+    Object.entries(line.monthlyValues)
+      .filter(([, value]) => value.trim())
+      .map(([period, value]) => ({
+        lineId: line.id ?? line.code ?? `preview-line-${index + 1}`,
+        period,
+        value,
+      })),
+  )
+  const parameterValues = draft.parameters.flatMap((parameter, index) =>
+    Object.entries(parameter.monthlyValues)
+      .filter(([, value]) => value.trim())
+      .map(([period, value]) => ({
+        parameterId:
+          parameter.id ??
+          parameter.code ??
+          `preview-parameter-${index + 1}`,
+        period,
+        value:
+          parameter.valueType === 'percentage'
+            ? new Decimal(value).div(100).toString()
+            : value,
+      })),
+  )
+  return compileForecast(
+    project,
+    modules,
+    lines,
+    values,
+    parameters,
+    parameterValues,
+  )
 }
 
 function validateDraftCoordinates(
@@ -52,24 +137,36 @@ export class CalculationService {
   private readonly lines: ForecastLineRepository
   private readonly values: ForecastValueRepository
   private readonly runs: CalculationRunRepository
+  private readonly parameters: ParameterRepository
 
   constructor(private readonly database: DatabaseClient) {
     this.projects = new ProjectRepository(database)
     this.lines = new ForecastLineRepository(database)
     this.values = new ForecastValueRepository(database)
     this.runs = new CalculationRunRepository(database)
+    this.parameters = new ParameterRepository(database)
   }
 
   async getProjectState(projectId: string): Promise<ForecastProjectState> {
-    const [lines, values, latestRun] = await Promise.all([
+    const [lines, values, parameters, parameterValues, latestRun] =
+      await Promise.all([
       this.lines.list(projectId),
       this.values.listForProject(projectId),
+      this.parameters.list(projectId),
+      this.parameters.listValues(projectId),
       this.runs.latestSuccess(projectId),
     ])
-    const currentHash = buildForecastConfigHash(lines, values)
+    const currentHash = buildForecastConfigHash(
+      lines,
+      values,
+      parameters,
+      parameterValues,
+    )
     return {
       lines,
       values,
+      parameters,
+      parameterValues,
       latestRun,
       isResultCurrent: Boolean(latestRun && latestRun.configHash === currentHash),
     }
@@ -77,7 +174,7 @@ export class CalculationService {
 
   async saveDraft(
     projectId: string,
-    drafts: ForecastLineDraft[],
+    draft: ForecastProjectDraft | ForecastLineDraft[],
   ): Promise<ForecastProjectState> {
     const project = await this.projects.get(projectId)
     if (!project) throw new Error('项目不存在')
@@ -101,31 +198,57 @@ export class CalculationService {
         })(),
       ],
     )
+    const lineDrafts = Array.isArray(draft) ? draft : draft.lines
     validateDraftCoordinates(
       project.startPeriod,
       projectPeriods.map((item) => item.period),
       new Set(modules.map((module) => module.id)),
-      drafts,
+      lineDrafts,
     )
-    await this.lines.saveProjectDraft(projectId, drafts)
+    await this.lines.saveProjectDraft(projectId, lineDrafts)
+    if (!Array.isArray(draft)) {
+      await this.parameters.saveProjectDraft(projectId, draft.parameters)
+    }
     return this.getProjectState(projectId)
   }
 
   async saveAndCalculate(
     projectId: string,
-    drafts: ForecastLineDraft[],
+    draft: ForecastProjectDraft | ForecastLineDraft[],
   ): Promise<SaveAndCalculateResult> {
-    await this.saveDraft(projectId, drafts)
+    await this.saveDraft(projectId, draft)
     const project = await this.projects.get(projectId)
     if (!project) throw new Error('项目不存在')
-    const [modules, lines, values, runNumber] = await Promise.all([
+    const [modules, lines, values, parameters, parameterValues, runNumber] =
+      await Promise.all([
       this.projects.listModules(projectId),
       this.lines.list(projectId),
       this.values.listForProject(projectId),
+      this.parameters.list(projectId),
+      this.parameters.listValues(projectId),
       this.runs.nextRunNumber(projectId),
     ])
-    const configHash = buildForecastConfigHash(lines, values)
-    const compilation = compileForecast(project, modules, lines, values)
+    const configHash = buildForecastConfigHash(
+      lines,
+      values,
+      parameters,
+      parameterValues,
+    )
+    const configSnapshotJson = JSON.stringify({
+      projectId,
+      parameters,
+      parameterValues,
+      lines,
+      values,
+    })
+    const compilation = compileForecast(
+      project,
+      modules,
+      lines,
+      values,
+      parameters,
+      parameterValues,
+    )
     const now = new Date().toISOString()
     const errors = compilation.issues.filter((issue) => issue.severity === 'error')
     const run: CalculationRun = {
@@ -138,6 +261,7 @@ export class CalculationService {
       configHash,
       issueCount: compilation.issues.length,
       issues: compilation.issues,
+      configSnapshotJson,
       startedAt: now,
       completedAt: new Date().toISOString(),
     }

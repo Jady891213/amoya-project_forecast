@@ -110,6 +110,7 @@ export function ProjectReportPage({
   const [error, setError] = useState('')
   const [forecastState, setForecastState] = useState<ForecastProjectState>()
   const [lineBreakdown, setLineBreakdown] = useState<ForecastLineBreakdown[]>([])
+  const [showSnapshot, setShowSnapshot] = useState(false)
   const service = useMemo(() => new ProjectReportService(database), [database])
   const calculation = useMemo(() => new CalculationService(database), [database])
   const lineValues = useMemo(
@@ -182,9 +183,19 @@ export function ProjectReportPage({
         </div>
         <span className="spacer" />
         {view === 'calculation' && (
-          <button className="btn" onClick={onReturnToForecast}>
-            <ArrowLeft size={14} />返回预测配置
-          </button>
+          <>
+            {forecastState?.latestRun && (
+              <button
+                className="btn"
+                onClick={() => setShowSnapshot((current) => !current)}
+              >
+                <Info size={14} />{showSnapshot ? '收起配置快照' : '查看配置快照'}
+              </button>
+            )}
+            <button className="btn" onClick={onReturnToForecast}>
+              <ArrowLeft size={14} />返回预测配置
+            </button>
+          </>
         )}
         <label>业务模块
           <select value={businessModuleId} onChange={(event) => setBusinessModuleId(event.target.value)}>
@@ -253,6 +264,23 @@ export function ProjectReportPage({
                 <Info size={15} />
                 当前表格读取 <code>fact_metric_value</code> 的基础指标，并即时计算毛利和毛利率；页面不可编辑。
               </div>
+              {showSnapshot && forecastState?.latestRun && (
+                <section className="calculation-snapshot">
+                  <div>
+                    <strong>RUN-{String(forecastState.latestRun.runNumber).padStart(4, '0')} 配置快照</strong>
+                    <span>该内容随计算批次保存，不会被后续配置修改覆盖。</span>
+                  </div>
+                  <pre>
+                    {JSON.stringify(
+                      JSON.parse(
+                        forecastState.latestRun.configSnapshotJson || '{}',
+                      ),
+                      null,
+                      2,
+                    )}
+                  </pre>
+                </section>
+              )}
               {lineBreakdown.length > 0 && (
                 <section className="report-section">
                   <div className="section-heading">
@@ -272,6 +300,16 @@ export function ProjectReportPage({
                             <th className="sticky-column metric-column">
                               <span>{item.lineName}</span>
                               <small>{categoryLabels[item.category]} · {item.lineCode}</small>
+                              {item.sourceSummary && (
+                                <small className="line-source-summary">
+                                  {item.sourceSummary}
+                                </small>
+                              )}
+                              {item.dependencies && item.dependencies.length > 0 && (
+                                <small>
+                                  引用：{item.dependencies.join('、')}
+                                </small>
+                              )}
                             </th>
                             {report.monthly.map((month) => (
                               <td key={month.period} className="number-cell">
