@@ -1,5 +1,5 @@
 import Decimal from 'decimal.js'
-import { generatePeriods } from '../domain/periods'
+import { addMonths, generatePeriods } from '../domain/periods'
 import type {
   BaseFact,
   CalculatedFact,
@@ -13,6 +13,8 @@ interface MetricEngineResult {
   monthly: MonthlyMetricRow[]
   summary: ReportSummary
   calculatedFacts: CalculatedFact[]
+  operationEndPeriod: string
+  reportEndPeriod: string
 }
 
 const ZERO = new Decimal(0)
@@ -60,7 +62,19 @@ export function calculateMetrics(
   metricDefinitions: MetricDefinition[],
   businessModuleId?: string,
 ): MetricEngineResult {
-  const periods = generatePeriods(project.startPeriod, project.durationMonths)
+  const operationEndPeriod = addMonths(
+    project.startPeriod,
+    project.durationMonths - 1,
+  )
+  const reportEndPeriod = [
+    operationEndPeriod,
+    ...facts.map((fact) => fact.period),
+  ].sort().at(-1) ?? operationEndPeriod
+  const [startYear, startMonth] = project.startPeriod.split('-').map(Number)
+  const [endYear, endMonth] = reportEndPeriod.split('-').map(Number)
+  const reportDuration =
+    (endYear - startYear) * 12 + (endMonth - startMonth) + 1
+  const periods = generatePeriods(project.startPeriod, reportDuration)
   const filteredFacts = businessModuleId
     ? facts.filter((fact) => fact.businessModuleId === businessModuleId)
     : facts
@@ -111,6 +125,7 @@ export function calculateMetrics(
 
     return {
       period,
+      isRecoveryPeriod: period > operationEndPeriod,
       revenue: value(revenue),
       cost: value(cost),
       grossProfit: value(grossProfit),
@@ -184,5 +199,7 @@ export function calculateMetrics(
       cashPositiveLabel,
     },
     calculatedFacts,
+    operationEndPeriod,
+    reportEndPeriod,
   }
 }

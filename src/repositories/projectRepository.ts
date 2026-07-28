@@ -249,6 +249,7 @@ export class ProjectRepository {
         `SELECT COUNT(*) AS count
          FROM cfg_forecast_line
          WHERE project_id = ?
+           AND category IN ('revenue', 'cost')
            AND (start_period < ? OR end_period > ?)`,
         [projectId, startPeriod, endPeriod(startPeriod, input.durationMonths)],
       )

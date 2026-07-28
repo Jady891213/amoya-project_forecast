@@ -99,6 +99,21 @@ export class ForecastLineValueRepository {
       } else if (lineSnapshot?.forecastMethod === 'monthly_input') {
         sourceSummary = '逐月填写'
       }
+      if (
+        lineSnapshot &&
+        (lineSnapshot.category === 'revenue' ||
+          lineSnapshot.category === 'cost')
+      ) {
+        const taxLabel =
+          lineSnapshot.amountBasis === 'tax_inclusive'
+            ? `含税录入 ${new Decimal(lineSnapshot.taxRate || 0).times(100).toString()}%`
+            : lineSnapshot.amountBasis === 'non_taxable'
+              ? '免税/不计税'
+              : `未税录入 ${new Decimal(lineSnapshot.taxRate || 0).times(100).toString()}%`
+        sourceSummary = sourceSummary
+          ? `${sourceSummary} · ${taxLabel}`
+          : taxLabel
+      }
       return {
         lineId,
         lineCode: snapshot.line_code,

@@ -7,6 +7,15 @@ export type MetricType = 'base' | 'calculated'
 export type PeriodAggregation = 'sum' | 'recompute' | 'ending'
 export type VersionStatus = 'working' | 'snapshot'
 export type ForecastMethod = 'monthly_input' | 'fixed_monthly' | 'formula'
+export type TaxAmountBasis =
+  | 'tax_exclusive'
+  | 'tax_inclusive'
+  | 'non_taxable'
+export type CashRuleMethod =
+  | 'disabled'
+  | 'immediate'
+  | 'delayed'
+  | 'installment'
 export type ParameterType = 'fixed' | 'monthly'
 export type ParameterValueType =
   | 'currency'
@@ -22,7 +31,7 @@ export type CalculationRunStatus = 'success' | 'failed'
 
 export const BASELINE_SCENARIO_CODE = 'baseline'
 export const WORKING_VERSION_CODE = 'working'
-export const REFERENCE_DATASET_ID = 'historical-project-config-v2'
+export const REFERENCE_DATASET_ID = 'historical-project-config-v3'
 
 export type BaseMetricCode =
   | 'revenue'
@@ -153,6 +162,8 @@ export interface ForecastLine {
   endPeriod: string
   fixedMonthlyValue?: string
   formulaExpression?: string
+  amountBasis: TaxAmountBasis
+  taxRate: string
   assumption: string
   sortOrder: number
   createdAt: string
@@ -176,6 +187,8 @@ export interface ForecastLineDraft {
   endPeriod: string
   fixedMonthlyValue?: string
   formulaExpression?: string
+  amountBasis?: TaxAmountBasis
+  taxRate?: string
   assumption: string
   sortOrder: number
   monthlyValues: Record<string, string>
@@ -218,6 +231,50 @@ export interface ProjectParameterDraft {
 export interface ForecastProjectDraft {
   lines: ForecastLineDraft[]
   parameters: ProjectParameterDraft[]
+  cashRules?: CashRuleDraft[]
+}
+
+export interface CashInstallment {
+  id: string
+  cashRuleId: string
+  sequence: number
+  offsetMonths: number
+  ratio: string
+}
+
+export interface CashRule {
+  id: string
+  projectId: string
+  sourceLineId: string
+  sourceLineCode: string
+  method: CashRuleMethod
+  delayMonths: number
+  installments: CashInstallment[]
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CashInstallmentDraft {
+  id?: string
+  sequence: number
+  offsetMonths: number
+  ratio: string
+}
+
+export interface CashRuleDraft {
+  id?: string
+  sourceLineId?: string
+  sourceLineCode: string
+  method: CashRuleMethod
+  delayMonths: number
+  installments: CashInstallmentDraft[]
+}
+
+export interface TaxAmountBreakdown {
+  rawValue: string
+  netValue: string
+  taxValue: string
+  grossValue: string
 }
 
 export interface CompiledLineValue {
@@ -230,6 +287,32 @@ export interface CompiledLineValue {
   versionId: string
   metricCode: BaseMetricCode
   value: string
+  rawValue: string
+  netValue: string
+  taxValue: string
+  grossValue: string
+}
+
+export interface CompiledCashScheduleValue {
+  sourceLineId: string
+  sourceLineCode: string
+  sourceLineName: string
+  projectId: string
+  departmentId: string
+  businessModuleId: string
+  sourcePeriod: string
+  settlementPeriod: string
+  scenarioId: string
+  versionId: string
+  metricCode: 'cash_inflow' | 'cash_outflow'
+  amountBasis: TaxAmountBasis
+  taxRate: string
+  netValue: string
+  taxValue: string
+  grossValue: string
+  settlementRatio: string
+  value: string
+  ruleMethod: CashRuleMethod
 }
 
 export interface CalculationIssue {
@@ -261,6 +344,7 @@ export interface ForecastProjectState {
   values: ForecastMonthlyValue[]
   parameters: ProjectParameter[]
   parameterValues: ProjectParameterValue[]
+  cashRules: CashRule[]
   latestRun?: CalculationRun
   isResultCurrent: boolean
 }
@@ -275,6 +359,23 @@ export interface ForecastLineBreakdown {
   dependencies?: string[]
   values: Array<{ period: string; value: string }>
   total: string
+}
+
+export interface CashScheduleBreakdown {
+  sourceLineId: string
+  sourceLineCode: string
+  sourceLineName: string
+  sourcePeriod: string
+  settlementPeriod: string
+  metricCode: 'cash_inflow' | 'cash_outflow'
+  amountBasis: TaxAmountBasis
+  taxRate: string
+  netValue: string
+  taxValue: string
+  grossValue: string
+  settlementRatio: string
+  value: string
+  ruleMethod: CashRuleMethod
 }
 
 export interface CalculatedFact {
@@ -325,6 +426,7 @@ export interface ReportQuery {
 
 export interface MonthlyMetricRow {
   period: string
+  isRecoveryPeriod: boolean
   revenue: string
   cost: string
   grossProfit: string
@@ -363,4 +465,6 @@ export interface ProjectReport {
   metricDefinitions: MetricDefinition[]
   calculatedFacts: CalculatedFact[]
   hasCashFacts: boolean
+  operationEndPeriod: string
+  reportEndPeriod: string
 }

@@ -17,6 +17,8 @@ interface ForecastLineRow {
   end_period: string
   fixed_monthly_value_text: string | null
   formula_expression_text: string | null
+  amount_basis: ForecastLine['amountBasis']
+  tax_rate_text: string
   assumption: string
   sort_order: number
   created_at: string
@@ -37,6 +39,8 @@ function fromRow(row: ForecastLineRow): ForecastLine {
     endPeriod: row.end_period,
     fixedMonthlyValue: row.fixed_monthly_value_text ?? undefined,
     formulaExpression: row.formula_expression_text ?? undefined,
+    amountBasis: row.amount_basis,
+    taxRate: row.tax_rate_text,
     assumption: row.assumption,
     sortOrder: row.sort_order,
     createdAt: row.created_at,
@@ -131,9 +135,10 @@ export class ForecastLineRepository {
         sql: `INSERT INTO cfg_forecast_line (
           id, project_id, code, name, category, metric_code,
           business_module_id, forecast_method, start_period, end_period,
-          fixed_monthly_value_text, formula_expression_text, assumption,
+          fixed_monthly_value_text, formula_expression_text,
+          amount_basis, tax_rate_text, assumption,
           sort_order, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           name = excluded.name,
           category = excluded.category,
@@ -144,6 +149,8 @@ export class ForecastLineRepository {
           end_period = excluded.end_period,
           fixed_monthly_value_text = excluded.fixed_monthly_value_text,
           formula_expression_text = excluded.formula_expression_text,
+          amount_basis = excluded.amount_basis,
+          tax_rate_text = excluded.tax_rate_text,
           assumption = excluded.assumption,
           sort_order = excluded.sort_order,
           updated_at = excluded.updated_at`,
@@ -164,6 +171,12 @@ export class ForecastLineRepository {
           draft.forecastMethod === 'formula'
             ? draft.formulaExpression?.trim() || null
             : null,
+          draft.category === 'revenue' || draft.category === 'cost'
+            ? draft.amountBasis ?? 'tax_exclusive'
+            : 'non_taxable',
+          draft.category === 'revenue' || draft.category === 'cost'
+            ? draft.taxRate?.trim() || '0'
+            : '0',
           draft.assumption.trim(),
           sortOrder,
           createdAt,

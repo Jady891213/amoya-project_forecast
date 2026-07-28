@@ -1209,6 +1209,107 @@ button, input, select, textarea, table { font-size: 12px; }
   font-size: 11px;
   text-align: right;
 }
+.line-config-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.line-config-tabs button {
+  min-height: 30px;
+  border: 0;
+  border-right: 1px solid var(--line);
+  background: #f8f9fb;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+.line-config-tabs button:last-child { border-right: 0; }
+.line-config-tabs button.active {
+  background: #edf4fd;
+  color: var(--primary);
+  font-weight: 600;
+}
+.line-config-tabs-fixed {
+  flex: 0 0 38px;
+  margin: 9px 12px 0;
+}
+.cash-rule-editor {
+  display: grid;
+  gap: 10px;
+}
+.installment-editor {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+.installment-editor .monthly-input-head {
+  justify-content: space-between;
+}
+.installment-editor > small {
+  display: block;
+  padding: 7px 9px;
+  text-align: right;
+  color: var(--muted);
+}
+.installment-row {
+  display: grid;
+  grid-template-columns: 46px 1fr 1fr 28px;
+  align-items: end;
+  gap: 6px;
+  min-height: 52px;
+  padding: 5px 7px;
+  border-bottom: 1px solid #edf0f3;
+}
+.installment-row > span {
+  align-self: center;
+  color: var(--muted);
+}
+.installment-row label {
+  gap: 3px;
+  font-size: 11px;
+}
+.installment-row input { height: 28px; }
+.tax-preview-card,
+.cash-schedule-preview {
+  display: grid;
+  gap: 5px;
+  padding: 9px;
+  border: 1px solid #dce4ef;
+  border-radius: 4px;
+  background: #f7faff;
+}
+.tax-preview-card > span,
+.cash-schedule-preview > span,
+.tax-preview-card small,
+.cash-schedule-preview small { color: var(--muted); }
+.cash-schedule-preview > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid #e4eaf1;
+}
+.recovery-period {
+  background: #fff9e9 !important;
+}
+.report-table th small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.cash-trace-table {
+  min-width: 980px;
+}
+.cash-trace-table td:first-child {
+  min-width: 180px;
+}
+.cash-trace-table td:first-child strong,
+.cash-trace-table td:first-child small {
+  display: block;
+}
 .forecast-panel-actions {
   min-height: 48px;
   flex: 0 0 48px;

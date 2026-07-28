@@ -62,4 +62,56 @@ describe('ForecastCompiler', () => {
     expect(second).toBe(first)
     expect(changed).not.toBe(first)
   })
+
+  it('公式引用读取上游标准化后的未税金额', () => {
+    const revenue = line({
+      id: 'line-revenue',
+      code: 'LINE-001',
+      fixedMonthlyValue: '106',
+      amountBasis: 'tax_inclusive',
+      taxRate: '0.06',
+      startPeriod: '2026-01',
+      endPeriod: '2026-01',
+    })
+    const cost = line({
+      id: 'line-cost',
+      code: 'LINE-002',
+      name: '渠道分成',
+      category: 'cost',
+      metricCode: 'cost',
+      forecastMethod: 'formula',
+      formulaExpression: 'LINE("LINE-001") * 20%',
+      fixedMonthlyValue: undefined,
+      amountBasis: 'tax_exclusive',
+      taxRate: '0.06',
+      startPeriod: '2026-01',
+      endPeriod: '2026-01',
+    })
+
+    const result = compileForecast(project, [module], [revenue, cost], [])
+    const costValue = result.values.find((item) => item.lineId === cost.id)
+    expect(result.issues).toHaveLength(0)
+    expect(costValue).toEqual(
+      expect.objectContaining({
+        rawValue: '20',
+        netValue: '20',
+        grossValue: '21.2',
+      }),
+    )
+  })
+
+  it('拒绝非法税率', () => {
+    const result = compileForecast(
+      project,
+      [module],
+      [line({ taxRate: '1' })],
+      [],
+    )
+    expect(result.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: 'taxRate', severity: 'error' }),
+      ]),
+    )
+    expect(result.values).toHaveLength(0)
+  })
 })

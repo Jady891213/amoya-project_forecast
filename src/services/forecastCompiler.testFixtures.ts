@@ -42,6 +42,8 @@ export function line(
     startPeriod: '2026-01',
     endPeriod: '2026-04',
     fixedMonthlyValue: '100.25',
+    amountBasis: 'tax_exclusive',
+    taxRate: '0',
     assumption: '',
     sortOrder: 1,
     createdAt: '2026-01-01T00:00:00.000Z',

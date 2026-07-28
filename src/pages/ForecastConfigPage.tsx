@@ -23,6 +23,8 @@ import type {
   ProjectModule,
   ProjectParameterDraft,
   ParameterValueType,
+  CashRuleDraft,
+  TaxAmountBasis,
 } from '../domain/types'
 import type { DatabaseClient } from '../storage/types'
 import {
@@ -92,6 +94,8 @@ function toDrafts(state: ForecastProjectState): ForecastLineDraft[] {
     endPeriod: line.endPeriod,
     fixedMonthlyValue: line.fixedMonthlyValue ?? '',
     formulaExpression: line.formulaExpression ?? '',
+    amountBasis: line.amountBasis,
+    taxRate: new Decimal(line.taxRate || 0).times(100).toString(),
     assumption: line.assumption,
     sortOrder: line.sortOrder,
     monthlyValues: valuesByLine.get(line.id) ?? {},
@@ -128,6 +132,31 @@ function toParameterDrafts(
     sortOrder: parameter.sortOrder,
     monthlyValues: valuesByParameter.get(parameter.id) ?? {},
   }))
+}
+
+function toCashRuleDrafts(state: ForecastProjectState): CashRuleDraft[] {
+  const ruleByLineId = new Map(
+    state.cashRules.map((rule) => [rule.sourceLineId, rule]),
+  )
+  return state.lines
+    .filter((line) => line.category === 'revenue' || line.category === 'cost')
+    .map((line) => {
+      const rule = ruleByLineId.get(line.id)
+      return {
+        id: rule?.id,
+        sourceLineId: line.id,
+        sourceLineCode: line.code,
+        method: rule?.method ?? 'disabled',
+        delayMonths: rule?.delayMonths ?? 0,
+        installments:
+          rule?.installments.map((item) => ({
+            id: item.id,
+            sequence: item.sequence,
+            offsetMonths: item.offsetMonths,
+            ratio: new Decimal(item.ratio).times(100).toString(),
+          })) ?? [],
+      }
+    })
 }
 
 function humanFormula(
@@ -223,14 +252,24 @@ export function ForecastConfigPage({
     () => generatePeriods(project.startPeriod, project.durationMonths),
     [project.durationMonths, project.startPeriod],
   )
+  const cashPeriods = useMemo(
+    () => generatePeriods(project.startPeriod, project.durationMonths + 36),
+    [project.durationMonths, project.startPeriod],
+  )
   const publicModule =
     modules.find((module) => module.isCommon) ?? modules[0]
   const [drafts, setDrafts] = useState<ForecastLineDraft[]>([])
   const [parameterDrafts, setParameterDrafts] = useState<
     ProjectParameterDraft[]
   >([])
-  const [activeSection, setActiveSection] = useState<'lines' | 'parameters'>(
-    'lines',
+  const [cashRuleDrafts, setCashRuleDrafts] = useState<CashRuleDraft[]>([])
+  const [activeSection, setActiveSection] = useState<
+    'profit' | 'cash' | 'parameters'
+  >(
+    'profit',
+  )
+  const [linePanelSection, setLinePanelSection] = useState<'amount' | 'cash'>(
+    'amount',
   )
   const [selectedId, setSelectedId] = useState('')
   const [selectedParameterId, setSelectedParameterId] = useState('')
@@ -244,9 +283,11 @@ export function ForecastConfigPage({
   const hydrate = useCallback((state: ForecastProjectState, selectedIndex = 0) => {
     const nextDrafts = toDrafts(state)
     const nextParameters = toParameterDrafts(state)
+    const nextCashRules = toCashRuleDrafts(state)
     setResultState(state)
     setDrafts(nextDrafts)
     setParameterDrafts(nextParameters)
+    setCashRuleDrafts(nextCashRules)
     setSelectedId(nextDrafts[selectedIndex]?.id ?? nextDrafts[0]?.id ?? '')
     setSelectedParameterId(
       nextParameters[0]?.id ?? nextParameters[0]?.code ?? '',
@@ -283,10 +324,29 @@ export function ForecastConfigPage({
     selectedParameterIndex >= 0
       ? parameterDrafts[selectedParameterIndex]
       : undefined
+  const selectedCashRule = selected?.code
+    ? cashRuleDrafts.find((rule) => rule.sourceLineCode === selected.code)
+    : undefined
+
+  const normalizedLineDrafts = () =>
+    drafts.map((draft) => ({
+      ...draft,
+      taxRate:
+        draft.category === 'revenue' || draft.category === 'cost'
+          ? new Decimal(draft.taxRate || 0).div(100).toString()
+          : '0',
+    }))
 
   const projectDraft = (): ForecastProjectDraft => ({
-    lines: drafts,
+    lines: normalizedLineDrafts(),
     parameters: parameterDrafts,
+    cashRules: cashRuleDrafts.map((rule) => ({
+      ...rule,
+      installments: rule.installments.map((item) => ({
+        ...item,
+        ratio: new Decimal(item.ratio || 0).div(100).toString(),
+      })),
+    })),
   })
 
   function changeSelected(patch: Partial<ForecastLineDraft>) {
@@ -317,11 +377,28 @@ export function ForecastConfigPage({
       endPeriod: projectPeriods[projectPeriods.length - 1],
       fixedMonthlyValue: '',
       formulaExpression: '',
+      amountBasis:
+        category === 'revenue' || category === 'cost'
+          ? 'tax_exclusive'
+          : 'non_taxable',
+      taxRate: '0',
       assumption: '',
       sortOrder: drafts.length + 1,
       monthlyValues: {},
     }
     setDrafts((current) => [...current, draft])
+    if (category === 'revenue' || category === 'cost') {
+      setCashRuleDrafts((current) => [
+        ...current,
+        {
+          sourceLineId: draft.id,
+          sourceLineCode: draft.code ?? '',
+          method: 'immediate',
+          delayMonths: 0,
+          installments: [],
+        },
+      ])
+    }
     setSelectedId(draft.id ?? '')
     setDirty(true)
     setIssues([])
@@ -336,6 +413,36 @@ export function ForecastConfigPage({
           : parameter,
       ),
     )
+    setDirty(true)
+    setIssues([])
+    setMessage('')
+  }
+
+  function changeSelectedCashRule(patch: Partial<CashRuleDraft>) {
+    if (!selected?.code) return
+    setCashRuleDrafts((current) => {
+      const found = current.some(
+        (rule) => rule.sourceLineCode === selected.code,
+      )
+      if (!found) {
+        return [
+          ...current,
+          {
+            sourceLineId: selected.id,
+            sourceLineCode: selected.code ?? '',
+            method: 'disabled',
+            delayMonths: 0,
+            installments: [],
+            ...patch,
+          },
+        ]
+      }
+      return current.map((rule) =>
+        rule.sourceLineCode === selected.code
+          ? { ...rule, ...patch }
+          : rule,
+      )
+    })
     setDirty(true)
     setIssues([])
     setMessage('')
@@ -430,6 +537,11 @@ export function ForecastConfigPage({
     }
     const next = drafts.filter((_, index) => index !== selectedIndex)
     setDrafts(next)
+    if (selected.code) {
+      setCashRuleDrafts((current) =>
+        current.filter((rule) => rule.sourceLineCode !== selected.code),
+      )
+    }
     setSelectedId(next[Math.min(selectedIndex, next.length - 1)]?.id ?? '')
     setDirty(true)
     setIssues([])
@@ -549,10 +661,17 @@ export function ForecastConfigPage({
   const draftPreview = useMemo(
     () =>
       previewForecastDraft(project, modules, {
-        lines: drafts,
+        lines: normalizedLineDrafts(),
         parameters: parameterDrafts,
+        cashRules: cashRuleDrafts.map((rule) => ({
+          ...rule,
+          installments: rule.installments.map((item) => ({
+            ...item,
+            ratio: new Decimal(item.ratio || 0).div(100).toString(),
+          })),
+        })),
       }),
-    [drafts, modules, parameterDrafts, project],
+    [cashRuleDrafts, drafts, modules, parameterDrafts, project],
   )
   const selectedPreviewValues = selected
     ? draftPreview.values.filter((value) => value.lineId === selected.id)
@@ -560,6 +679,34 @@ export function ForecastConfigPage({
   const selectedPreviewIssues = selected
     ? draftPreview.issues.filter((issue) => issue.lineId === selected.id)
     : []
+  const selectedCashPreview = selected
+    ? draftPreview.cashValues.filter(
+        (value) => value.sourceLineId === selected.id,
+      )
+    : []
+  const visibleDrafts = drafts.filter((draft) =>
+    activeSection === 'profit'
+      ? draft.category === 'revenue' || draft.category === 'cost'
+      : activeSection === 'cash'
+        ? draft.category === 'cash_inflow' || draft.category === 'cash_outflow'
+        : false,
+  )
+  const selectedPeriods =
+    selected?.category === 'cash_inflow' || selected?.category === 'cash_outflow'
+      ? cashPeriods
+      : projectPeriods
+
+  function switchSection(section: 'profit' | 'cash' | 'parameters') {
+    setActiveSection(section)
+    if (section === 'parameters') return
+    const first = drafts.find((draft) =>
+      section === 'profit'
+        ? draft.category === 'revenue' || draft.category === 'cost'
+        : draft.category === 'cash_inflow' || draft.category === 'cash_outflow',
+    )
+    setSelectedId(first?.id ?? '')
+    setLinePanelSection('amount')
+  }
 
   if (loading) {
     return <section className="loading-card">正在读取预测配置…</section>
@@ -575,15 +722,22 @@ export function ForecastConfigPage({
       />
       <div className="forecast-section-tabs">
         <button
-          className={activeSection === 'lines' ? 'active' : ''}
-          onClick={() => setActiveSection('lines')}
+          className={activeSection === 'profit' ? 'active' : ''}
+          onClick={() => switchSection('profit')}
         >
-          预测行项目
-          <span>{drafts.length}</span>
+          损益行项目
+          <span>{drafts.filter((item) => item.category === 'revenue' || item.category === 'cost').length}</span>
+        </button>
+        <button
+          className={activeSection === 'cash' ? 'active' : ''}
+          onClick={() => switchSection('cash')}
+        >
+          直接现金计划
+          <span>{drafts.filter((item) => item.category === 'cash_inflow' || item.category === 'cash_outflow').length}</span>
         </button>
         <button
           className={activeSection === 'parameters' ? 'active' : ''}
-          onClick={() => setActiveSection('parameters')}
+          onClick={() => switchSection('parameters')}
         >
           项目参数
           <span>{parameterDrafts.length}</span>
@@ -593,11 +747,19 @@ export function ForecastConfigPage({
         <div className="toolbar-title">
           <Calculator size={16} />
           <div>
-            <b>{activeSection === 'lines' ? '预测行项目' : '项目参数'}</b>
+            <b>
+              {activeSection === 'profit'
+                ? '损益行项目'
+                : activeSection === 'cash'
+                  ? '直接现金计划'
+                  : '项目参数'}
+            </b>
             <span>
-              {activeSection === 'lines'
-                ? '维护损益与现金流行项目并生成分月计算结果'
-                : '维护公式可引用的固定值和逐月业务参数'}
+              {activeSection === 'profit'
+                ? '维护收入成本、税口径和自动收付款规则'
+                : activeSection === 'cash'
+                  ? '维护不由损益规则生成的直接收款和付款计划'
+                  : '维护公式可引用的固定值和逐月业务参数'}
             </span>
           </div>
         </div>
@@ -613,7 +775,7 @@ export function ForecastConfigPage({
           )}
         </div>
         <span className="spacer" />
-        {activeSection === 'lines' ? (
+        {activeSection === 'profit' ? (
           <>
             <button className="btn" onClick={() => addLine('revenue')} disabled={saving}>
               <Plus size={14} />新增收入项
@@ -621,6 +783,9 @@ export function ForecastConfigPage({
             <button className="btn" onClick={() => addLine('cost')} disabled={saving}>
               <Plus size={14} />新增成本项
             </button>
+          </>
+        ) : activeSection === 'cash' ? (
+          <>
             <button className="btn" onClick={() => addLine('cash_inflow')} disabled={saving}>
               <Plus size={14} />新增收款项
             </button>
@@ -653,7 +818,7 @@ export function ForecastConfigPage({
         </div>
       )}
 
-      {activeSection === 'lines' ? (
+      {activeSection !== 'parameters' ? (
       <div className={`forecast-editor ${selected ? 'panel-open' : ''}`}>
         <section className="forecast-table-panel">
           <table className="forecast-table">
@@ -670,15 +835,20 @@ export function ForecastConfigPage({
               </tr>
             </thead>
             <tbody>
-              {drafts.map((draft) => {
+              {visibleDrafts.map((draft) => {
+                const linePeriods =
+                  draft.category === 'cash_inflow' ||
+                  draft.category === 'cash_outflow'
+                    ? cashPeriods
+                    : projectPeriods
                 const activeMonths =
-                  projectPeriods.indexOf(draft.endPeriod) -
-                  projectPeriods.indexOf(draft.startPeriod) +
+                  linePeriods.indexOf(draft.endPeriod) -
+                  linePeriods.indexOf(draft.startPeriod) +
                   1
                 const filled =
                   draft.forecastMethod === 'fixed_monthly'
                     ? Boolean(draft.fixedMonthlyValue?.trim())
-                    : projectPeriods
+                    : linePeriods
                         .filter(
                           (period) =>
                             period >= draft.startPeriod &&
@@ -690,7 +860,10 @@ export function ForecastConfigPage({
                   <tr
                     key={draft.id}
                     className={draft.id === selectedId ? 'selected' : ''}
-                    onClick={() => setSelectedId(draft.id ?? '')}
+                    onClick={() => {
+                      setSelectedId(draft.id ?? '')
+                      setLinePanelSection('amount')
+                    }}
                   >
                     <td><span className={`forecast-category ${draft.category}`}>{categoryLabels[draft.category]}</span></td>
                     <td><strong>{draft.name || '未命名行项目'}</strong><small>{draft.code || '保存后生成编码'}</small></td>
@@ -702,12 +875,47 @@ export function ForecastConfigPage({
                           ? '逐月填写'
                           : '公式计算'}
                     </td>
-                    <td>{methodSummary(draft, projectPeriods, parameterDrafts, drafts)}</td>
+                    <td>
+                      <span>
+                        {methodSummary(
+                          draft,
+                          linePeriods,
+                          parameterDrafts,
+                          drafts,
+                        )}
+                      </span>
+                      {(draft.category === 'revenue' ||
+                        draft.category === 'cost') && (
+                        <small>
+                          {draft.amountBasis === 'tax_inclusive'
+                            ? '含税'
+                            : draft.amountBasis === 'non_taxable'
+                              ? '免税'
+                              : '未税'}
+                          {' · '}
+                          {cashRuleDrafts.find(
+                            (rule) => rule.sourceLineCode === draft.code,
+                          )?.method === 'immediate'
+                            ? '当月收付'
+                            : cashRuleDrafts.find(
+                                  (rule) =>
+                                    rule.sourceLineCode === draft.code,
+                                )?.method === 'delayed'
+                              ? '延后收付'
+                              : cashRuleDrafts.find(
+                                    (rule) =>
+                                      rule.sourceLineCode === draft.code,
+                                  )?.method === 'installment'
+                                ? '分期收付'
+                                : '不自动生成现金'}
+                        </small>
+                      )}
+                    </td>
                     <td>{draft.startPeriod}—{draft.endPeriod}</td>
                     <td className="number-cell">
                       {draft.forecastMethod === 'formula'
                         ? '计算后生成'
-                        : formatWan(totalValue(draft, projectPeriods))}
+                        : formatWan(totalValue(draft, linePeriods))}
                     </td>
                     <td>
                       <span className={filled ? 'complete-mark' : 'incomplete-mark'}>
@@ -721,10 +929,12 @@ export function ForecastConfigPage({
                   </tr>
                 )
               })}
-              {drafts.length === 0 && (
+              {visibleDrafts.length === 0 && (
                 <tr>
                   <td colSpan={8} className="empty-cell">
-                    当前还没有预测行项目，请新增损益或现金流项目
+                    {activeSection === 'profit'
+                      ? '当前还没有损益行项目，请新增收入或成本项'
+                      : '当前没有直接现金计划；损益行仍可通过规则自动生成现金流'}
                   </td>
                 </tr>
               )}
@@ -738,6 +948,23 @@ export function ForecastConfigPage({
               <div><b>行项目配置</b><span>{selected.code || '尚未保存'}</span></div>
               <button className="icon-button" aria-label="关闭配置面板" onClick={() => setSelectedId('')}><X size={16} /></button>
             </div>
+            {(selected.category === 'revenue' ||
+              selected.category === 'cost') && (
+              <div className="line-config-tabs line-config-tabs-fixed">
+                <button
+                  className={linePanelSection === 'amount' ? 'active' : ''}
+                  onClick={() => setLinePanelSection('amount')}
+                >
+                  金额与公式
+                </button>
+                <button
+                  className={linePanelSection === 'cash' ? 'active' : ''}
+                  onClick={() => setLinePanelSection('cash')}
+                >
+                  税与收付款
+                </button>
+              </div>
+            )}
             <div className="forecast-panel-body">
               <label>行项目名称
                 <input
@@ -754,10 +981,17 @@ export function ForecastConfigPage({
                       changeSelected({ category: event.target.value as ForecastCategory })
                     }
                   >
-                    <option value="revenue">收入</option>
-                    <option value="cost">成本</option>
-                    <option value="cash_inflow">收款</option>
-                    <option value="cash_outflow">付款</option>
+                    {activeSection === 'profit' ? (
+                      <>
+                        <option value="revenue">收入</option>
+                        <option value="cost">成本</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="cash_inflow">收款</option>
+                        <option value="cash_outflow">付款</option>
+                      </>
+                    )}
                   </select>
                 </label>
                 <label>业务模块
@@ -769,6 +1003,10 @@ export function ForecastConfigPage({
                   </select>
                 </label>
               </div>
+              {(selected.category === 'cash_inflow' ||
+                selected.category === 'cash_outflow' ||
+                linePanelSection === 'amount') ? (
+                <>
               <label>预测方式
                 <select
                   value={selected.forecastMethod}
@@ -786,12 +1024,12 @@ export function ForecastConfigPage({
               <div className="forecast-form-row">
                 <label>开始期间
                   <select value={selected.startPeriod} onChange={(event) => changeSelected({ startPeriod: event.target.value })}>
-                    {projectPeriods.map((period) => <option key={period}>{period}</option>)}
+                    {selectedPeriods.map((period) => <option key={period}>{period}</option>)}
                   </select>
                 </label>
                 <label>结束期间
                   <select value={selected.endPeriod} onChange={(event) => changeSelected({ endPeriod: event.target.value })}>
-                    {projectPeriods.map((period) => <option key={period}>{period}</option>)}
+                    {selectedPeriods.map((period) => <option key={period}>{period}</option>)}
                   </select>
                 </label>
               </div>
@@ -804,7 +1042,7 @@ export function ForecastConfigPage({
                     onChange={(event) => changeSelected({ fixedMonthlyValue: event.target.value })}
                     placeholder="例如：200000"
                   />
-                  <small>周期合计：{formatWan(totalValue(selected, projectPeriods))} 万元</small>
+                  <small>周期合计：{formatWan(totalValue(selected, selectedPeriods))} 万元</small>
                 </label>
               ) : selected.forecastMethod === 'monthly_input' ? (
                 <div className="monthly-input-section">
@@ -813,7 +1051,7 @@ export function ForecastConfigPage({
                     <span>空白月份按0计算</span>
                   </div>
                   <div className="monthly-value-list">
-                    {projectPeriods
+                    {selectedPeriods
                       .filter(
                         (period) =>
                           period >= selected.startPeriod &&
@@ -956,6 +1194,212 @@ export function ForecastConfigPage({
                   placeholder="填写金额来源、业务假设或复核说明"
                 />
               </label>
+                </>
+              ) : (
+                <div className="cash-rule-editor">
+                  <div className="forecast-form-row">
+                    <label>金额口径
+                      <select
+                        value={selected.amountBasis ?? 'tax_exclusive'}
+                        onChange={(event) =>
+                          changeSelected({
+                            amountBasis: event.target.value as TaxAmountBasis,
+                            taxRate:
+                              event.target.value === 'non_taxable'
+                                ? '0'
+                                : selected.taxRate,
+                          })
+                        }
+                      >
+                        <option value="tax_exclusive">未税金额</option>
+                        <option value="tax_inclusive">含税金额</option>
+                        <option value="non_taxable">免税/不计税</option>
+                      </select>
+                    </label>
+                    <label>税率（%）
+                      <input
+                        type="number"
+                        min="0"
+                        max="99.999999"
+                        step="any"
+                        disabled={selected.amountBasis === 'non_taxable'}
+                        value={selected.taxRate ?? '0'}
+                        onChange={(event) =>
+                          changeSelected({ taxRate: event.target.value })
+                        }
+                      />
+                    </label>
+                  </div>
+                  <label>收付款方式
+                    <select
+                      value={selectedCashRule?.method ?? 'disabled'}
+                      onChange={(event) =>
+                        changeSelectedCashRule({
+                          method: event.target.value as CashRuleDraft['method'],
+                        })
+                      }
+                    >
+                      <option value="disabled">不自动生成</option>
+                      <option value="immediate">当月100%</option>
+                      <option value="delayed">延后N个月100%</option>
+                      <option value="installment">分期收付款</option>
+                    </select>
+                  </label>
+                  {selectedCashRule?.method === 'delayed' && (
+                    <label>延后月份
+                      <input
+                        type="number"
+                        min="0"
+                        max="36"
+                        step="1"
+                        value={selectedCashRule.delayMonths}
+                        onChange={(event) =>
+                          changeSelectedCashRule({
+                            delayMonths: Number(event.target.value),
+                          })
+                        }
+                      />
+                      <small>以损益确认期间为第0个月，最多延后36个月。</small>
+                    </label>
+                  )}
+                  {selectedCashRule?.method === 'installment' && (
+                    <div className="installment-editor">
+                      <div className="monthly-input-head">
+                        <b>分期计划</b>
+                        <button
+                          className="btn compact"
+                          disabled={selectedCashRule.installments.length >= 12}
+                          onClick={() =>
+                            changeSelectedCashRule({
+                              installments: [
+                                ...selectedCashRule.installments,
+                                {
+                                  sequence:
+                                    selectedCashRule.installments.length + 1,
+                                  offsetMonths:
+                                    selectedCashRule.installments.length,
+                                  ratio: '',
+                                },
+                              ],
+                            })
+                          }
+                        >
+                          <Plus size={13} />增加一期
+                        </button>
+                      </div>
+                      {selectedCashRule.installments.map((item, index) => (
+                        <div className="installment-row" key={item.id ?? index}>
+                          <span>第{index + 1}期</span>
+                          <label>偏移月
+                            <input
+                              type="number"
+                              min="0"
+                              max="36"
+                              value={item.offsetMonths}
+                              onChange={(event) =>
+                                changeSelectedCashRule({
+                                  installments:
+                                    selectedCashRule.installments.map(
+                                      (current, currentIndex) =>
+                                        currentIndex === index
+                                          ? {
+                                              ...current,
+                                              offsetMonths: Number(
+                                                event.target.value,
+                                              ),
+                                            }
+                                          : current,
+                                    ),
+                                })
+                              }
+                            />
+                          </label>
+                          <label>比例%
+                            <input
+                              type="number"
+                              min="0"
+                              max="100"
+                              step="any"
+                              value={item.ratio}
+                              onChange={(event) =>
+                                changeSelectedCashRule({
+                                  installments:
+                                    selectedCashRule.installments.map(
+                                      (current, currentIndex) =>
+                                        currentIndex === index
+                                          ? {
+                                              ...current,
+                                              ratio: event.target.value,
+                                            }
+                                          : current,
+                                    ),
+                                })
+                              }
+                            />
+                          </label>
+                          <button
+                            className="icon-button"
+                            aria-label={`删除第${index + 1}期`}
+                            onClick={() =>
+                              changeSelectedCashRule({
+                                installments:
+                                  selectedCashRule.installments
+                                    .filter((_, currentIndex) => currentIndex !== index)
+                                    .map((current, currentIndex) => ({
+                                      ...current,
+                                      sequence: currentIndex + 1,
+                                    })),
+                              })
+                            }
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      ))}
+                      <small>
+                        比例合计：
+                        {selectedCashRule.installments
+                          .reduce(
+                            (sum, item) =>
+                              sum.plus(item.ratio || 0),
+                            new Decimal(0),
+                          )
+                          .toString()}
+                        %
+                      </small>
+                    </div>
+                  )}
+                  <div className="tax-preview-card">
+                    <span>金额换算预览</span>
+                    {selectedPreviewValues[0] ? (
+                      <>
+                        <b>
+                          未税 {formatWan(selectedPreviewValues[0].netValue)} 万元
+                          · 税额 {formatWan(selectedPreviewValues[0].taxValue)} 万元
+                        </b>
+                        <small>
+                          含税结算额 {formatWan(selectedPreviewValues[0].grossValue)} 万元
+                        </small>
+                      </>
+                    ) : (
+                      <small>先完成金额或公式配置后显示。</small>
+                    )}
+                  </div>
+                  <div className="cash-schedule-preview">
+                    <span>按月结算预览</span>
+                    {selectedCashPreview.slice(0, 8).map((value, index) => (
+                      <div key={`${value.sourcePeriod}-${value.settlementPeriod}-${index}`}>
+                        <small>{value.sourcePeriod} → {value.settlementPeriod}</small>
+                        <b>{formatWan(value.value)} 万元</b>
+                      </div>
+                    ))}
+                    {selectedCashRule?.method !== 'disabled' &&
+                      selectedCashPreview.length === 0 && (
+                        <small>当前规则尚未生成有效现金计划，请检查金额和分期配置。</small>
+                      )}
+                  </div>
+                </div>
+              )}
             </div>
             <div className="forecast-panel-actions">
               <div>

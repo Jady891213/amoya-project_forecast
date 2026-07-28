@@ -8,11 +8,12 @@ import {
   SCHEMA_V3,
   SCHEMA_V4,
   SCHEMA_V5,
+  SCHEMA_V6,
 } from './migrations'
 
 function periodStatements(): SqlStatement[] {
   const rows: SqlStatement[] = []
-  for (let year = 2020; year <= 2035; year += 1) {
+  for (let year = 2020; year <= 2075; year += 1) {
     for (let month = 1; month <= 12; month += 1) {
       const period = `${year}-${String(month).padStart(2, '0')}`
       rows.push({
@@ -144,6 +145,14 @@ export async function initializeSqliteDatabase(
     await database.execute(
       `INSERT INTO sys_schema_migration (version, description, applied_at)
        VALUES (5, 'P1B项目参数、行项目公式与配置快照', ?)`,
+      [now],
+    )
+  }
+  if (!applied.has(6)) {
+    await database.execute(SCHEMA_V6)
+    await database.execute(
+      `INSERT INTO sys_schema_migration (version, description, applied_at)
+       VALUES (6, 'P1C税口径、收付款规则与现金计划追溯', ?)`,
       [now],
     )
   }

@@ -1,7 +1,7 @@
 {
   "name": "project-forecast-analysis-tool",
   "private": true,
-  "version": "0.2.0-p1b",
+  "version": "0.3.0-p1c",
   "type": "module",
   "scripts": {
     "dev": "vite",

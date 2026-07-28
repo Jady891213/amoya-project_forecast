@@ -2,6 +2,7 @@ import Decimal from 'decimal.js'
 import { generatePeriods } from '../domain/periods'
 import type {
   CalculationIssue,
+  CashRule,
   CompiledLineValue,
   ForecastLine,
   ForecastMonthlyValue,
@@ -53,6 +54,7 @@ export function buildForecastConfigHash(
   monthlyValues: ForecastMonthlyValue[],
   parameters: ProjectParameter[] = [],
   parameterValues: ProjectParameterValue[] = [],
+  cashRules: CashRule[] = [],
 ): string {
   const payload = JSON.stringify({
     parameters: [...parameters]
@@ -88,6 +90,8 @@ export function buildForecastConfigHash(
         endPeriod: line.endPeriod,
         fixedMonthlyValue: line.fixedMonthlyValue ?? '',
         formulaExpression: line.formulaExpression ?? '',
+        amountBasis: line.amountBasis,
+        taxRate: line.taxRate,
         assumption: line.assumption,
         sortOrder: line.sortOrder,
       })),
@@ -96,6 +100,16 @@ export function buildForecastConfigHash(
         `${a.lineId}:${a.period}`.localeCompare(`${b.lineId}:${b.period}`),
       )
       .map((value) => [value.lineId, value.period, value.value]),
+    cashRules: [...cashRules]
+      .sort((a, b) => a.sourceLineCode.localeCompare(b.sourceLineCode))
+      .map((rule) => ({
+        sourceLineCode: rule.sourceLineCode,
+        method: rule.method,
+        delayMonths: rule.delayMonths,
+        installments: [...rule.installments]
+          .sort((a, b) => a.sequence - b.sequence)
+          .map((item) => [item.sequence, item.offsetMonths, item.ratio]),
+      })),
   })
   let hash = 2166136261
   for (let index = 0; index < payload.length; index += 1) {
@@ -119,7 +133,10 @@ export function compileForecast(
     project.startPeriod,
     project.durationMonths,
   )
-  const periodSet = new Set(projectPeriods)
+  const cashPeriods = generatePeriods(
+    project.startPeriod,
+    project.durationMonths + 36,
+  )
   const moduleIds = new Set(modules.map((module) => module.id))
   const lineByCode = new Map(lines.map((line) => [line.code, line]))
   const parameterByCode = new Map(
@@ -128,6 +145,7 @@ export function compileForecast(
   const valuesByLine = new Map<string, Map<string, string>>()
   const parameterValuesById = new Map<string, Map<string, string>>()
   const compiledByLine = new Map<string, Map<string, Decimal>>()
+  const taxRates = new Map<string, Decimal>()
 
   monthlyValues.forEach((value) => {
     const lineValues = valuesByLine.get(value.lineId) ?? new Map<string, string>()
@@ -172,17 +190,28 @@ export function compileForecast(
         message: '业务模块不属于当前项目',
       })
     }
-    if (!periodSet.has(line.startPeriod) || !periodSet.has(line.endPeriod)) {
+    const allowedPeriods =
+      line.category === 'cash_inflow' || line.category === 'cash_outflow'
+        ? cashPeriods
+        : projectPeriods
+    const allowedPeriodSet = new Set(allowedPeriods)
+    if (
+      !allowedPeriodSet.has(line.startPeriod) ||
+      !allowedPeriodSet.has(line.endPeriod)
+    ) {
       issues.push({
         severity: 'error',
         lineId: line.id,
         field: 'period',
-        message: '生效期间必须位于项目预测周期内',
+        message:
+          line.category === 'cash_inflow' || line.category === 'cash_outflow'
+            ? '直接现金计划必须位于经营期开始至结束后36个月内'
+            : '收入和成本行必须位于项目经营周期内',
       })
       return
     }
-    const startIndex = projectPeriods.indexOf(line.startPeriod)
-    const endIndex = projectPeriods.indexOf(line.endPeriod)
+    const startIndex = allowedPeriods.indexOf(line.startPeriod)
+    const endIndex = allowedPeriods.indexOf(line.endPeriod)
     if (startIndex > endIndex) {
       issues.push({
         severity: 'error',
@@ -194,14 +223,51 @@ export function compileForecast(
     }
     activePeriodsByLine.set(
       line.id,
-      projectPeriods.slice(startIndex, endIndex + 1),
+      allowedPeriods.slice(startIndex, endIndex + 1),
     )
+    if (line.category === 'revenue' || line.category === 'cost') {
+      try {
+        const rate =
+          line.amountBasis === 'non_taxable'
+            ? new Decimal(0)
+            : new Decimal(line.taxRate || 0)
+        if (!rate.isFinite() || rate.isNegative() || rate.greaterThanOrEqualTo(1)) {
+          throw new Error('invalid tax rate')
+        }
+        taxRates.set(line.id, rate)
+      } catch {
+        issues.push({
+          severity: 'error',
+          lineId: line.id,
+          field: 'taxRate',
+          message: '税率必须是0%（含）至100%（不含）之间的有效数值',
+        })
+      }
+    } else {
+      taxRates.set(line.id, new Decimal(0))
+    }
   })
 
-  function appendValue(line: ForecastLine, period: string, amount: Decimal) {
-    const normalized = amount.toDecimalPlaces(6)
+  function appendValue(line: ForecastLine, period: string, rawAmount: Decimal) {
+    const rate = taxRates.get(line.id)
+    if (!rate) return
+    let netAmount = rawAmount
+    let grossAmount = rawAmount
+    if (line.category === 'revenue' || line.category === 'cost') {
+      if (line.amountBasis === 'tax_inclusive') {
+        netAmount = rawAmount.dividedBy(rate.plus(1))
+        grossAmount = rawAmount
+      } else if (line.amountBasis === 'tax_exclusive') {
+        netAmount = rawAmount
+        grossAmount = rawAmount.times(rate.plus(1))
+      }
+    }
+    const raw = rawAmount.toDecimalPlaces(6)
+    const net = netAmount.toDecimalPlaces(6)
+    const gross = grossAmount.toDecimalPlaces(6)
+    const tax = gross.minus(net).toDecimalPlaces(6)
     const lineValues = compiledByLine.get(line.id) ?? new Map<string, Decimal>()
-    lineValues.set(period, normalized)
+    lineValues.set(period, net)
     compiledByLine.set(line.id, lineValues)
     values.push({
       lineId: line.id,
@@ -212,7 +278,11 @@ export function compileForecast(
       scenarioId: 'baseline',
       versionId: 'working',
       metricCode: line.metricCode,
-      value: normalized.toString(),
+      value: net.toString(),
+      rawValue: raw.toString(),
+      netValue: net.toString(),
+      taxValue: tax.toString(),
+      grossValue: gross.toString(),
     })
   }
 

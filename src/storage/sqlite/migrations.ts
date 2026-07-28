@@ -1,4 +1,4 @@
-export const CURRENT_SCHEMA_VERSION = 5
+export const CURRENT_SCHEMA_VERSION = 6
 
 export const SCHEMA_V1 = `
 PRAGMA foreign_keys = ON;
@@ -466,6 +466,123 @@ CREATE INDEX idx_cfg_parameter_project
   ON cfg_parameter(project_id, sort_order);
 CREATE INDEX idx_cfg_parameter_value_parameter
   ON cfg_parameter_value(parameter_id, period);
+
+COMMIT;
+PRAGMA foreign_keys = ON;
+`
+
+export const SCHEMA_V6 = `
+PRAGMA foreign_keys = OFF;
+BEGIN IMMEDIATE;
+
+CREATE TABLE cfg_forecast_line_v6 (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES dim_project(id) ON DELETE CASCADE,
+  code TEXT NOT NULL,
+  name TEXT NOT NULL,
+  category TEXT NOT NULL CHECK (
+    category IN ('revenue', 'cost', 'cash_inflow', 'cash_outflow')
+  ),
+  metric_code TEXT NOT NULL CHECK (
+    metric_code IN ('revenue', 'cost', 'cash_inflow', 'cash_outflow')
+  ),
+  business_module_id TEXT NOT NULL REFERENCES dim_business_module(id),
+  forecast_method TEXT NOT NULL CHECK (
+    forecast_method IN ('monthly_input', 'fixed_monthly', 'formula')
+  ),
+  start_period TEXT NOT NULL REFERENCES dim_period(period),
+  end_period TEXT NOT NULL REFERENCES dim_period(period),
+  fixed_monthly_value_text TEXT,
+  formula_expression_text TEXT,
+  amount_basis TEXT NOT NULL DEFAULT 'tax_exclusive' CHECK (
+    amount_basis IN ('tax_exclusive', 'tax_inclusive', 'non_taxable')
+  ),
+  tax_rate_text TEXT NOT NULL DEFAULT '0',
+  assumption TEXT NOT NULL DEFAULT '',
+  sort_order INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (project_id, code)
+);
+
+INSERT INTO cfg_forecast_line_v6 (
+  id, project_id, code, name, category, metric_code,
+  business_module_id, forecast_method, start_period, end_period,
+  fixed_monthly_value_text, formula_expression_text,
+  amount_basis, tax_rate_text, assumption, sort_order, created_at, updated_at
+)
+SELECT
+  id, project_id, code, name, category, metric_code,
+  business_module_id, forecast_method, start_period, end_period,
+  fixed_monthly_value_text, formula_expression_text,
+  'tax_exclusive', '0', assumption, sort_order, created_at, updated_at
+FROM cfg_forecast_line;
+
+DROP TABLE cfg_forecast_line;
+ALTER TABLE cfg_forecast_line_v6 RENAME TO cfg_forecast_line;
+
+CREATE TABLE cfg_cash_rule (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES dim_project(id) ON DELETE CASCADE,
+  source_line_id TEXT NOT NULL REFERENCES cfg_forecast_line(id) ON DELETE CASCADE,
+  method TEXT NOT NULL CHECK (
+    method IN ('disabled', 'immediate', 'delayed', 'installment')
+  ),
+  delay_months INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (project_id, source_line_id)
+);
+
+CREATE TABLE cfg_cash_rule_installment (
+  id TEXT PRIMARY KEY,
+  cash_rule_id TEXT NOT NULL REFERENCES cfg_cash_rule(id) ON DELETE CASCADE,
+  sequence INTEGER NOT NULL,
+  offset_months INTEGER NOT NULL,
+  ratio_text TEXT NOT NULL,
+  UNIQUE (cash_rule_id, sequence),
+  UNIQUE (cash_rule_id, offset_months)
+);
+
+CREATE TABLE fact_cash_schedule_value (
+  id TEXT PRIMARY KEY,
+  calculation_run_id TEXT NOT NULL REFERENCES sys_calculation_run(id) ON DELETE CASCADE,
+  project_id TEXT NOT NULL REFERENCES dim_project(id) ON DELETE CASCADE,
+  source_line_id TEXT NOT NULL,
+  source_line_code TEXT NOT NULL,
+  source_line_name TEXT NOT NULL,
+  department_id TEXT NOT NULL REFERENCES dim_department(id),
+  business_module_id TEXT NOT NULL REFERENCES dim_business_module(id),
+  source_period TEXT NOT NULL REFERENCES dim_period(period),
+  settlement_period TEXT NOT NULL REFERENCES dim_period(period),
+  scenario_id TEXT NOT NULL REFERENCES dim_scenario(id),
+  version_id TEXT NOT NULL REFERENCES dim_version(id),
+  metric_code TEXT NOT NULL CHECK (
+    metric_code IN ('cash_inflow', 'cash_outflow')
+  ),
+  amount_basis TEXT NOT NULL CHECK (
+    amount_basis IN ('tax_exclusive', 'tax_inclusive', 'non_taxable')
+  ),
+  tax_rate_text TEXT NOT NULL,
+  net_value_text TEXT NOT NULL,
+  tax_value_text TEXT NOT NULL,
+  gross_value_text TEXT NOT NULL,
+  settlement_ratio_text TEXT NOT NULL,
+  value_text TEXT NOT NULL,
+  rule_method TEXT NOT NULL CHECK (
+    rule_method IN ('immediate', 'delayed', 'installment')
+  ),
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX idx_cfg_forecast_line_project
+  ON cfg_forecast_line(project_id, sort_order);
+CREATE INDEX idx_cfg_cash_rule_project
+  ON cfg_cash_rule(project_id, source_line_id);
+CREATE INDEX idx_cfg_cash_rule_installment_rule
+  ON cfg_cash_rule_installment(cash_rule_id, sequence);
+CREATE INDEX idx_fact_cash_schedule_run
+  ON fact_cash_schedule_value(calculation_run_id, settlement_period);
 
 COMMIT;
 PRAGMA foreign_keys = ON;

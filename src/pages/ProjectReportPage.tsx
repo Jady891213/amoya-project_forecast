@@ -8,11 +8,13 @@ import type {
   ForecastLineBreakdown,
   ForecastProjectState,
   ForecastCategory,
+  CashScheduleBreakdown,
 } from '../domain/types'
 import type { AppSnapshot } from '../app/types'
 import { ProjectReportService } from '../services/projectReportService'
 import { CalculationService } from '../services/calculationService'
 import { ForecastLineValueRepository } from '../repositories/forecastLineValueRepository'
+import { CashScheduleRepository } from '../repositories/cashScheduleRepository'
 import {
   formatDateTime,
   formatPercent,
@@ -20,7 +22,7 @@ import {
   formatWan,
 } from '../ui/formatters'
 
-type MonthlyField = keyof Omit<MonthlyMetricRow, 'period'>
+type MonthlyField = keyof Omit<MonthlyMetricRow, 'period' | 'isRecoveryPeriod'>
 type ViewMode = 'calculation' | 'report'
 
 interface ReportTableMetric {
@@ -68,8 +70,18 @@ function ReportTable({ title, report, rows }: { title: string; report: ProjectRe
         <table className="report-table">
           <thead><tr>
             <th className="sticky-column metric-column">指标</th>
-            {report.monthly.map((month) => <th key={month.period}>{formatReportPeriod(month.period)}</th>)}
-            <th className="total-column">项目周期</th>
+            {report.monthly.map((month) => (
+              <th
+                key={month.period}
+                className={month.isRecoveryPeriod ? 'recovery-period' : ''}
+              >
+                {formatReportPeriod(month.period)}
+                {month.isRecoveryPeriod && <small>回收期</small>}
+              </th>
+            ))}
+            <th className="total-column">
+              {title.includes('现金') ? '现金期合计' : '经营期合计'}
+            </th>
           </tr></thead>
           <tbody>{rows.map((row) => (
             <tr key={row.code}>
@@ -78,7 +90,12 @@ function ReportTable({ title, report, rows }: { title: string; report: ProjectRe
                 <small>{definition(row.code)?.metricType === 'base' ? '基础指标' : '系统计算'}</small>
               </th>
               {report.monthly.map((month) => (
-                <td key={month.period} className="number-cell">{renderValue(month[row.field], row.format)}</td>
+                <td
+                  key={month.period}
+                  className={`number-cell${month.isRecoveryPeriod ? ' recovery-period' : ''}`}
+                >
+                  {renderValue(month[row.field], row.format)}
+                </td>
               ))}
               <td className="number-cell total-column">{renderValue(row.total(report), row.format)}</td>
             </tr>
@@ -110,11 +127,16 @@ export function ProjectReportPage({
   const [error, setError] = useState('')
   const [forecastState, setForecastState] = useState<ForecastProjectState>()
   const [lineBreakdown, setLineBreakdown] = useState<ForecastLineBreakdown[]>([])
+  const [cashSchedule, setCashSchedule] = useState<CashScheduleBreakdown[]>([])
   const [showSnapshot, setShowSnapshot] = useState(false)
   const service = useMemo(() => new ProjectReportService(database), [database])
   const calculation = useMemo(() => new CalculationService(database), [database])
   const lineValues = useMemo(
     () => new ForecastLineValueRepository(database),
+    [database],
+  )
+  const cashSchedules = useMemo(
+    () => new CashScheduleRepository(database),
     [database],
   )
   const scenario = snapshot.scenarios.find((item) => item.isDefault)
@@ -144,10 +166,17 @@ export function ProjectReportPage({
               businessModuleId || undefined,
             )
           : []
+        const schedule = state.latestRun
+          ? await cashSchedules.listByRun(
+              state.latestRun.id,
+              businessModuleId || undefined,
+            )
+          : []
         if (!cancelled) {
           setReport(result)
           setForecastState(state)
           setLineBreakdown(breakdown)
+          setCashSchedule(schedule)
         }
       } catch (reason) {
         if (!cancelled) setError(reason instanceof Error ? reason.message : '计算结果加载失败')
@@ -160,6 +189,7 @@ export function ProjectReportPage({
   }, [
     businessModuleId,
     calculation,
+    cashSchedules,
     lineValues,
     requestedProjectId,
     scenario,
@@ -211,6 +241,16 @@ export function ProjectReportPage({
         <div><span>场景</span><strong>{report.scenario.name}</strong></div>
         <div><span>版本</span><strong>{report.version.name}</strong></div>
         <div><span>基础事实</span><strong>{report.factCount} 条</strong></div>
+        <div>
+          <span>经营期</span>
+          <strong>{report.project.startPeriod}—{report.operationEndPeriod}</strong>
+        </div>
+        {report.reportEndPeriod > report.operationEndPeriod && (
+          <div>
+            <span>现金回收期至</span>
+            <strong>{report.reportEndPeriod}</strong>
+          </div>
+        )}
         <div>
           <span>计算批次</span>
           <strong>
@@ -290,7 +330,14 @@ export function ProjectReportPage({
                     <table className="report-table line-breakdown-table">
                       <thead><tr>
                         <th className="sticky-column metric-column">行项目</th>
-                        {report.monthly.map((month) => <th key={month.period}>{formatReportPeriod(month.period)}</th>)}
+                        {report.monthly.map((month) => (
+                          <th
+                            key={month.period}
+                            className={month.isRecoveryPeriod ? 'recovery-period' : ''}
+                          >
+                            {formatReportPeriod(month.period)}
+                          </th>
+                        ))}
                         <th className="total-column">项目周期</th>
                       </tr></thead>
                       <tbody>{lineBreakdown.map((item) => {
@@ -312,7 +359,10 @@ export function ProjectReportPage({
                               )}
                             </th>
                             {report.monthly.map((month) => (
-                              <td key={month.period} className="number-cell">
+                              <td
+                                key={month.period}
+                                className={`number-cell${month.isRecoveryPeriod ? ' recovery-period' : ''}`}
+                              >
                                 {formatWan(values.get(month.period) ?? '0')}
                               </td>
                             ))}
@@ -320,6 +370,61 @@ export function ProjectReportPage({
                           </tr>
                         )
                       })}</tbody>
+                    </table>
+                  </div>
+                </section>
+              )}
+              {cashSchedule.length > 0 && (
+                <section className="report-section">
+                  <div className="section-heading">
+                    <div>
+                      <h2>现金计划追溯</h2>
+                      <p className="muted">
+                        规则生成现金；直接填写的收款付款仍在上方行项目明细中展示。
+                      </p>
+                    </div>
+                  </div>
+                  <div className="report-table-wrap">
+                    <table className="report-table cash-trace-table">
+                      <thead>
+                        <tr>
+                          <th>来源损益行</th>
+                          <th>业务期间</th>
+                          <th>未税金额</th>
+                          <th>税额</th>
+                          <th>含税金额</th>
+                          <th>规则</th>
+                          <th>结算期间</th>
+                          <th>实际收付款</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {cashSchedule.map((item, index) => (
+                          <tr
+                            key={`${item.sourceLineId}-${item.sourcePeriod}-${item.settlementPeriod}-${index}`}
+                          >
+                            <td>
+                              <strong>{item.sourceLineName}</strong>
+                              <small>{item.sourceLineCode} · 规则生成</small>
+                            </td>
+                            <td>{item.sourcePeriod}</td>
+                            <td className="number-cell">{formatWan(item.netValue)}</td>
+                            <td className="number-cell">{formatWan(item.taxValue)}</td>
+                            <td className="number-cell">{formatWan(item.grossValue)}</td>
+                            <td>
+                              {item.ruleMethod === 'immediate'
+                                ? '当月'
+                                : item.ruleMethod === 'delayed'
+                                  ? '延后'
+                                  : `分期 ${formatPercent(item.settlementRatio)}`}
+                            </td>
+                            <td className={item.settlementPeriod > report.operationEndPeriod ? 'recovery-period' : ''}>
+                              {item.settlementPeriod}
+                            </td>
+                            <td className="number-cell">{formatWan(item.value)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
                     </table>
                   </div>
                 </section>
@@ -332,7 +437,7 @@ export function ProjectReportPage({
           ) : (
             <section className="report-section cashflow-pending">
               <Info size={18} />
-              <div><h2>现金流尚未生成</h2><p>收付款规则将在 P1C 阶段把损益行项目转换为现金流入和现金流出。</p></div>
+              <div><h2>现金流尚未生成</h2><p>请在损益行的“税与收付款”中启用自动规则，或增加直接现金计划。</p></div>
             </section>
           )}
           {view === 'report' && (

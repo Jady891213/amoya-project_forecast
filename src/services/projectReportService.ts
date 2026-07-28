@@ -65,6 +65,8 @@ export class ProjectReportService {
           fact.metricCode === 'cash_inflow' ||
           fact.metricCode === 'cash_outflow',
       ),
+      operationEndPeriod: calculation.operationEndPeriod,
+      reportEndPeriod: calculation.reportEndPeriod,
     }
   }
 }

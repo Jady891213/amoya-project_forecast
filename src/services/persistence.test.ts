@@ -9,6 +9,7 @@ import { ProjectReportService } from './projectReportService'
 import { NodeSqliteClient } from '../test/nodeSqliteClient'
 import { CalculationService } from './calculationService'
 import { ForecastLineValueRepository } from '../repositories/forecastLineValueRepository'
+import { CashScheduleRepository } from '../repositories/cashScheduleRepository'
 
 let database: NodeSqliteClient
 
@@ -41,8 +42,11 @@ describe('SQLite repositories and reference data isolation', () => {
         'cfg_forecast_value',
         'cfg_parameter',
         'cfg_parameter_value',
+        'cfg_cash_rule',
+        'cfg_cash_rule_installment',
         'fact_metric_value',
         'fact_forecast_line_value',
+        'fact_cash_schedule_value',
         'sys_calculation_run',
         'sys_app_metadata',
         'sys_schema_migration',
@@ -50,7 +54,7 @@ describe('SQLite repositories and reference data isolation', () => {
     )
     expect(
       await database.query('SELECT * FROM sys_schema_migration'),
-    ).toHaveLength(5)
+    ).toHaveLength(6)
   })
 
   it('Schema v1 可迁移为全局场景和版本维度', async () => {
@@ -95,7 +99,7 @@ describe('SQLite repositories and reference data isolation', () => {
     await initializeSqliteDatabase(legacy)
     expect(
       await legacy.query('SELECT * FROM sys_schema_migration'),
-    ).toHaveLength(5)
+    ).toHaveLength(6)
     const factColumns = await legacy.query<{ name: string }>(
       'PRAGMA table_info(fact_metric_value)',
     )
@@ -113,6 +117,9 @@ describe('SQLite repositories and reference data isolation', () => {
     )
     expect(lineColumns.map((column) => column.name)).toContain(
       'formula_expression_text',
+    )
+    expect(lineColumns.map((column) => column.name)).toEqual(
+      expect.arrayContaining(['amount_basis', 'tax_rate_text']),
     )
     const runColumns = await legacy.query<{ name: string }>(
       'PRAGMA table_info(sys_calculation_run)',
@@ -599,6 +606,157 @@ describe('SQLite repositories and reference data isolation', () => {
     ).rejects.toThrow('正在被行项目')
   })
 
+  it('税口径与收付款规则生成可追溯现金尾期', async () => {
+    const departments = new DepartmentRepository(database)
+    const projects = new ProjectRepository(database)
+    const department = await departments.save({
+      code: 'CASH',
+      name: '现金流测试部',
+    })
+    const project = await projects.save({
+      code: 'CASH-001',
+      name: '税与现金流项目',
+      customer: '',
+      departmentId: department.id,
+      owner: '',
+      startPeriod: '2026-01',
+      durationMonths: 2,
+      remark: '',
+      modules: [],
+    })
+    const module = (await projects.listModules(project.id))[0]
+    const calculation = new CalculationService(database)
+    const draft = {
+      parameters: [],
+      lines: [
+        {
+          code: 'LINE-001',
+          name: '含税服务收入',
+          category: 'revenue' as const,
+          businessModuleId: module.id,
+          forecastMethod: 'fixed_monthly' as const,
+          startPeriod: '2026-01',
+          endPeriod: '2026-01',
+          fixedMonthlyValue: '10600',
+          amountBasis: 'tax_inclusive' as const,
+          taxRate: '0.06',
+          assumption: '',
+          sortOrder: 1,
+          monthlyValues: {},
+        },
+        {
+          code: 'LINE-002',
+          name: '未税服务成本',
+          category: 'cost' as const,
+          businessModuleId: module.id,
+          forecastMethod: 'fixed_monthly' as const,
+          startPeriod: '2026-01',
+          endPeriod: '2026-01',
+          fixedMonthlyValue: '10000',
+          amountBasis: 'tax_exclusive' as const,
+          taxRate: '0.06',
+          assumption: '',
+          sortOrder: 2,
+          monthlyValues: {},
+        },
+        {
+          code: 'LINE-003',
+          name: '其他直接收款',
+          category: 'cash_inflow' as const,
+          businessModuleId: module.id,
+          forecastMethod: 'fixed_monthly' as const,
+          startPeriod: '2026-03',
+          endPeriod: '2026-03',
+          fixedMonthlyValue: '500',
+          amountBasis: 'non_taxable' as const,
+          taxRate: '0',
+          assumption: '',
+          sortOrder: 3,
+          monthlyValues: {},
+        },
+      ],
+      cashRules: [
+        {
+          sourceLineCode: 'LINE-001',
+          method: 'delayed' as const,
+          delayMonths: 3,
+          installments: [],
+        },
+        {
+          sourceLineCode: 'LINE-002',
+          method: 'installment' as const,
+          delayMonths: 0,
+          installments: [
+            { sequence: 1, offsetMonths: 0, ratio: '0.5' },
+            { sequence: 2, offsetMonths: 2, ratio: '0.5' },
+          ],
+        },
+      ],
+    }
+    const result = await calculation.saveAndCalculate(project.id, draft)
+    expect(result.success).toBe(true)
+    expect(result.run.configSnapshotJson).toContain('cashRules')
+
+    const facts = await new FactRepository(database).list(project.id)
+    expect(
+      facts.find(
+        (fact) =>
+          fact.metricCode === 'revenue' && fact.period === '2026-01',
+      )?.value,
+    ).toBe('10000')
+    expect(
+      facts.find(
+        (fact) =>
+          fact.metricCode === 'cash_inflow' && fact.period === '2026-04',
+      )?.value,
+    ).toBe('10600')
+    expect(
+      facts.find(
+        (fact) =>
+          fact.metricCode === 'cash_inflow' && fact.period === '2026-03',
+      )?.value,
+    ).toBe('500')
+    expect(
+      facts
+        .filter((fact) => fact.metricCode === 'cash_outflow')
+        .map((fact) => [fact.period, fact.value]),
+    ).toEqual([
+      ['2026-01', '5300'],
+      ['2026-03', '5300'],
+    ])
+
+    const schedule = await new CashScheduleRepository(database).listByRun(
+      result.run.id,
+    )
+    expect(schedule).toHaveLength(3)
+    expect(schedule[0]).toEqual(
+      expect.objectContaining({
+        netValue: '10000',
+        taxValue: '600',
+      }),
+    )
+    const report = await new ProjectReportService(database).build({
+      projectId: project.id,
+      scenarioId: 'baseline',
+      versionId: 'working',
+    })
+    expect(report.operationEndPeriod).toBe('2026-02')
+    expect(report.reportEndPeriod).toBe('2026-04')
+    expect(report.monthly.filter((month) => month.isRecoveryPeriod))
+      .toHaveLength(2)
+
+    await calculation.saveDraft(project.id, {
+      ...draft,
+      cashRules: draft.cashRules.map((rule) =>
+        rule.sourceLineCode === 'LINE-001'
+          ? { ...rule, delayMonths: 2 }
+          : rule,
+      ),
+    })
+    expect((await calculation.getProjectState(project.id)).isResultCurrent)
+      .toBe(false)
+  })
+
   it('SQLite导出后可恢复项目、预测配置、批次与事实', async () => {
     await new ReferenceDatasetService(database).initialize()
     const projects = new ProjectRepository(database)
@@ -606,8 +764,10 @@ describe('SQLite repositories and reference data isolation', () => {
     const module = (await projects.listModules(project.id))[0]
     const result = await new CalculationService(database).saveAndCalculate(
       project.id,
-      [
-        {
+      {
+        parameters: [],
+        lines: [{
+          code: 'LINE-001',
           name: '备份测试收入',
           category: 'revenue',
           businessModuleId: module.id,
@@ -615,11 +775,19 @@ describe('SQLite repositories and reference data isolation', () => {
           startPeriod: project.startPeriod,
           endPeriod: project.startPeriod,
           fixedMonthlyValue: '12345.67',
+          amountBasis: 'tax_exclusive',
+          taxRate: '0.06',
           assumption: '',
           sortOrder: 1,
           monthlyValues: {},
-        },
-      ],
+        }],
+        cashRules: [{
+          sourceLineCode: 'LINE-001',
+          method: 'immediate',
+          delayMonths: 0,
+          installments: [],
+        }],
+      },
     )
     expect(result.success).toBe(true)
     const beforeProjects = await new ProjectRepository(database).list()
@@ -633,6 +801,12 @@ describe('SQLite repositories and reference data isolation', () => {
     const beforeLineFactCount = (
       await database.query('SELECT id FROM fact_forecast_line_value')
     ).length
+    const beforeCashRuleCount = (
+      await database.query('SELECT id FROM cfg_cash_rule')
+    ).length
+    const beforeCashFactCount = (
+      await database.query('SELECT id FROM fact_cash_schedule_value')
+    ).length
     const bytes = await database.exportDatabase()
 
     const restored = await NodeSqliteClient.create()
@@ -644,6 +818,10 @@ describe('SQLite repositories and reference data isolation', () => {
     expect(
       await restored.query('SELECT * FROM fact_forecast_line_value'),
     ).toHaveLength(beforeLineFactCount)
+    expect(await restored.query('SELECT * FROM cfg_cash_rule'))
+      .toHaveLength(beforeCashRuleCount)
+    expect(await restored.query('SELECT * FROM fact_cash_schedule_value'))
+      .toHaveLength(beforeCashFactCount)
     await restored.close()
   })
 })

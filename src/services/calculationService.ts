@@ -10,6 +10,7 @@ import type {
   Project,
   ProjectModule,
   ProjectParameter,
+  CashRule,
 } from '../domain/types'
 import type { DatabaseClient, SqlStatement } from '../storage/types'
 import {
@@ -20,10 +21,13 @@ import { ForecastLineRepository } from '../repositories/forecastLineRepository'
 import { ForecastValueRepository } from '../repositories/forecastValueRepository'
 import { ProjectRepository } from '../repositories/projectRepository'
 import { ParameterRepository } from '../repositories/parameterRepository'
+import { CashRuleRepository } from '../repositories/cashRuleRepository'
+import { generatePeriods } from '../domain/periods'
 import {
   buildForecastConfigHash,
   compileForecast,
 } from './forecastCompiler'
+import { compileCashSchedule } from './cashScheduleCompiler'
 
 export interface SaveAndCalculateResult {
   success: boolean
@@ -50,6 +54,8 @@ export function previewForecastDraft(
     endPeriod: line.endPeriod,
     fixedMonthlyValue: line.fixedMonthlyValue,
     formulaExpression: line.formulaExpression,
+    amountBasis: line.amountBasis ?? 'tax_exclusive',
+    taxRate: line.taxRate ?? '0',
     assumption: line.assumption,
     sortOrder: line.sortOrder,
     createdAt: now,
@@ -100,7 +106,7 @@ export function previewForecastDraft(
             : value,
       })),
   )
-  return compileForecast(
+  const compilation = compileForecast(
     project,
     modules,
     lines,
@@ -108,26 +114,69 @@ export function previewForecastDraft(
     parameters,
     parameterValues,
   )
+  const lineByCode = new Map(lines.map((line) => [line.code, line]))
+  const cashRules: CashRule[] = (draft.cashRules ?? []).flatMap(
+    (rule, index) => {
+      const sourceLine = lineByCode.get(rule.sourceLineCode)
+      if (!sourceLine) return []
+      const ruleId = rule.id ?? `preview-cash-rule-${index + 1}`
+      return [{
+        id: ruleId,
+        projectId: project.id,
+        sourceLineId: sourceLine.id,
+        sourceLineCode: sourceLine.code,
+        method: rule.method,
+        delayMonths: rule.delayMonths,
+        installments: rule.installments.map((item, itemIndex) => ({
+          id: item.id ?? `preview-installment-${index + 1}-${itemIndex + 1}`,
+          cashRuleId: ruleId,
+          sequence: itemIndex + 1,
+          offsetMonths: item.offsetMonths,
+          ratio: item.ratio,
+        })),
+        createdAt: now,
+        updatedAt: now,
+      }]
+    },
+  )
+  const cashCompilation = compileCashSchedule(
+    lines,
+    compilation.values,
+    cashRules,
+  )
+  return {
+    values: compilation.values,
+    cashValues: cashCompilation.values,
+    issues: [...compilation.issues, ...cashCompilation.issues],
+  }
 }
 
 function validateDraftCoordinates(
-  projectStartPeriod: string,
   projectPeriods: string[],
+  cashPeriods: string[],
   moduleIds: Set<string>,
   drafts: ForecastLineDraft[],
 ) {
-  if (!projectStartPeriod || projectPeriods.length === 0) {
+  if (projectPeriods.length === 0) {
     throw new Error('项目预测周期无效')
   }
   drafts.forEach((draft) => {
     if (!moduleIds.has(draft.businessModuleId)) {
       throw new Error('行项目引用了不属于当前项目的业务模块')
     }
+    const allowedPeriods =
+      draft.category === 'cash_inflow' || draft.category === 'cash_outflow'
+        ? cashPeriods
+        : projectPeriods
     if (
-      !projectPeriods.includes(draft.startPeriod) ||
-      !projectPeriods.includes(draft.endPeriod)
+      !allowedPeriods.includes(draft.startPeriod) ||
+      !allowedPeriods.includes(draft.endPeriod)
     ) {
-      throw new Error('行项目生效期间必须位于项目预测周期内')
+      throw new Error(
+        draft.category === 'cash_inflow' || draft.category === 'cash_outflow'
+          ? '直接现金计划必须位于经营期开始至结束后36个月内'
+          : '收入和成本行必须位于项目经营周期内',
+      )
     }
   })
 }
@@ -138,6 +187,7 @@ export class CalculationService {
   private readonly values: ForecastValueRepository
   private readonly runs: CalculationRunRepository
   private readonly parameters: ParameterRepository
+  private readonly cashRules: CashRuleRepository
 
   constructor(private readonly database: DatabaseClient) {
     this.projects = new ProjectRepository(database)
@@ -145,15 +195,17 @@ export class CalculationService {
     this.values = new ForecastValueRepository(database)
     this.runs = new CalculationRunRepository(database)
     this.parameters = new ParameterRepository(database)
+    this.cashRules = new CashRuleRepository(database)
   }
 
   async getProjectState(projectId: string): Promise<ForecastProjectState> {
-    const [lines, values, parameters, parameterValues, latestRun] =
+    const [lines, values, parameters, parameterValues, cashRules, latestRun] =
       await Promise.all([
       this.lines.list(projectId),
       this.values.listForProject(projectId),
       this.parameters.list(projectId),
       this.parameters.listValues(projectId),
+      this.cashRules.list(projectId),
       this.runs.latestSuccess(projectId),
     ])
     const currentHash = buildForecastConfigHash(
@@ -161,12 +213,14 @@ export class CalculationService {
       values,
       parameters,
       parameterValues,
+      cashRules,
     )
     return {
       lines,
       values,
       parameters,
       parameterValues,
+      cashRules,
       latestRun,
       isResultCurrent: Boolean(latestRun && latestRun.configHash === currentHash),
     }
@@ -182,32 +236,29 @@ export class CalculationService {
       throw new Error('已归档项目不能修改预测配置')
     }
     const modules = await this.projects.listModules(projectId)
-    const projectPeriods = await this.database.query<{ period: string }>(
-      `SELECT period FROM dim_period
-       WHERE sort_key BETWEEN
-         (SELECT sort_key FROM dim_period WHERE period = ?)
-         AND
-         (SELECT sort_key FROM dim_period WHERE period = ?)
-       ORDER BY sort_key`,
-      [
-        project.startPeriod,
-        (() => {
-          const [year, month] = project.startPeriod.split('-').map(Number)
-          const date = new Date(year, month - 1 + project.durationMonths - 1, 1)
-          return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
-        })(),
-      ],
+    const projectPeriods = generatePeriods(
+      project.startPeriod,
+      project.durationMonths,
+    )
+    const cashPeriods = generatePeriods(
+      project.startPeriod,
+      project.durationMonths + 36,
     )
     const lineDrafts = Array.isArray(draft) ? draft : draft.lines
     validateDraftCoordinates(
-      project.startPeriod,
-      projectPeriods.map((item) => item.period),
+      projectPeriods,
+      cashPeriods,
       new Set(modules.map((module) => module.id)),
       lineDrafts,
     )
-    await this.lines.saveProjectDraft(projectId, lineDrafts)
+    const savedLines = await this.lines.saveProjectDraft(projectId, lineDrafts)
     if (!Array.isArray(draft)) {
       await this.parameters.saveProjectDraft(projectId, draft.parameters)
+      await this.cashRules.saveProjectDraft(
+        projectId,
+        savedLines,
+        draft.cashRules ?? [],
+      )
     }
     return this.getProjectState(projectId)
   }
@@ -219,13 +270,22 @@ export class CalculationService {
     await this.saveDraft(projectId, draft)
     const project = await this.projects.get(projectId)
     if (!project) throw new Error('项目不存在')
-    const [modules, lines, values, parameters, parameterValues, runNumber] =
+    const [
+      modules,
+      lines,
+      values,
+      parameters,
+      parameterValues,
+      cashRules,
+      runNumber,
+    ] =
       await Promise.all([
       this.projects.listModules(projectId),
       this.lines.list(projectId),
       this.values.listForProject(projectId),
       this.parameters.list(projectId),
       this.parameters.listValues(projectId),
+      this.cashRules.list(projectId),
       this.runs.nextRunNumber(projectId),
     ])
     const configHash = buildForecastConfigHash(
@@ -233,6 +293,7 @@ export class CalculationService {
       values,
       parameters,
       parameterValues,
+      cashRules,
     )
     const configSnapshotJson = JSON.stringify({
       projectId,
@@ -240,6 +301,7 @@ export class CalculationService {
       parameterValues,
       lines,
       values,
+      cashRules,
     })
     const compilation = compileForecast(
       project,
@@ -249,8 +311,14 @@ export class CalculationService {
       parameters,
       parameterValues,
     )
+    const cashCompilation = compileCashSchedule(
+      lines,
+      compilation.values,
+      cashRules,
+    )
     const now = new Date().toISOString()
-    const errors = compilation.issues.filter((issue) => issue.severity === 'error')
+    const allIssues = [...compilation.issues, ...cashCompilation.issues]
+    const errors = allIssues.filter((issue) => issue.severity === 'error')
     const run: CalculationRun = {
       id: crypto.randomUUID(),
       projectId,
@@ -259,15 +327,15 @@ export class CalculationService {
       runNumber,
       status: errors.length > 0 ? 'failed' : 'success',
       configHash,
-      issueCount: compilation.issues.length,
-      issues: compilation.issues,
+      issueCount: allIssues.length,
+      issues: allIssues,
       configSnapshotJson,
       startedAt: now,
       completedAt: new Date().toISOString(),
     }
     if (errors.length > 0) {
       await this.runs.save(run)
-      return { success: false, run, issues: compilation.issues }
+      return { success: false, run, issues: allIssues }
     }
 
     const statements: SqlStatement[] = [
@@ -309,6 +377,42 @@ export class CalculationService {
         ],
       })
     })
+    cashCompilation.values.forEach((compiled) => {
+      statements.push({
+        sql: `INSERT INTO fact_cash_schedule_value (
+          id, calculation_run_id, project_id, source_line_id,
+          source_line_code, source_line_name, department_id,
+          business_module_id, source_period, settlement_period,
+          scenario_id, version_id, metric_code, amount_basis,
+          tax_rate_text, net_value_text, tax_value_text, gross_value_text,
+          settlement_ratio_text, value_text, rule_method, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        params: [
+          crypto.randomUUID(),
+          run.id,
+          compiled.projectId,
+          compiled.sourceLineId,
+          compiled.sourceLineCode,
+          compiled.sourceLineName,
+          compiled.departmentId,
+          compiled.businessModuleId,
+          compiled.sourcePeriod,
+          compiled.settlementPeriod,
+          compiled.scenarioId,
+          compiled.versionId,
+          compiled.metricCode,
+          compiled.amountBasis,
+          compiled.taxRate,
+          compiled.netValue,
+          compiled.taxValue,
+          compiled.grossValue,
+          compiled.settlementRatio,
+          compiled.value,
+          compiled.ruleMethod,
+          now,
+        ],
+      })
+    })
 
     const aggregates = new Map<
       string,
@@ -328,6 +432,21 @@ export class CalculationService {
       const aggregate = aggregates.get(key) ?? {
         moduleId: compiled.businessModuleId,
         period: compiled.period,
+        metricCode: compiled.metricCode,
+        value: new Decimal(0),
+      }
+      aggregate.value = aggregate.value.plus(compiled.value)
+      aggregates.set(key, aggregate)
+    })
+    cashCompilation.values.forEach((compiled) => {
+      const key = [
+        compiled.businessModuleId,
+        compiled.settlementPeriod,
+        compiled.metricCode,
+      ].join(':')
+      const aggregate = aggregates.get(key) ?? {
+        moduleId: compiled.businessModuleId,
+        period: compiled.settlementPeriod,
         metricCode: compiled.metricCode,
         value: new Decimal(0),
       }
@@ -357,6 +476,6 @@ export class CalculationService {
       })
     })
     await this.database.batch(statements)
-    return { success: true, run, issues: compilation.issues }
+    return { success: true, run, issues: allIssues }
   }
 }
