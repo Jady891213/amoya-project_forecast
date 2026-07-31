@@ -38,4 +38,27 @@ describe('FileBackedSqliteClient', () => {
     expect(rows).toEqual([{ value: 'saved' }])
     await reopened.close()
   })
+
+  it('能够导出并恢复当前 Schema 的完整数据库', async () => {
+    temporaryDirectory = await mkdtemp(
+      join(tmpdir(), 'amoya-project-forecast-TMP-to-delete-'),
+    )
+    const databasePath = join(temporaryDirectory, 'amoya_project_forecast.db')
+    const database = await FileBackedSqliteClient.create(databasePath)
+    await initializeSqliteDatabase(database)
+    await database.execute(
+      `INSERT OR REPLACE INTO sys_app_metadata (key, value, updated_at)
+       VALUES ('test:backup', 'before', ?)`,
+      [new Date().toISOString()],
+    )
+    const backup = await database.exportDatabase()
+    await database.execute(
+      `UPDATE sys_app_metadata SET value = 'after' WHERE key = 'test:backup'`,
+    )
+    await database.importDatabase(backup)
+    expect(await database.query<{ value: string }>(
+      `SELECT value FROM sys_app_metadata WHERE key = 'test:backup'`,
+    )).toEqual([{ value: 'before' }])
+    await database.close()
+  })
 })

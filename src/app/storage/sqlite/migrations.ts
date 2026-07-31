@@ -1,4 +1,4 @@
-export const CURRENT_SCHEMA_VERSION = 6
+export const CURRENT_SCHEMA_VERSION = 7
 
 export const SCHEMA_V1 = `
 PRAGMA foreign_keys = ON;
@@ -586,4 +586,35 @@ CREATE INDEX idx_fact_cash_schedule_run
 
 COMMIT;
 PRAGMA foreign_keys = ON;
+`
+
+export const SCHEMA_V7 = `
+PRAGMA foreign_keys = ON;
+BEGIN IMMEDIATE;
+
+ALTER TABLE dim_project
+  ADD COLUMN draft_revision INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE sys_calculation_run
+  ADD COLUMN draft_revision INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE sys_calculation_run
+  ADD COLUMN project_snapshot_json TEXT NOT NULL DEFAULT '{}';
+
+CREATE TABLE IF NOT EXISTS cfg_forecast_override (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES dim_project(id) ON DELETE CASCADE,
+  forecast_line_id TEXT NOT NULL REFERENCES cfg_forecast_line(id) ON DELETE CASCADE,
+  period TEXT NOT NULL REFERENCES dim_period(period),
+  original_value_text TEXT NOT NULL,
+  override_value_text TEXT NOT NULL,
+  reason TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL,
+  UNIQUE (project_id, forecast_line_id, period)
+);
+
+CREATE INDEX IF NOT EXISTS idx_cfg_forecast_override_project
+  ON cfg_forecast_override(project_id, forecast_line_id, period);
+
+COMMIT;
 `

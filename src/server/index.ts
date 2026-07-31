@@ -6,7 +6,8 @@ import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { FileBackedSqliteClient } from './fileBackedSqliteClient'
 import { initializeSqliteDatabase } from '../app/storage/sqlite/initialize'
-import type { SqlStatement } from '../app/storage/types'
+import { ReferenceDatasetService } from './services/referenceDatasetService'
+import { SemanticApiRouter } from './semanticApiRouter'
 
 const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const workspaceRoot = resolve(sourceRoot, '..')
@@ -18,8 +19,6 @@ const host = '127.0.0.1'
 const port = Number(process.env.AMOYA_PORT || 4173)
 const baseUrl = `http://${host}:${port}`
 const token = randomBytes(24).toString('hex')
-const MAX_JSON_BODY = 10 * 1024 * 1024
-const MAX_DATABASE_BODY = 100 * 1024 * 1024
 
 const contentTypes: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',
@@ -41,18 +40,6 @@ function sendJson(response: ServerResponse, status: number, value: unknown) {
 
 function errorMessage(reason: unknown): string {
   return reason instanceof Error ? reason.message : '本地服务处理失败'
-}
-
-async function readBody(request: IncomingMessage, maxBytes: number) {
-  const chunks: Buffer[] = []
-  let total = 0
-  for await (const chunk of request) {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
-    total += buffer.length
-    if (total > maxBytes) throw new Error('请求内容超过允许大小')
-    chunks.push(buffer)
-  }
-  return Buffer.concat(chunks)
 }
 
 function requestIsTrusted(request: IncomingMessage): boolean {
@@ -105,7 +92,9 @@ async function serveStatic(pathname: string, response: ServerResponse) {
 async function main() {
   const database = await FileBackedSqliteClient.create(databasePath)
   await initializeSqliteDatabase(database)
+  await new ReferenceDatasetService(database).ensureInitialized()
   await database.flush()
+  const apiRouter = new SemanticApiRouter(database, databasePath)
 
   const server = createServer(async (request, response) => {
     try {
@@ -123,55 +112,11 @@ async function main() {
           sendJson(response, 403, { error: '本地服务访问校验失败' })
           return
         }
-        if (url.pathname === '/api/database/export' && request.method === 'GET') {
-          const bytes = await database.exportDatabase()
-          response.writeHead(200, {
-            'content-type': 'application/vnd.sqlite3',
-            'content-disposition': `attachment; filename="${basename(databasePath)}"`,
-            'cache-control': 'no-store',
-          })
-          response.end(Buffer.from(bytes))
-          return
-        }
-        if (url.pathname === '/api/database/import' && request.method === 'POST') {
-          const bytes = await readBody(request, MAX_DATABASE_BODY)
-          await database.importDatabase(new Uint8Array(bytes))
-          sendJson(response, 200, { ok: true })
-          return
-        }
-        if (request.method !== 'POST') {
-          sendJson(response, 405, { error: '请求方法不受支持' })
-          return
-        }
-        const payload = JSON.parse(
-          (await readBody(request, MAX_JSON_BODY)).toString('utf8'),
-        ) as {
-          sql?: string
-          params?: unknown[]
-          statements?: SqlStatement[]
-        }
-        if (url.pathname === '/api/database/query' && payload.sql) {
-          sendJson(
-            response,
-            200,
-            await database.query(payload.sql, payload.params ?? []),
-          )
-          return
-        }
-        if (url.pathname === '/api/database/execute' && payload.sql) {
-          await database.execute(payload.sql, payload.params ?? [])
-          sendJson(response, 200, { ok: true })
-          return
-        }
-        if (
-          url.pathname === '/api/database/batch' &&
-          Array.isArray(payload.statements)
-        ) {
-          await database.batch(payload.statements)
-          sendJson(response, 200, { ok: true })
-          return
-        }
-        sendJson(response, 400, { error: '本地数据请求不完整' })
+        if (await apiRouter.handle(request, response, url)) return
+        sendJson(response, 404, {
+          code: 'API_NOT_FOUND',
+          message: '接口不存在',
+        })
         return
       }
       await serveStatic(url.pathname, response)

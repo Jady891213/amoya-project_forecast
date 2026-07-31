@@ -11,6 +11,7 @@ export const project: Project = {
   durationMonths: 4,
   status: 'calculating',
   remark: '',
+  draftRevision: 0,
   origin: 'user',
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',

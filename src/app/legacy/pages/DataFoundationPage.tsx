@@ -8,12 +8,12 @@ import {
   PackageOpen,
   Plus,
 } from 'lucide-react'
-import type { DatabaseClient } from '../storage/types'
-import type { AppSnapshot } from '../state/types'
-import type { Department } from '../domain/types'
-import { DepartmentRepository } from '../repositories/departmentRepository'
-import { DepartmentDialog } from '../ui/DepartmentDialog'
-import { formatDateTime } from '../ui/formatters'
+import type { DatabaseClient } from '../../storage/types'
+import type { AppSnapshot } from '../../state/types'
+import type { Department } from '../../domain/types'
+import { DepartmentRepository } from '../../repositories/departmentRepository'
+import { DepartmentDialog } from '../../ui/DepartmentDialog'
+import { formatDateTime } from '../../ui/formatters'
 
 type DataTab = 'projects' | 'departments' | 'modules' | 'periods' | 'scenarios' | 'versions'
 

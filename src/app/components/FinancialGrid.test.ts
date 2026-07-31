@@ -1,0 +1,31 @@
+import { describe, expect, it } from 'vitest'
+import { buildPasteTransaction, parseFinancialValue } from './FinancialGrid'
+
+describe('FinancialGrid 数值解析', () => {
+  it('支持千分位、括号负数和空值', () => {
+    expect(parseFinancialValue('1,234.50')).toBe('1234.5')
+    expect(parseFinancialValue('(2,000)')).toBe('-2000')
+    expect(parseFinancialValue('')).toBe('')
+  })
+
+  it('拒绝非数值内容', () => {
+    expect(() => parseFinancialValue('abc')).toThrow()
+  })
+
+  it('批量粘贴先完整校验，只读行或非法值会取消整个区域', () => {
+    const periods = ['2026-01', '2026-02']
+    const rows = [
+      { id: 'editable', label: '收入', editable: true, values: { '2026-01': '1', '2026-02': '2' } },
+      { id: 'readonly', label: '毛利', editable: false, values: { '2026-01': '3', '2026-02': '4' } },
+    ]
+    expect(() => buildPasteTransaction('10\t20\n30\t40', { row: 0, column: 0 }, rows, periods))
+      .toThrow('整个粘贴已取消')
+    expect(() => buildPasteTransaction('10\tabc', { row: 0, column: 0 }, rows, periods))
+      .toThrow()
+    expect(buildPasteTransaction('10\t(20)', { row: 0, column: 0 }, rows.slice(0, 1), periods).after)
+      .toEqual([
+        { rowId: 'editable', period: '2026-01', value: '10' },
+        { rowId: 'editable', period: '2026-02', value: '-20' },
+      ])
+  })
+})

@@ -1,13 +1,5 @@
-export type StorageMode = 'persistent' | 'portable' | 'transient'
-
-export interface StorageRuntimeInfo {
-  mode: StorageMode
-  label: string
-  detail: string
-  sqliteVersion: string
-  schemaVersion: number
-  persistent: boolean
-}
+import type { StorageRuntimeInfo } from '../../shared/api'
+export type { StorageMode, StorageRuntimeInfo } from '../../shared/api'
 
 export interface SqlStatement {
   sql: string

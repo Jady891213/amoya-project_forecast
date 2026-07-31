@@ -9,6 +9,7 @@ import {
   SCHEMA_V4,
   SCHEMA_V5,
   SCHEMA_V6,
+  SCHEMA_V7,
 } from './migrations'
 
 function periodStatements(): SqlStatement[] {
@@ -153,6 +154,14 @@ export async function initializeSqliteDatabase(
     await database.execute(
       `INSERT INTO sys_schema_migration (version, description, applied_at)
        VALUES (6, 'P1C税口径、收付款规则与现金计划追溯', ?)`,
+      [now],
+    )
+  }
+  if (!applied.has(7)) {
+    await database.execute(SCHEMA_V7)
+    await database.execute(
+      `INSERT INTO sys_schema_migration (version, description, applied_at)
+       VALUES (7, '项目聚合修订、期间覆盖与计算项目快照', ?)`,
       [now],
     )
   }

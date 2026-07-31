@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react'
 import { Archive, FolderOpen, Plus, RotateCcw } from 'lucide-react'
-import type { DatabaseClient } from '../storage/types'
-import type { Project, ProjectInput } from '../domain/types'
-import type { AppSnapshot } from '../state/types'
-import { ProjectRepository } from '../repositories/projectRepository'
-import { ProjectDialog } from '../ui/ProjectDialog'
-import { formatDateTime } from '../ui/formatters'
+import type { DatabaseClient } from '../../storage/types'
+import type { Project, ProjectInput } from '../../domain/types'
+import type { AppSnapshot } from '../../state/types'
+import { ProjectRepository } from '../../repositories/projectRepository'
+import { ProjectDialog } from '../../ui/ProjectDialog'
+import { formatDateTime } from '../../ui/formatters'
 
 interface ProjectCenterPageProps {
   database: DatabaseClient

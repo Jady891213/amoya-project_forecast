@@ -10,6 +10,7 @@ import { NodeSqliteClient } from '../test/nodeSqliteClient'
 import { CalculationService } from './calculationService'
 import { ForecastLineValueRepository } from '../repositories/forecastLineValueRepository'
 import { CashScheduleRepository } from '../repositories/cashScheduleRepository'
+import { ProjectWorkspaceService } from '../../server/projectWorkspaceService'
 
 let database: NodeSqliteClient
 
@@ -54,7 +55,23 @@ describe('SQLite repositories and reference data isolation', () => {
     )
     expect(
       await database.query('SELECT * FROM sys_schema_migration'),
-    ).toHaveLength(6)
+    ).toHaveLength(7)
+    const projectColumns = await database.query<{ name: string }>(
+      'PRAGMA table_info(dim_project)',
+    )
+    const runColumns = await database.query<{ name: string }>(
+      'PRAGMA table_info(sys_calculation_run)',
+    )
+    expect(projectColumns.map((item) => item.name)).toContain('draft_revision')
+    expect(runColumns.map((item) => item.name)).toEqual(
+      expect.arrayContaining(['draft_revision', 'project_snapshot_json']),
+    )
+    expect(
+      await database.query<{ name: string }>(
+        `SELECT name FROM sqlite_master
+         WHERE type = 'table' AND name = 'cfg_forecast_override'`,
+      ),
+    ).toHaveLength(1)
   })
 
   it('Schema v1 可迁移为全局场景和版本维度', async () => {
@@ -99,7 +116,7 @@ describe('SQLite repositories and reference data isolation', () => {
     await initializeSqliteDatabase(legacy)
     expect(
       await legacy.query('SELECT * FROM sys_schema_migration'),
-    ).toHaveLength(6)
+    ).toHaveLength(7)
     const factColumns = await legacy.query<{ name: string }>(
       'PRAGMA table_info(fact_metric_value)',
     )
@@ -237,6 +254,111 @@ describe('SQLite repositories and reference data isolation', () => {
     expect(await projects.listVersions()).toHaveLength(1)
     expect((await projects.listScenarios())[0].id).toBe('baseline')
     expect((await projects.listVersions())[0].id).toBe('working')
+  })
+
+  it('项目聚合保存递增修订号并拒绝过期页面覆盖', async () => {
+    const departments = new DepartmentRepository(database)
+    const projects = new ProjectRepository(database)
+    const department = await departments.save({ code: 'REV', name: '修订测试部' })
+    const input = {
+      code: 'REV-001', name: '修订测试项目', customer: '',
+      departmentId: department.id, owner: '', startPeriod: '2026-01',
+      durationMonths: 12, remark: '', modules: [],
+    }
+    const created = await projects.save(input, 0)
+    expect(created.draftRevision).toBe(1)
+    const updated = await projects.save({ ...input, id: created.id, owner: '财务' }, 1)
+    expect(updated.draftRevision).toBe(2)
+    await expect(
+      projects.save({ ...input, id: created.id, owner: '过期页面' }, 1),
+    ).rejects.toMatchObject({ code: 'REVISION_CONFLICT', currentRevision: 2 })
+  })
+
+  it('非计算项目信息修改不使结果过期，计算坐标修改会使结果过期', async () => {
+    await new ReferenceDatasetService(database).initialize()
+    const projects = new ProjectRepository(database)
+    const departments = new DepartmentRepository(database)
+    const calculation = new CalculationService(database)
+    const project = (await projects.get('project-hebei-cable-iptv'))!
+    expect((await calculation.getProjectState(project.id)).isResultCurrent).toBe(true)
+
+    const modules = (await projects.listModules(project.id))
+      .filter((item) => !item.isCommon)
+      .map((item) => ({ code: item.code, name: item.name }))
+    const renamed = await projects.save({
+      id: project.id,
+      code: project.code,
+      name: `${project.name}（展示名调整）`,
+      customer: `${project.customer}（更新）`,
+      departmentId: project.departmentId,
+      owner: '新负责人',
+      startPeriod: project.startPeriod,
+      durationMonths: project.durationMonths,
+      remark: '仅修改非计算属性',
+      modules,
+    }, project.draftRevision)
+    expect((await calculation.getProjectState(project.id)).isResultCurrent).toBe(true)
+
+    const replacementDepartment = await departments.save({ code: 'ALT', name: '替代部门' })
+    await projects.save({
+      id: renamed.id,
+      code: renamed.code,
+      name: renamed.name,
+      customer: renamed.customer,
+      departmentId: replacementDepartment.id,
+      owner: renamed.owner,
+      startPeriod: renamed.startPeriod,
+      durationMonths: renamed.durationMonths,
+      remark: renamed.remark,
+      modules,
+    }, renamed.draftRevision)
+    expect((await calculation.getProjectState(project.id)).isResultCurrent).toBe(false)
+  })
+
+  it('项目聚合保存失败时回滚项目信息和全部配置', async () => {
+    await new ReferenceDatasetService(database).initialize()
+    const service = new ProjectWorkspaceService(database)
+    const before = await service.getWorkspace('project-hebei-cable-iptv')
+    await expect(service.saveWorkspace(before.project.id, {
+      expectedRevision: before.draftRevision,
+      draft: {
+        project: {
+          id: before.project.id,
+          code: before.project.code,
+          name: '不应落库的名称',
+          customer: before.project.customer,
+          departmentId: before.project.departmentId,
+          owner: before.project.owner,
+          startPeriod: before.project.startPeriod,
+          durationMonths: before.project.durationMonths,
+          remark: before.project.remark,
+          modules: before.modules.filter((item) => !item.isCommon).map((item) => ({ code: item.code, name: item.name })),
+        },
+        forecast: {
+          parameters: [],
+          lines: [{
+            name: '非法模块收入',
+            category: 'revenue',
+            businessModuleId: 'not-current-project-module',
+            forecastMethod: 'fixed_monthly',
+            startPeriod: before.project.startPeriod,
+            endPeriod: before.project.startPeriod,
+            fixedMonthlyValue: '100',
+            amountBasis: 'tax_exclusive',
+            taxRate: '0',
+            assumption: '',
+            sortOrder: 1,
+            monthlyValues: {},
+          }],
+          cashRules: [],
+          overrides: [],
+        },
+      },
+    })).rejects.toThrow('业务模块')
+    const after = await service.getWorkspace(before.project.id)
+    expect(after.project.name).toBe(before.project.name)
+    expect(after.draftRevision).toBe(before.draftRevision)
+    expect(after.forecast.lines).toEqual(before.forecast.lines)
   })
 
   it('清除参考数据不影响后续用户部门和项目', async () => {

@@ -10,7 +10,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
-import { generatePeriods } from '../domain/periods'
+import { generatePeriods } from '../../domain/periods'
 import type {
   CalculationIssue,
   ForecastCategory,
@@ -25,14 +25,14 @@ import type {
   ParameterValueType,
   CashRuleDraft,
   TaxAmountBasis,
-} from '../domain/types'
-import type { DatabaseClient } from '../storage/types'
+} from '../../domain/types'
+import type { DatabaseClient } from '../../storage/types'
 import {
   CalculationService,
   previewForecastDraft,
-} from '../services/calculationService'
-import { formatWan } from '../ui/formatters'
-import { ProjectInformationEditor } from '../ui/ProjectInformationEditor'
+} from '../../services/calculationService'
+import { formatWan } from '../../ui/formatters'
+import { ProjectInformationEditor } from '../../ui/ProjectInformationEditor'
 
 interface Props {
   database: DatabaseClient

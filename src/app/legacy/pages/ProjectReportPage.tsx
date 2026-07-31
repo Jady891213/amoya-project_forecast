@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, Calculator, FileChartColumn, Info, TableProperties } from 'lucide-react'
-import type { DatabaseClient } from '../storage/types'
+import type { DatabaseClient } from '../../storage/types'
 import type {
   MetricDefinition,
   MonthlyMetricRow,
@@ -9,18 +9,18 @@ import type {
   ForecastProjectState,
   ForecastCategory,
   CashScheduleBreakdown,
-} from '../domain/types'
-import type { AppSnapshot } from '../state/types'
-import { ProjectReportService } from '../services/projectReportService'
-import { CalculationService } from '../services/calculationService'
-import { ForecastLineValueRepository } from '../repositories/forecastLineValueRepository'
-import { CashScheduleRepository } from '../repositories/cashScheduleRepository'
+} from '../../domain/types'
+import type { AppSnapshot } from '../../state/types'
+import { ProjectReportService } from '../../services/projectReportService'
+import { CalculationService } from '../../services/calculationService'
+import { ForecastLineValueRepository } from '../../repositories/forecastLineValueRepository'
+import { CashScheduleRepository } from '../../repositories/cashScheduleRepository'
 import {
   formatDateTime,
   formatPercent,
   formatReportPeriod,
   formatWan,
-} from '../ui/formatters'
+} from '../../ui/formatters'
 
 type MonthlyField = keyof Omit<MonthlyMetricRow, 'period' | 'isRecoveryPeriod'>
 type ViewMode = 'calculation' | 'report'

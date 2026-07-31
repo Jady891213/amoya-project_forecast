@@ -114,4 +114,91 @@ describe('ForecastCompiler', () => {
     )
     expect(result.values).toHaveLength(0)
   })
+
+  it('期间覆盖以未税标准值进入下游公式并重新生成含税金额', () => {
+    const revenue = line({
+      id: 'line-revenue',
+      code: 'LINE-001',
+      fixedMonthlyValue: '106',
+      amountBasis: 'tax_inclusive',
+      taxRate: '0.06',
+      startPeriod: '2026-01',
+      endPeriod: '2026-01',
+    })
+    const cost = line({
+      id: 'line-cost',
+      code: 'LINE-002',
+      category: 'cost',
+      metricCode: 'cost',
+      forecastMethod: 'formula',
+      formulaExpression: 'LINE("LINE-001") * 20%',
+      fixedMonthlyValue: undefined,
+      startPeriod: '2026-01',
+      endPeriod: '2026-01',
+    })
+    const result = compileForecast(project, [module], [revenue, cost], [], [], [], [{
+      id: 'override-1',
+      projectId: project.id,
+      forecastLineId: revenue.id,
+      period: '2026-01',
+      originalValue: '100',
+      overrideValue: '120',
+      reason: '验收调整',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    }])
+
+    expect(result.values.find((item) => item.lineId === revenue.id)).toEqual(
+      expect.objectContaining({ netValue: '120', grossValue: '127.2' }),
+    )
+    expect(result.values.find((item) => item.lineId === cost.id)).toEqual(
+      expect.objectContaining({ netValue: '24' }),
+    )
+  })
+
+  it('项目计算坐标或期间覆盖变化会改变完整输入摘要', () => {
+    const lines = [line()]
+    const base = buildForecastConfigHash(lines, [], [], [], [], project, [module], [])
+    const changedCoordinate = buildForecastConfigHash(
+      lines,
+      [],
+      [],
+      [],
+      [],
+      { ...project, departmentId: 'department-other' },
+      [module],
+      [],
+    )
+    const changedOverride = buildForecastConfigHash(lines, [], [], [], [], project, [module], [{
+      id: 'override-1', projectId: project.id, forecastLineId: lines[0].id,
+      period: '2026-01', originalValue: '100.25', overrideValue: '101',
+      reason: '', updatedAt: '2026-01-01T00:00:00.000Z',
+    }])
+    expect(changedCoordinate).not.toBe(base)
+    expect(changedOverride).not.toBe(base)
+  })
+
+  it('期间覆盖不能掩盖原公式错误', () => {
+    const formulaLine = line({
+      id: 'line-formula-error',
+      forecastMethod: 'formula',
+      formulaExpression: 'PARAM("PAR-NOT-FOUND") * 10',
+      fixedMonthlyValue: undefined,
+      startPeriod: '2026-01',
+      endPeriod: '2026-01',
+    })
+    const result = compileForecast(project, [module], [formulaLine], [], [], [], [{
+      id: 'override-error',
+      projectId: project.id,
+      forecastLineId: formulaLine.id,
+      period: '2026-01',
+      originalValue: '0',
+      overrideValue: '100',
+      reason: '',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    }])
+    expect(result.issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ severity: 'error', lineId: formulaLine.id }),
+    ]))
+    expect(result.values).toHaveLength(0)
+  })
 })

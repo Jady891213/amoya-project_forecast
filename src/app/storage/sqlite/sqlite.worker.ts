@@ -77,8 +77,8 @@ async function importDatabase(bytes: Uint8Array) {
     validationDatabase.exec({
       sql: 'SELECT MAX(version) FROM sys_schema_migration',
       rowMode: 0,
-      callback: (row: unknown[]) => {
-        versions.push(Number(row[0]))
+      callback: (value: unknown) => {
+        versions.push(Number(value))
       },
     })
     if (

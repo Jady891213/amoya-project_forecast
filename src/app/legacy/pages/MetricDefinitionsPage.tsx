@@ -1,6 +1,6 @@
 import { LockKeyhole } from 'lucide-react'
-import type { MetricDefinition } from '../domain/types'
-import { OriginBadge } from '../ui/OriginBadge'
+import type { MetricDefinition } from '../../domain/types'
+import { OriginBadge } from '../../ui/OriginBadge'
 
 export function MetricDefinitionsPage({ metrics }: { metrics: MetricDefinition[] }) {
   const metricName = (code: string) =>
