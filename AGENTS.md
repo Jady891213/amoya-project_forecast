@@ -17,6 +17,8 @@
 - `docs/reports/02_P1A_历史项目回放与结果核对报告.md`
 - `docs/reports/03_P1B_参数与公式验收报告.md`
 - `docs/reports/04_P1C_税与现金流验收报告.md`
+- `docs/reports/05_本地服务与DB文件存储改造验收报告.md`
+- `docs/todo/01_本地服务与DB文件存储改造.md`
 
 ## 当前开发基线
 
@@ -27,6 +29,9 @@
 - `docs/design/11_P1A_基础预测与计算契约.md` 是预测行、计算批次、结果替换和计算页面的当前契约。
 - `docs/design/12_P1B_参数与公式契约.md` 是项目参数、公式语法、依赖计算和配置快照的当前契约。
 - `docs/design/13_P1C_税与收付款规则契约.md` 是税口径、收付款规则、现金尾期和现金计划追溯的当前契约。
+- `docs/todo/01_本地服务与DB文件存储改造.md` 记录“本地服务 + 可见 `.db` 文件”的实施状态；macOS 已完成，目标 Windows 真机验证仍待执行。
+- `server/index.ts` 是正式本地服务入口；`server/fileBackedSqliteClient.ts` 负责串行访问数据库并在每次写操作后同步 `data/amoya_project_forecast.db`。
+- `src/storage/remoteClient.ts` 是正式页面访问数据库的统一客户端；页面和业务仓储不得自行请求本地服务或维护第二套保存逻辑。
 - `src/mocks/p0ReferenceDataset.ts` 只维护历史项目、部门和业务模块。
 - `src/mocks/historicalProjectConfigs.ts` 是历史项目预测配置和源表逐月数据的唯一初始化来源；不得把历史数值散落到页面或仓储。
 - `src/services/forecastCompiler.ts` 是三种预测方式展开为分月行项目结果的确定性编译入口；不得在页面中复制计算口径。
@@ -39,14 +44,16 @@
 ## 开发与验证
 
 ```bash
-pnpm dev
+pnpm start:local
 pnpm test
 pnpm build
-pnpm build:singlefile
+pnpm build:legacy-singlefile
 ```
 
-- 普通构建输出到 `dist/`。
-- 单 HTML 输出到 `dist-singlefile/index.html`，使用内存 SQLite，只作为便携体验与数据库文件交换入口，不作为自动持久化验收环境。
+- `pnpm start:local` 先构建前端，再启动 `127.0.0.1:4173` 本地服务并自动打开浏览器。
+- 正式数据保存在 `data/amoya_project_forecast.db`；`data/*.db` 不提交 Git，升级源码不得覆盖用户数据库。
+- 默认前端构建输出到 `dist/`，只保留浏览器运行所需的 HTML、JavaScript 和 CSS。
+- 单 HTML 输出到 `dist-singlefile/index.html`，使用内存 SQLite，只作为旧兼容入口，不作为自动持久化验收环境。
 - 自动化测试使用Vitest、SQLite WASM内存库、纯预测编译器和纯指标引擎测试。
 
 ## 业务原则
@@ -64,9 +71,10 @@ pnpm build:singlefile
 - 项目首次保存后自动登记为只读项目主数据，主数据页面不允许另行创建或修改项目，避免双入口。
 - 项目生命周期只区分测算中与已归档，版本是计算快照，不引入审核或审批流程。
 - 当前不建设跨项目分析；单项目报表仍必须读取统一多维事实结果，后续出现明确需求时再增加跨项目汇总。
-- P0 已完成并冻结“历史项目主数据—SQLite WASM/OPFS—基础事实—系统指标计算—计算表格—单项目报表”数据契约。
+- P0 已完成并冻结“历史项目主数据—SQLite 基础事实—系统指标计算—计算表格—单项目报表”数据契约；持久化运行方式后续已切换为本地服务和可见 `.db` 文件。
 - SQLite表前缀统一使用 `dim_`、`fact_`、`sys_`，预留 `cfg_` 和 `snap_`；`dim_project` 是项目唯一主表，不建立填报项目与维度项目两套副本。
-- PWA是自动持久化正式运行方式；单HTML使用内存SQLite，必须通过 `.sqlite3` 导入导出保存修改。
+- 本地 TypeScript 服务是自动持久化正式运行方式；页面查询和保存通过同源接口，并实时同步到 `data/amoya_project_forecast.db`。
+- 旧单 HTML 使用内存 SQLite，必须手动导出才能保存修改，不能与正式服务的持久化承诺混用。
 - 项目必须引用可维护部门；新建项目默认没有事实数据，禁止自动附加结构验证结果。
 - 历史项目主数据统一使用 `datasetId: historical-project-config-v3`；事实必须由历史配置计算生成。
 - 基础事实只存收入、成本、现金流入和现金流出；派生指标在查询时计算，不回写事实表。

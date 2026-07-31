@@ -1,4 +1,4 @@
 /// <reference types="vite/client" />
-/// <reference types="vite-plugin-pwa/client" />
 
 declare const __PORTABLE_MODE__: boolean
+declare const __SERVICE_MODE__: boolean

@@ -1,7 +1,6 @@
 import react from '@vitejs/plugin-react'
 import { defineConfig, type Plugin } from 'vite'
 import { viteSingleFile } from 'vite-plugin-singlefile'
-import { VitePWA } from 'vite-plugin-pwa'
 import { readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
@@ -35,13 +34,13 @@ export default defineConfig({
   base: './',
   define: {
     __PORTABLE_MODE__: true,
+    __SERVICE_MODE__: false,
   },
   optimizeDeps: {
     exclude: ['@sqlite.org/sqlite-wasm'],
   },
   plugins: [
     react(),
-    VitePWA({ disable: true }),
     viteSingleFile(),
     finalizePortableHtml(),
   ],

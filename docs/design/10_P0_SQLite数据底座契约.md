@@ -1,22 +1,22 @@
 # 项目测算分析工具：P0 SQLite 数据契约
 
 更新时间：2026-07-28  
-状态：已实现并冻结；P1A 通过 Schema v3/v4 扩展配置、计算批次和直接现金计划，不改变基础事实坐标
+状态：数据契约已实现并冻结；运行方式已由后续“本地服务 + `.db` 文件”方案替代，基础事实坐标不变
 
 ## 一、运行与存储边界
 
 ```text
-PWA
-  → Dedicated Worker
-  → SQLite WASM
-  → OPFS 固定数据库文件
+正式运行
+  → React 浏览器界面
+  → TypeScript 本地服务
+  → data/amoya_project_forecast.db
 
-便携单 HTML
+兼容单 HTML
   → 主线程内存 SQLite
-  → 手动导入/导出 .sqlite3
+  → 手动导入/导出数据库文件
 ```
 
-IndexedDB 已退出当前运行库；旧构建和旧 Origin 下的数据不自动删除或迁移。PWA 是持久化验收环境，单 HTML 是便携体验与数据库文件交换环境。
+IndexedDB 和 OPFS 已退出当前正式运行链路；旧构建和旧 Origin 下的数据不自动删除或迁移。本地服务及可见 `.db` 文件是持久化验收环境，单 HTML 仅保留兼容能力。
 
 页面、报表服务和指标引擎只能通过仓储接口读写数据，不得直接调用 SQLite：
 

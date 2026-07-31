@@ -9,6 +9,8 @@ coverage/
 *.log
 *.sqlite
 *.sqlite3
+data/*.db
+data/*.db.tmp
 .env
 .env.*
 !.env.example

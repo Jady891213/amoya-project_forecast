@@ -21,6 +21,7 @@
 - [P1A 历史项目回放与结果核对报告](reports/02_P1A_历史项目回放与结果核对报告.md)
 - [P1B 参数与公式验收报告](reports/03_P1B_参数与公式验收报告.md)
 - [P1C 税口径与现金流验收报告](reports/04_P1C_税与现金流验收报告.md)
+- [本地服务与 DB 文件存储改造验收报告](reports/05_本地服务与DB文件存储改造验收报告.md)
 
 ## 4. 查看当前原型
 
@@ -28,14 +29,19 @@
 
 `design/archive` 和 `prototype/archive` 只保存早期探索和需求素材，不作为当前开发基线。
 
-## 5. 当前运行入口
+## 5. 查看下一步 TODO
+
+- [本地服务与 `.db` 文件存储改造](todo/01_本地服务与DB文件存储改造.md)
+
+## 6. 当前运行入口
 
 ```bash
-pnpm dev
+pnpm start:local
 ```
 
-- PWA 开发地址：`http://127.0.0.1:5173/`
-- 普通构建：`dist/`
-- 便携单文件：`dist-singlefile/index.html`
+- 正式地址：`http://127.0.0.1:4173/`
+- 自动保存数据库：`data/amoya_project_forecast.db`
+- 前端构建：`dist/`
+- 兼容单文件：按需执行 `pnpm build:legacy-singlefile`
 
-PWA 自动持久化 SQLite；单 HTML 刷新或关闭前必须导出 `.sqlite3`。
+页面查询和保存均通过本地服务，写操作会立即同步到标准 SQLite `.db` 文件。旧单 HTML 只保留兼容能力，不作为正式使用入口。

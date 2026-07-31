@@ -5,8 +5,9 @@
 ## 当前能力
 
 - React + TypeScript + Vite 单包工程。
-- PWA 正式运行：官方 SQLite WASM 在 Dedicated Worker 中运行，数据库通过 OPFS 自动持久化。
-- 便携运行：生成真正的单个 `index.html`，使用内存 SQLite，支持导入和导出 `.sqlite3`。
+- 正式运行采用本地 TypeScript 服务：浏览器界面通过同源接口查询和保存，服务实时同步到可见的 `data/amoya_project_forecast.db`。
+- `.db` 是标准 SQLite 文件，可备份、恢复并使用常规 SQLite 工具检查。
+- 旧单 HTML 仅作为兼容构建保留，使用内存 SQLite，不再作为日常入口。
 - 真实部门新增、修改、启用和停用。
 - 真实项目新增、修改、归档和恢复；项目是唯一主表，不维护同步副本。
 - 项目保存时自动创建“公共”业务模块；场景和版本作为平台级维度统一复用。
@@ -36,24 +37,25 @@
 
 ```bash
 pnpm install
-pnpm dev
+pnpm start:local
 pnpm test
 pnpm build
-pnpm build:singlefile
+pnpm build:legacy-singlefile
 ```
 
-- 开发地址：`http://127.0.0.1:5173/`
-- PWA 静态包：`dist/`
-- 便携单文件：`dist-singlefile/index.html`
+- 正式入口：`http://127.0.0.1:4173/`，执行启动命令后会自动打开。
+- 默认数据库：`data/amoya_project_forecast.db`。
+- 前端构建：`dist/`，默认只包含 `index.html`、一个 JavaScript 文件和一个 CSS 文件。
+- 兼容单文件：按需执行后生成 `dist-singlefile/index.html`，不属于默认交付物。
 
-PWA/OPFS 依赖跨源隔离响应头，Vite 开发和预览环境已经配置：
+也可以双击与当前系统对应的启动脚本：
 
 ```text
-Cross-Origin-Opener-Policy: same-origin
-Cross-Origin-Embedder-Policy: require-corp
+scripts/启动项目测算.cmd       Windows
+scripts/启动项目测算.command   macOS
 ```
 
-部署 `dist/` 时也必须保留这两个响应头。单 HTML 不依赖 OPFS；关闭页面前必须导出数据库，否则本次修改会丢失。
+日常使用不需要上传或下载数据库。界面的“备份/恢复”只用于主动备份或更换数据库；服务运行时请不要用其他 SQLite 工具同时修改该文件。
 
 ## 数据模型
 
@@ -96,6 +98,7 @@ cfg_parameter / cfg_parameter_value
 - [P1A 历史项目回放与结果核对](docs/reports/02_P1A_历史项目回放与结果核对报告.md)
 - [P1B 参数与公式验收报告](docs/reports/03_P1B_参数与公式验收报告.md)
 - [P1C 税口径与现金流验收报告](docs/reports/04_P1C_税与现金流验收报告.md)
+- [本地服务与 DB 文件存储验收报告](docs/reports/05_本地服务与DB文件存储改造验收报告.md)
 
 文档与原型统一归档在 `docs/` 下：
 

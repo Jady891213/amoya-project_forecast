@@ -164,7 +164,7 @@ export default function App() {
 
   async function restoreDatabase(file?: File) {
     if (!file || !backupService) return
-    if (!window.confirm('恢复数据库将替换当前 SQLite 数据。确认继续吗？')) return
+    if (!window.confirm('恢复数据库将替换当前 amoya_project_forecast.db。确认继续吗？')) return
     try {
       await backupService.restore(file)
       await refresh()
@@ -178,10 +178,10 @@ export default function App() {
   }
 
   if (loading) {
-    return <div className="app-loading"><Database size={30} /><h1>正在启动 SQLite 数据基座</h1><p>加载 WASM、校验数据库结构并初始化基础数据…</p></div>
+    return <div className="app-loading"><Database size={30} /><h1>正在连接本地数据服务</h1><p>校验 SQLite 数据库、结构版本与基础数据…</p></div>
   }
   if (fatalError || !database) {
-    return <div className="app-loading error-state"><Database size={30} /><h1>应用初始化失败</h1><p>{fatalError}</p><button className="btn primary" onClick={() => window.location.reload()}>重新加载</button></div>
+    return <div className="app-loading error-state"><Database size={30} /><h1>本地数据服务连接失败</h1><p>{fatalError}</p><small>请使用 pnpm start:local 启动项目，不要直接打开 dist/index.html。</small><button className="btn primary" onClick={() => window.location.reload()}>重新连接</button></div>
   }
 
   return (
@@ -196,9 +196,13 @@ export default function App() {
           <span className={`storage-status ${storageTone}`}>
             <HardDrive size={14} /> {snapshot.storage.label} · {snapshot.storage.detail}
           </span>
-          <button className="top-icon-button" aria-label="导出SQLite数据库" title="导出SQLite数据库" onClick={() => void backupService?.download()}><Download size={15} /></button>
-          <button className="top-icon-button" aria-label="导入SQLite数据库" title="导入SQLite数据库" onClick={() => importInput.current?.click()}><Upload size={15} /></button>
-          <input ref={importInput} hidden type="file" accept=".sqlite,.sqlite3,application/vnd.sqlite3" onChange={(event) => void restoreDatabase(event.target.files?.[0])} />
+          {snapshot.storage.mode === 'portable' && (
+            <>
+              <button className="top-icon-button" aria-label="导出数据库备份" title="导出数据库备份" onClick={() => void backupService?.download()}><Download size={15} /></button>
+              <button className="top-icon-button" aria-label="恢复数据库备份" title="恢复数据库备份" onClick={() => importInput.current?.click()}><Upload size={15} /></button>
+            </>
+          )}
+          <input ref={importInput} hidden type="file" accept=".db,.sqlite,.sqlite3,application/vnd.sqlite3" onChange={(event) => void restoreDatabase(event.target.files?.[0])} />
           <span className="phase-badge">P1C · 税与现金流闭环</span>
         </div>
       </header>
@@ -226,10 +230,18 @@ export default function App() {
             </div>
             <div className="db-box">
               <b><HardDrive size={14} /> {snapshot.storage.label}</b>
+              <span>{snapshot.storage.detail}</span>
               <span>SQLite {snapshot.storage.sqliteVersion}</span>
               <span>Schema v{snapshot.storage.schemaVersion}</span>
               <span>项目 {snapshot.projects.length} 个</span>
               <span>基础事实 {snapshot.facts.length} 条</span>
+              {snapshot.storage.mode === 'persistent' && (
+                <div className="data-management-actions">
+                  <span>数据实时同步到本地 DB 文件</span>
+                  <button onClick={() => void backupService?.download()}><Download size={13} />备份</button>
+                  <button onClick={() => importInput.current?.click()}><Upload size={13} />恢复</button>
+                </div>
+              )}
             </div>
           </aside>
         )}

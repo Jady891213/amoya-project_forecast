@@ -20,7 +20,7 @@ export class DatabaseBackupService {
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `项目测算数据_${new Date().toISOString().slice(0, 10)}.sqlite3`
+    link.download = `项目测算数据_${new Date().toISOString().slice(0, 10)}.db`
     link.click()
     URL.revokeObjectURL(url)
   }
