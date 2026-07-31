@@ -87,7 +87,7 @@ export function ReportCharts({ report }: { report: ProjectReportDto }) {
   }
   return <div className="report-chart-grid">
     <section><h3>分月损益趋势（万元）</h3><EChart ariaLabel="分月损益趋势图" option={profitOption} /></section>
-    <section><h3>分月现金趋势（万元）</h3><EChart ariaLabel="分月现金趋势图" option={cashOption} /></section>
+    <section><h3>分月现金趋势（万元）</h3>{report.hasCashFacts ? <EChart ariaLabel="分月现金趋势图" option={cashOption} /> : <div className="report-chart-empty">源项目未提供现金计划</div>}</section>
     <section className="wide"><h3>主要行项目构成（万元）</h3><EChart ariaLabel="主要行项目构成图" option={compositionOption} /></section>
   </div>
 }

@@ -77,6 +77,23 @@ function addMonthlySheet(
   styleBody(sheet)
 }
 
+function addUnavailableMonthlySheet(
+  workbook: ExcelJS.Workbook,
+  name: string,
+  report: ProjectReportDto,
+  message: string,
+) {
+  const sheet = workbook.addWorksheet(name)
+  title(sheet, `${report.projectSnapshot.name} · ${name}`, 4)
+  sheet.mergeCells('A2:D3')
+  sheet.getCell('A2').value = message
+  sheet.getCell('A2').alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }
+  sheet.getCell('A2').font = { name: 'Microsoft YaHei', size: 10, color: { argb: NAVY } }
+  ;[18, 18, 18, 18].forEach((width, index) => { sheet.getColumn(index + 1).width = width })
+  sheet.pageSetup.printArea = 'A1:D3'
+  styleBody(sheet)
+}
+
 export class ReportWorkbookService {
   async build(report: ProjectReportDto): Promise<Buffer> {
     const workbook = new ExcelJS.Workbook()
@@ -93,12 +110,21 @@ export class ReportWorkbookService {
       { name: '毛利', values: report.monthly.map((item) => item.grossProfit), total: report.summary.grossProfit },
       { name: '毛利率', values: report.monthly.map((item) => item.grossMargin), total: report.summary.grossMargin, percentage: true },
     ])
-    addMonthlySheet(workbook, '分月现金流', report, [
-      { name: '现金流入', values: report.monthly.map((item) => item.cashInflow), total: report.summary.cashInflow },
-      { name: '现金流出', values: report.monthly.map((item) => item.cashOutflow), total: report.summary.cashOutflow },
-      { name: '净现金流', values: report.monthly.map((item) => item.netCashFlow), total: report.summary.netCashFlow },
-      { name: '累计现金流', values: report.monthly.map((item) => item.cumulativeCashFlow), total: report.summary.cumulativeCashFlow },
-    ])
+    if (report.hasCashFacts) {
+      addMonthlySheet(workbook, '分月现金流', report, [
+        { name: '现金流入', values: report.monthly.map((item) => item.cashInflow), total: report.summary.cashInflow },
+        { name: '现金流出', values: report.monthly.map((item) => item.cashOutflow), total: report.summary.cashOutflow },
+        { name: '净现金流', values: report.monthly.map((item) => item.netCashFlow), total: report.summary.netCashFlow },
+        { name: '累计现金流', values: report.monthly.map((item) => item.cumulativeCashFlow), total: report.summary.cumulativeCashFlow },
+      ])
+    } else {
+      addUnavailableMonthlySheet(
+        workbook,
+        '分月现金流',
+        report,
+        '源项目未提供现金计划，本报告不以 0 元代替现金流结果。',
+      )
+    }
     this.addLineDetailSheet(workbook, report)
     this.addCashTraceSheet(workbook, report)
     this.addMetricSheet(workbook, report)
@@ -117,8 +143,8 @@ export class ReportWorkbookService {
       ['场景', report.scenario.name, '版本', report.version.name],
       ['计算批次', report.calculationRun ? `RUN-${String(report.calculationRun.runNumber).padStart(4, '0')}` : '无', '草稿修订', report.calculationRun?.draftRevision ?? '—'],
       ['结果状态', report.isBehindDraft ? '落后于当前配置' : '与当前配置一致', '导出时间', new Date()],
-      ['口径', '金额单位：元；损益为未税标准口径', '现金转正期间', report.summary.cashPositiveLabel],
-      ['最大垫资', number(report.summary.maximumFunding), '累计现金流', number(report.summary.cumulativeCashFlow)],
+      ['口径', '金额单位：元；损益为未税标准口径', '现金转正期间', report.hasCashFacts ? report.summary.cashPositiveLabel : '暂无现金数据'],
+      ['最大垫资', report.hasCashFacts ? number(report.summary.maximumFunding) : '暂无现金数据', '累计现金流', report.hasCashFacts ? number(report.summary.cumulativeCashFlow) : '暂无现金数据'],
     ]
     rows.forEach((values) => sheet.addRow(values))
     ;[1, 3].forEach((column) => {

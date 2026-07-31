@@ -39,7 +39,7 @@ export const REFERENCE_PROJECTS: Project[] = [
     departmentId: 'department-iptv',
     owner: '王敏',
     startPeriod: '2026-08',
-    durationMonths: 20,
+    durationMonths: 17,
     status: 'calculating',
     remark: '历史测算材料包含云游戏、超高清、分月损益、账期与现金流。',
     draftRevision: 0,
@@ -99,6 +99,23 @@ export const REFERENCE_PROJECTS: Project[] = [
     createdAt: CREATED_AT,
     updatedAt: CREATED_AT,
   },
+  {
+    id: 'project-hebei-cloud-game-report',
+    code: 'PRJ-2026-005',
+    name: '河北云游戏项目（历史报告）',
+    customer: '源报告未注明',
+    departmentId: 'department-iptv',
+    owner: '待确认',
+    startPeriod: '2026-08',
+    durationMonths: 12,
+    status: 'calculating',
+    remark: '历史素材仅提供12个月汇总报告；分月时点按报告中的月度业务假设重建，未生成现金计划。',
+    draftRevision: 0,
+    origin: 'user',
+    datasetId: REFERENCE_DATASET_ID,
+    createdAt: CREATED_AT,
+    updatedAt: CREATED_AT,
+  },
 ]
 
 function module(
@@ -130,4 +147,6 @@ export const REFERENCE_MODULES: ProjectModule[] = [
   module('project-hebei-cable-iptv', 'IPTV', '互联网电视'),
   module('project-bestv-ctv-ad', 'PUBLIC', '公共', true),
   module('project-bestv-ctv-ad', 'PROGRAMMATIC_AD', '程序化广告'),
+  module('project-hebei-cloud-game-report', 'PUBLIC', '公共', true),
+  module('project-hebei-cloud-game-report', 'CLOUD_GAME', '云游戏'),
 ]

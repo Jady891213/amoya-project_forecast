@@ -31,7 +31,7 @@ export type CalculationRunStatus = 'success' | 'failed'
 
 export const BASELINE_SCENARIO_CODE = 'baseline'
 export const WORKING_VERSION_CODE = 'working'
-export const REFERENCE_DATASET_ID = 'historical-project-config-v3'
+export const REFERENCE_DATASET_ID = 'historical-project-config-v4'
 
 export type BaseMetricCode =
   | 'revenue'

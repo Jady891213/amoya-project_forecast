@@ -172,7 +172,7 @@ describe('SQLite repositories and reference data isolation', () => {
     expect(cloud.summary.revenue).not.toBe(tv.summary.revenue)
   })
 
-  it('四个历史项目由已保存配置计算并与源表关键结果核对', async () => {
+  it('五个可结构化历史项目由已保存配置计算并与源表关键结果核对', async () => {
     await new ReferenceDatasetService(database).initialize()
     const reports = new ProjectReportService(database)
     const expectations = [
@@ -204,6 +204,13 @@ describe('SQLite repositories and reference data isolation', () => {
         cashInflow: 28498.4905660377,
         cashOutflow: 26121.02498269,
       },
+      {
+        projectId: 'project-hebei-cloud-game-report',
+        revenue: 80.625212890299,
+        cost: 57.352178812533,
+        cashInflow: 0,
+        cashOutflow: 0,
+      },
     ]
     for (const expected of expectations) {
       const report = await reports.build({
@@ -229,6 +236,33 @@ describe('SQLite repositories and reference data isolation', () => {
         ),
       ).toHaveLength(1)
     }
+  })
+
+  it('河北联通按17个月经营期和3个月回收期回放，百视通保留成本构成', async () => {
+    await new ReferenceDatasetService(database).initialize()
+    const reports = new ProjectReportService(database)
+    const unicom = await reports.build({
+      projectId: 'project-hebei-unicom-cloud',
+      scenarioId: 'baseline',
+      versionId: 'working',
+    })
+    expect(unicom.operationEndPeriod).toBe('2027-12')
+    expect(unicom.reportEndPeriod).toBe('2028-03')
+    expect(unicom.monthly.filter((row) => row.isRecoveryPeriod)).toHaveLength(3)
+    expect(unicom.monthly.slice(17).every((row) => row.revenue === '0' && row.cost === '0')).toBe(true)
+
+    const bestvCostLines = await database.query<{ name: string }>(
+      `SELECT name FROM cfg_forecast_line
+       WHERE project_id = ? AND category = 'cost'
+       ORDER BY sort_order`,
+      ['project-bestv-ctv-ad'],
+    )
+    expect(bestvCostLines.map((row) => row.name)).toEqual([
+      '营业成本',
+      '销售费用',
+      '管理费用',
+      '税金及附加',
+    ])
   })
 
   it('用户项目自动创建公共模块并复用全局场景与版本', async () => {

@@ -134,6 +134,23 @@ function monthlyLine(
   }
 }
 
+function taxInclusive<T extends ForecastLineDraft>(
+  line: T,
+  taxRate: Decimal.Value,
+): T {
+  return {
+    ...line,
+    amountBasis: 'tax_inclusive',
+    taxRate: new Decimal(taxRate).toString(),
+  }
+}
+
+function annualSeriesToMonthly(valuesInWan: Decimal.Value[]): Decimal[] {
+  return valuesInWan.flatMap((annual) =>
+    Array.from({ length: 12 }, () => new Decimal(annual).div(12)),
+  )
+}
+
 function formulaLine(
   projectId: string,
   sequence: number,
@@ -408,14 +425,18 @@ function bestvCtv(): HistoricalProjectConfig {
   const netRevenue = advertisingCash.map((value) =>
     new Decimal(value).times(0.2),
   )
-  const annualCosts = [
-    836.781456125584,
-    1471.92808647979,
-    3840.83364019041,
-  ]
-  const monthlyCosts = annualCosts.flatMap((annual) =>
-    Array.from({ length: 12 }, () => new Decimal(annual).div(12)),
-  )
+  const operatingCosts = annualSeriesToMonthly([
+    480.77358490566, 751.066037735849, 2215.35377358491,
+  ])
+  const sellingExpenses = annualSeriesToMonthly([
+    151.25, 410.47641509434, 1032.90566037736,
+  ])
+  const administrativeExpenses = annualSeriesToMonthly([
+    204.282175004327, 306.792842305695, 569.332040851653,
+  ])
+  const taxesAndSurcharges = annualSeriesToMonthly([
+    0.47569621559633, 3.59279134390687, 23.242165376493,
+  ])
   return {
     projectId,
     sourceWorkbook: '百视通CTV程序化广告能力建设项目财务数据预估-20260520提交版.xlsx',
@@ -428,20 +449,92 @@ function bestvCtv(): HistoricalProjectConfig {
         '月度广告流水 × 20%平台交易佣金；月度流水来自月度资金计划。',
       ),
       monthlyLine(
-        projectId, 2, '总成本费用', 'cost',
-        moduleId, periods, monthlyCosts,
-        '按项目预算表三年年度总成本平均展开到各年度月份；不替代源表上游驱动模型。',
+        projectId, 2, '营业成本', 'cost',
+        moduleId, periods, operatingCosts,
+        '按项目预算表营业成本三年年度合计平均展开到各年度月份。',
       ),
       monthlyLine(
-        projectId, 3, '月度资金流入', 'cash_inflow',
+        projectId, 3, '销售费用', 'cost',
+        moduleId, periods, sellingExpenses,
+        '按项目预算表销售费用三年年度合计平均展开到各年度月份。',
+      ),
+      monthlyLine(
+        projectId, 4, '管理费用', 'cost',
+        moduleId, periods, administrativeExpenses,
+        '按项目预算表管理费用三年年度合计平均展开到各年度月份。',
+      ),
+      monthlyLine(
+        projectId, 5, '税金及附加', 'cost',
+        moduleId, periods, taxesAndSurcharges,
+        '按项目预算表税金及附加三年年度合计平均展开到各年度月份。',
+      ),
+      monthlyLine(
+        projectId, 6, '月度资金流入', 'cash_inflow',
         moduleId, periods, cashInflows,
         '逐月取自月度资金计划“现金流入”口径（广告流入为不含税口径）。',
       ),
       monthlyLine(
-        projectId, 4, '月度资金流出', 'cash_outflow',
+        projectId, 7, '月度资金流出', 'cash_outflow',
         moduleId, periods, cashOutflows,
         '逐月取自月度资金计划“现金流出”行。',
       ),
+    ],
+  }
+}
+
+function hebeiCloudGameReport(): HistoricalProjectConfig {
+  const projectId = 'project-hebei-cloud-game-report'
+  const moduleId = 'module-hebei-cloud-game-report-cloud_game'
+  const periods = generatePeriods('2026-08', 12)
+  const firstMonthThen = (first: Decimal.Value, remaining: Decimal.Value) =>
+    periods.map((_, index) => index === 0 ? first : remaining)
+
+  return {
+    projectId,
+    sourceWorkbook: '项目测算_河北云游戏_2026-07-24 (3).xls',
+    sourceSheets: ['测算报告'],
+    parameters: [],
+    lines: [
+      taxInclusive(fixedLine(
+        projectId, 1, '云游戏业务收入', 'revenue', moduleId,
+        periods[0], periods[11], 6.348,
+        '报告口径：24元/月 × 2,645户；源文件未提供分月表，按12个月均匀重建。',
+      ), 0.06),
+      taxInclusive(monthlyLine(
+        projectId, 2, '游戏手柄收入', 'revenue', moduleId,
+        periods, firstMonthThen(9.9, 0),
+        '报告口径：99元 × 1,000个；源文件未给出确认时点，暂按首月一次性确认。',
+      ), 0.13),
+      taxInclusive(monthlyLine(
+        projectId, 3, '微信支付手续费', 'cost', moduleId,
+        periods, firstMonthThen(0.16248, 0.06348),
+        '含税收入的1%；手柄收入暂按首月确认，因此首月手续费包含手柄收入。',
+      ), 0.06),
+      taxInclusive(monthlyLine(
+        projectId, 4, '当贝分成', 'cost', moduleId,
+        periods, firstMonthThen(1.6248, 0.6348),
+        '含税收入的10%；手柄收入暂按首月确认，因此首月分成包含手柄收入。',
+      ), 0.06),
+      taxInclusive(monthlyLine(
+        projectId, 5, 'CDN成本', 'cost', moduleId,
+        periods, firstMonthThen(1.8, 0),
+        '报告仅列固定金额1.8万元；未给出期间，暂按首月一次性确认。',
+      ), 0.06),
+      taxInclusive(fixedLine(
+        projectId, 6, '155M专线成本', 'cost', moduleId,
+        periods[0], periods[11], 2,
+        '报告口径：2万元/月 × 12个月。',
+      ), 0.09),
+      taxInclusive(fixedLine(
+        projectId, 7, '游戏诉讼成本', 'cost', moduleId,
+        periods[0], periods[11], 0.39675,
+        '报告口径：1.5元/月 × 2,645户。',
+      ), 0.06),
+      taxInclusive(fixedLine(
+        projectId, 8, '渠道成本', 'cost', moduleId,
+        periods[0], periods[11], 1.785375,
+        '报告口径：（云游戏收入－诉讼成本）×30%。',
+      ), 0.06),
     ],
   }
 }
@@ -451,4 +544,5 @@ export const HISTORICAL_PROJECT_CONFIGS: HistoricalProjectConfig[] = [
   chongqingMobile(),
   hebeiCable(),
   bestvCtv(),
+  hebeiCloudGameReport(),
 ]

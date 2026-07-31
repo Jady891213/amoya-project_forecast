@@ -36,7 +36,7 @@ const ReportCharts = lazy(async () => {
 })
 
 type WorkspaceView = 'config' | 'calculation' | 'report'
-type ConfigSection = 'project' | 'profit' | 'cash' | 'parameters'
+type ConfigSection = 'profit' | 'cash' | 'parameters'
 
 interface Props {
   api: ApiClient
@@ -130,7 +130,7 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, view, onNavigat
   const [parameters, setParameters] = useState<ProjectParameterDraft[]>([])
   const [cashRules, setCashRules] = useState<CashRuleDraft[]>([])
   const [overrides, setOverrides] = useState<ForecastOverrideDraft[]>([])
-  const [section, setSection] = useState<ConfigSection>('project')
+  const [section, setSection] = useState<ConfigSection>('profit')
   const [selectedLineId, setSelectedLineId] = useState('')
   const [selectedParameterId, setSelectedParameterId] = useState('')
   const [dirty, setDirty] = useState(false)
@@ -321,6 +321,21 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, view, onNavigat
     patchLine(selectedLine.id ?? '', { monthlyValues: values })
   }
 
+  function switchConfigSection(next: ConfigSection) {
+    setSection(next)
+    if (next === 'parameters') return
+    const currentLine = lines.find((line) => line.id === selectedLineId)
+    const belongsToSection = currentLine && (next === 'profit'
+      ? currentLine.category === 'revenue' || currentLine.category === 'cost'
+      : currentLine.category === 'cash_inflow' || currentLine.category === 'cash_outflow')
+    if (!belongsToSection) {
+      const firstLine = lines.find((line) => next === 'profit'
+        ? line.category === 'revenue' || line.category === 'cost'
+        : line.category === 'cash_inflow' || line.category === 'cash_outflow')
+      setSelectedLineId(firstLine?.id ?? '')
+    }
+  }
+
   function editCalculation(changes: FinancialGridChange[]) {
     if (!report) return
     const breakdown = new Map(report.lineBreakdown.map((item) => [item.lineId, item]))
@@ -384,12 +399,25 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, view, onNavigat
     </div>
     {message && <div className="workspace-message">{message}</div>}
 
-    {view === 'config' && <div className="project-config-layout">
-      <nav className="project-config-nav">
-        {([['project', '项目信息'], ['profit', '损益预测'], ['cash', '直接现金'], ['parameters', '项目参数']] as Array<[ConfigSection, string]>).map(([key, label]) => <button key={key} className={section === key ? 'active' : ''} onClick={() => setSection(key)}>{label}</button>)}
-      </nav>
-      <section className="project-config-content">
-        {section === 'project' && <ProjectInformationSection value={projectDraft} departments={snapshot.departments} onChange={(next) => { setProjectDraft(next); markDirty() }} />}
+    {view === 'config' && <div className="project-config-page">
+      <ProjectInformationSection value={projectDraft} departments={snapshot.departments} onChange={(next) => { setProjectDraft(next); markDirty() }} />
+      <section className="forecast-config-section">
+        <div className="section-heading forecast-config-heading">
+          <div><h2>测算配置</h2><p>选择配置类型，在右侧表格集中维护当前项目的预测明细。</p></div>
+        </div>
+        <div className="forecast-config-workbench">
+          <nav className="forecast-config-switcher" aria-label="测算配置类型">
+            <button className={section === 'profit' ? 'active' : ''} onClick={() => switchConfigSection('profit')}>
+              <b>损益预测</b><span>收入与成本</span><i>{lines.filter((line) => line.category === 'revenue' || line.category === 'cost').length}</i>
+            </button>
+            <button className={section === 'cash' ? 'active' : ''} onClick={() => switchConfigSection('cash')}>
+              <b>直接现金</b><span>直接收付款</span><i>{lines.filter((line) => line.category === 'cash_inflow' || line.category === 'cash_outflow').length}</i>
+            </button>
+            <button className={section === 'parameters' ? 'active' : ''} onClick={() => switchConfigSection('parameters')}>
+              <b>项目参数</b><span>计算假设</span><i>{parameters.length}</i>
+            </button>
+          </nav>
+          <div className="forecast-config-detail">
         {(section === 'profit' || section === 'cash') && <>
           <div className="forecast-toolbar compact-toolbar">
             <b>{section === 'profit' ? '损益预测行' : '直接现金计划'}</b><span className="spacer" />
@@ -402,6 +430,8 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, view, onNavigat
           </div>
         </>}
         {section === 'parameters' && <ParameterSection parameters={parameters} selectedId={selectedParameterId} periods={projectPeriods} onSelect={setSelectedParameterId} onChange={(next) => { setParameters(next); markDirty() }} />}
+          </div>
+        </div>
       </section>
     </div>}
 
@@ -465,9 +495,9 @@ function ReadOnlySummaryGrid({ report }: { report: ProjectReportDto }) {
     { id: 'revenue', label: '收入合计', editable: false, values: Object.fromEntries(report.monthly.map((item) => [item.period, item.revenue])) },
     { id: 'cost', label: '成本合计', editable: false, values: Object.fromEntries(report.monthly.map((item) => [item.period, item.cost])) },
     { id: 'gross', label: '毛利', editable: false, values: Object.fromEntries(report.monthly.map((item) => [item.period, item.grossProfit])) },
-    { id: 'cash', label: '净现金流', editable: false, values: Object.fromEntries(report.monthly.map((item) => [item.period, item.netCashFlow])) },
+    ...(report.hasCashFacts ? [{ id: 'cash', label: '净现金流', editable: false, values: Object.fromEntries(report.monthly.map((item) => [item.period, item.netCashFlow])) }] : []),
   ]
-  return <section className="calculation-summary"><h2>系统汇总与派生指标（只读）</h2><FinancialGrid ariaLabel="系统汇总指标" periods={report.monthly.map((item) => item.period)} rows={rows} includeHeadersOnCopy /></section>
+  return <section className="calculation-summary"><h2>系统汇总与派生指标（只读）</h2>{!report.hasCashFacts && <p className="report-data-note">源项目未提供现金计划，本报告不以 0 元代替现金流结果。</p>}<FinancialGrid ariaLabel="系统汇总指标" periods={report.monthly.map((item) => item.period)} rows={rows} includeHeadersOnCopy /></section>
 }
 
 function ProjectReportView({ report, selectedRunId, onSelectRun, onExport }: { report?: ProjectReportDto; selectedRunId: string; onSelectRun: (runId: string) => void; onExport: () => void }) {
@@ -475,7 +505,7 @@ function ProjectReportView({ report, selectedRunId, onSelectRun, onExport }: { r
   return <div className="workspace-view formal-report">
     <div className="formal-report-toolbar no-print"><div><b>项目测算报告</b><span>{report.calculationRun ? `RUN-${String(report.calculationRun.runNumber).padStart(4, '0')} · 修订 R${report.calculationRun.draftRevision}` : ''}</span></div><span className="spacer" /><label>成功批次<select value={selectedRunId || report.calculationRun?.id || ''} onChange={(event) => onSelectRun(event.target.value)}>{report.availableRuns.map((run) => <option key={run.id} value={run.id}>RUN-{String(run.runNumber).padStart(4, '0')} · {new Date(run.completedAt).toLocaleString('zh-CN')}</option>)}</select></label><button className="btn" onClick={onExport}><Download size={14} />导出 Excel</button><button className="btn" onClick={() => window.print()}><Printer size={14} />打印 / PDF</button></div>
     <section className="report-cover"><div><span>项目测算报告</span><h1>{report.projectSnapshot.name}</h1><p>{report.projectSnapshot.code || '无项目编码'} · {report.projectSnapshot.customer || '未填写客户'} · {report.scenario.name} · {report.version.name}</p></div><dl><div><dt>经营期间</dt><dd>{report.projectSnapshot.startPeriod}—{report.operationEndPeriod}</dd></div><div><dt>计算批次</dt><dd>{report.calculationRun ? `RUN-${String(report.calculationRun.runNumber).padStart(4, '0')}` : '—'}</dd></div><div><dt>结果状态</dt><dd className={report.isBehindDraft ? 'risk' : 'good'}>{report.isBehindDraft ? '落后于当前配置' : '与当前配置一致'}</dd></div></dl></section>
-    <section className="metrics-strip"><article><span>收入</span><strong>{formatWan(report.summary.revenue)} 万元</strong></article><article><span>成本</span><strong>{formatWan(report.summary.cost)} 万元</strong></article><article><span>毛利</span><strong>{formatWan(report.summary.grossProfit)} 万元</strong></article><article><span>毛利率</span><strong>{formatPercent(report.summary.grossMargin)}</strong></article><article><span>最大垫资</span><strong>{formatWan(report.summary.maximumFunding)} 万元</strong></article><article><span>现金转正</span><strong>{report.summary.cashPositiveLabel}</strong></article></section>
+    <section className="metrics-strip"><article><span>收入</span><strong>{formatWan(report.summary.revenue)} 万元</strong></article><article><span>成本</span><strong>{formatWan(report.summary.cost)} 万元</strong></article><article><span>毛利</span><strong>{formatWan(report.summary.grossProfit)} 万元</strong></article><article><span>毛利率</span><strong>{formatPercent(report.summary.grossMargin)}</strong></article><article><span>最大垫资</span><strong>{report.hasCashFacts ? `${formatWan(report.summary.maximumFunding)} 万元` : '暂无现金数据'}</strong></article><article><span>现金转正</span><strong>{report.hasCashFacts ? report.summary.cashPositiveLabel : '暂无现金数据'}</strong></article></section>
     <section className="report-section report-narrative"><h2>1. 测算概况与口径</h2>{report.measurementSummary.map((item) => <p key={item}>{item}</p>)}{report.riskNotes.map((item) => <p className="risk" key={item}>风险提示：{item}</p>)}</section>
     <section className="report-section"><h2>2. 损益、构成与现金趋势</h2><Suspense fallback={<div className="report-chart-loading">正在生成图表…</div>}><ReportCharts report={report} /></Suspense></section>
     <section className="report-section"><h2>3. 分月损益与现金流</h2><ReadOnlySummaryGrid report={report} /></section>

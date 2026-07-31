@@ -54,6 +54,9 @@ describe('统一 Excel 报告', () => {
       report.projectSnapshot.code,
     )
     expect(workbook.getWorksheet('分月损益')?.getCell('A3').value).toBe('收入')
+    expect(workbook.getWorksheet('分月现金流')?.getCell('A2').value).toContain(
+      '源项目未提供现金计划',
+    )
     expect(workbook.getWorksheet('指标和公式说明')?.rowCount).toBeGreaterThan(4)
     const overrideRow = workbook.getWorksheet('测算假设')?.getColumn(1).values
       .findIndex((value) => value === '人工覆盖') ?? -1

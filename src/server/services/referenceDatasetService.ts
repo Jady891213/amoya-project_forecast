@@ -14,6 +14,7 @@ const LEGACY_DATASET_IDS = [
   'p0-reference-v2',
   'historical-project-config-v1',
   'historical-project-config-v2',
+  'historical-project-config-v3',
 ]
 const STATE_KEY = `reference-dataset:${REFERENCE_DATASET_ID}`
 
@@ -94,11 +95,12 @@ export class ReferenceDatasetService {
       ...this.deleteStatements(),
       {
         sql: `DELETE FROM sys_app_metadata
-              WHERE key IN (?, ?, ?, ?, ?)`,
+              WHERE key IN (?, ?, ?, ?, ?, ?)`,
         params: [
           STATE_KEY,
           'reference-dataset:historical-project-config-v1',
           'reference-dataset:historical-project-config-v2',
+          'reference-dataset:historical-project-config-v3',
           'reference-dataset:p0-reference-v1',
           'demo-dataset:p0-demo-v1',
         ],
