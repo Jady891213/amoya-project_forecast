@@ -33,9 +33,26 @@
 
 当前仍不包含完整增值税核算、日期级账期、多场景覆盖、版本快照和 Excel 导入导出。
 
+## 目录结构
+
+```text
+amoya-project_forecast/
+├── src/      完整源码、服务、测试、依赖与构建配置
+├── data/     正式 SQLite 数据库
+├── docs/     编号整理的设计、素材、原型、报告和计划
+├── output/   Web 构建、兼容单文件和测试输出
+├── 启动项目测算.cmd
+└── 启动项目测算.command
+```
+
+根目录第一层不再散放源码、构建配置、历史 Excel 或原型。
+
 ## 运行与构建
 
+日常使用可直接双击根目录中与当前系统对应的启动文件。开发命令在 `src` 中执行：
+
 ```bash
+cd src
 pnpm install
 pnpm start:local
 pnpm test
@@ -45,14 +62,14 @@ pnpm build:legacy-singlefile
 
 - 正式入口：`http://127.0.0.1:4173/`，执行启动命令后会自动打开。
 - 默认数据库：`data/amoya_project_forecast.db`。
-- 前端构建：`dist/`，默认只包含 `index.html`、一个 JavaScript 文件和一个 CSS 文件。
-- 兼容单文件：按需执行后生成 `dist-singlefile/index.html`，不属于默认交付物。
+- 前端构建：`output/web/`，默认只包含 `index.html`、一个 JavaScript 文件和一个 CSS 文件。
+- 兼容单文件：按需执行后生成 `output/legacy-singlefile/index.html`，不属于默认交付物。
 
 也可以双击与当前系统对应的启动脚本：
 
 ```text
-scripts/启动项目测算.cmd       Windows
-scripts/启动项目测算.command   macOS
+启动项目测算.cmd       Windows
+启动项目测算.command   macOS
 ```
 
 日常使用不需要上传或下载数据库。界面的“备份/恢复”只用于主动备份或更换数据库；服务运行时请不要用其他 SQLite 工具同时修改该文件。
@@ -90,20 +107,22 @@ cfg_parameter / cfg_parameter_value
 
 ## 关键文档
 
-- [项目文档阅读指南](docs/README.md)
-- [产品结构与用户流程](docs/design/02_产品结构与用户流程.md)
-- [P1B 参数与公式契约](docs/design/12_P1B_参数与公式契约.md)
-- [P1C 税口径与收付款规则契约](docs/design/13_P1C_税与收付款规则契约.md)
-- [开发路线与阶段状态](docs/reports/01_开发路线与阶段状态.md)
-- [P1A 历史项目回放与结果核对](docs/reports/02_P1A_历史项目回放与结果核对报告.md)
-- [P1B 参数与公式验收报告](docs/reports/03_P1B_参数与公式验收报告.md)
-- [P1C 税口径与现金流验收报告](docs/reports/04_P1C_税与现金流验收报告.md)
-- [本地服务与 DB 文件存储验收报告](docs/reports/05_本地服务与DB文件存储改造验收报告.md)
+- [项目文档阅读指南](docs/00_文档导航.md)
+- [产品结构与用户流程](docs/01_产品与设计/02_产品结构与用户流程.md)
+- [P1B 参数与公式契约](docs/01_产品与设计/06_P1B_参数与公式契约.md)
+- [P1C 税口径与收付款规则契约](docs/01_产品与设计/07_P1C_税与收付款规则契约.md)
+- [开发路线与阶段状态](docs/04_验收与进度/01_开发路线与阶段状态.md)
+- [P1A 历史项目回放与结果核对](docs/04_验收与进度/02_P1A_历史项目回放与结果核对报告.md)
+- [P1B 参数与公式验收报告](docs/04_验收与进度/03_P1B_参数与公式验收报告.md)
+- [P1C 税口径与现金流验收报告](docs/04_验收与进度/04_P1C_税与现金流验收报告.md)
+- [本地服务与 DB 文件存储验收报告](docs/04_验收与进度/05_本地服务与DB文件存储改造验收报告.md)
 
 文档与原型统一归档在 `docs/` 下：
 
-- `docs/design/`：当前需求、产品和数据契约。
-- `docs/reports/`：开发状态、阶段核对与验收报告。
-- `docs/prototype/`：当前原型；早期探索统一放入各自的 `archive/`。
+- `01_产品与设计/`：当前需求、产品结构和数据契约。
+- `02_需求素材/`：历史 Excel、对话提取与早期讨论。
+- `03_原型/`：当前原型和编号归档的历史原型。
+- `04_验收与进度/`：开发状态、阶段核对和验收报告。
+- `05_后续计划/`：尚需验证或实施的工作。
 
 当前页面层级仍沿用“外层项目中心—内层项目工作区”。视觉已重构为紧凑的财务/EPM 桌面工作台，不再直接复刻历史 HTML 原型。

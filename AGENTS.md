@@ -5,45 +5,46 @@
 本项目用于继续设计和实现“项目测算分析工具”。开始开发前先阅读：
 
 - `README.md`
-- `docs/README.md`
-- `docs/design/01_需求来源与业务目标.md`
-- `docs/design/02_产品结构与用户流程.md`
-- `docs/design/03_业务建模与多维数据模型.md`
-- `docs/design/10_P0_SQLite数据底座契约.md`
-- `docs/design/11_P1A_基础预测与计算契约.md`
-- `docs/design/12_P1B_参数与公式契约.md`
-- `docs/design/13_P1C_税与收付款规则契约.md`
-- `docs/reports/01_开发路线与阶段状态.md`
-- `docs/reports/02_P1A_历史项目回放与结果核对报告.md`
-- `docs/reports/03_P1B_参数与公式验收报告.md`
-- `docs/reports/04_P1C_税与现金流验收报告.md`
-- `docs/reports/05_本地服务与DB文件存储改造验收报告.md`
-- `docs/todo/01_本地服务与DB文件存储改造.md`
+- `docs/00_文档导航.md`
+- `docs/01_产品与设计/01_需求来源与业务目标.md`
+- `docs/01_产品与设计/02_产品结构与用户流程.md`
+- `docs/01_产品与设计/03_业务建模与多维数据模型.md`
+- `docs/01_产品与设计/04_P0_SQLite数据底座契约.md`
+- `docs/01_产品与设计/05_P1A_基础预测与计算契约.md`
+- `docs/01_产品与设计/06_P1B_参数与公式契约.md`
+- `docs/01_产品与设计/07_P1C_税与收付款规则契约.md`
+- `docs/04_验收与进度/01_开发路线与阶段状态.md`
+- `docs/04_验收与进度/02_P1A_历史项目回放与结果核对报告.md`
+- `docs/04_验收与进度/03_P1B_参数与公式验收报告.md`
+- `docs/04_验收与进度/04_P1C_税与现金流验收报告.md`
+- `docs/04_验收与进度/05_本地服务与DB文件存储改造验收报告.md`
+- `docs/05_后续计划/01_本地服务与DB文件存储改造.md`
 
 ## 当前开发基线
 
-- 根目录 React + TypeScript + Vite 工程是当前可运行开发基线。
-- `docs/README.md` 是文档唯一阅读入口；需求、契约、报告和原型不得重新混放。
-- `docs/reports/01_开发路线与阶段状态.md` 是当前开发范围、优先级和验收状态的持续维护基线；阶段完成或范围调整后同步更新。
-- `docs/design/10_P0_SQLite数据底座契约.md` 是主数据、事实、默认指标、报表查询和参考数据隔离的当前契约。
-- `docs/design/11_P1A_基础预测与计算契约.md` 是预测行、计算批次、结果替换和计算页面的当前契约。
-- `docs/design/12_P1B_参数与公式契约.md` 是项目参数、公式语法、依赖计算和配置快照的当前契约。
-- `docs/design/13_P1C_税与收付款规则契约.md` 是税口径、收付款规则、现金尾期和现金计划追溯的当前契约。
-- `docs/todo/01_本地服务与DB文件存储改造.md` 记录“本地服务 + 可见 `.db` 文件”的实施状态；macOS 已完成，目标 Windows 真机验证仍待执行。
-- `server/index.ts` 是正式本地服务入口；`server/fileBackedSqliteClient.ts` 负责串行访问数据库并在每次写操作后同步 `data/amoya_project_forecast.db`。
-- `src/storage/remoteClient.ts` 是正式页面访问数据库的统一客户端；页面和业务仓储不得自行请求本地服务或维护第二套保存逻辑。
-- `src/mocks/p0ReferenceDataset.ts` 只维护历史项目、部门和业务模块。
-- `src/mocks/historicalProjectConfigs.ts` 是历史项目预测配置和源表逐月数据的唯一初始化来源；不得把历史数值散落到页面或仓储。
-- `src/services/forecastCompiler.ts` 是三种预测方式展开为分月行项目结果的确定性编译入口；不得在页面中复制计算口径。
-- `src/services/formulaEngine.ts` 和 `src/services/formulaDependencyGraph.ts` 是公式解析、计算和依赖排序的唯一入口。
-- `src/services/cashScheduleCompiler.ts` 是将损益结算额编译为分月现金计划的唯一入口；页面不得自行拼装现金结果。
-- `docs/prototype/00_当前原型_项目中心与预测工作台.html` 是当前页面结构与布局基线；顶栏、左侧导航、项目中心和进入项目后的工作区层级应优先与其保持一致。
-- `docs/design/archive/` 和 `docs/prototype/archive/` 是历史探索，仅作为演进参考，不得作为当前功能契约。
-- `references/historical_deliverables/` 是需求证据和对外产物参考，不要直接覆盖或改写原文件。
+- `src/` 中的 React + TypeScript + Vite 工程是当前可运行开发基线；根目录只保留交付分区和用户启动入口。
+- `docs/00_文档导航.md` 是文档唯一阅读入口；需求、契约、报告和原型不得重新混放。
+- `docs/04_验收与进度/01_开发路线与阶段状态.md` 是当前开发范围、优先级和验收状态的持续维护基线；阶段完成或范围调整后同步更新。
+- `docs/01_产品与设计/04_P0_SQLite数据底座契约.md` 是主数据、事实、默认指标、报表查询和参考数据隔离的当前契约。
+- `docs/01_产品与设计/05_P1A_基础预测与计算契约.md` 是预测行、计算批次、结果替换和计算页面的当前契约。
+- `docs/01_产品与设计/06_P1B_参数与公式契约.md` 是项目参数、公式语法、依赖计算和配置快照的当前契约。
+- `docs/01_产品与设计/07_P1C_税与收付款规则契约.md` 是税口径、收付款规则、现金尾期和现金计划追溯的当前契约。
+- `docs/05_后续计划/01_本地服务与DB文件存储改造.md` 记录“本地服务 + 可见 `.db` 文件”的实施状态；macOS 已完成，目标 Windows 真机验证仍待执行。
+- `src/server/index.ts` 是正式本地服务入口；`src/server/fileBackedSqliteClient.ts` 负责串行访问数据库并在每次写操作后同步 `data/amoya_project_forecast.db`。
+- `src/app/storage/remoteClient.ts` 是正式页面访问数据库的统一客户端；页面和业务仓储不得自行请求本地服务或维护第二套保存逻辑。
+- `src/app/mocks/p0ReferenceDataset.ts` 只维护历史项目、部门和业务模块。
+- `src/app/mocks/historicalProjectConfigs.ts` 是历史项目预测配置和源表逐月数据的唯一初始化来源；不得把历史数值散落到页面或仓储。
+- `src/app/services/forecastCompiler.ts` 是三种预测方式展开为分月行项目结果的确定性编译入口；不得在页面中复制计算口径。
+- `src/app/services/formulaEngine.ts` 和 `src/app/services/formulaDependencyGraph.ts` 是公式解析、计算和依赖排序的唯一入口。
+- `src/app/services/cashScheduleCompiler.ts` 是将损益结算额编译为分月现金计划的唯一入口；页面不得自行拼装现金结果。
+- `docs/03_原型/01_当前原型_项目中心与预测工作台.html` 是当前页面结构与布局基线；顶栏、左侧导航、项目中心和进入项目后的工作区层级应优先与其保持一致。
+- `docs/02_需求素材/02_讨论与需求提取/` 和 `docs/03_原型/99_历史原型/` 是历史探索，仅作为演进参考，不得作为当前功能契约。
+- `docs/02_需求素材/01_历史交付文件/` 是需求证据和对外产物参考，不要直接覆盖或改写原文件。
 
 ## 开发与验证
 
 ```bash
+cd src
 pnpm start:local
 pnpm test
 pnpm build
@@ -52,8 +53,8 @@ pnpm build:legacy-singlefile
 
 - `pnpm start:local` 先构建前端，再启动 `127.0.0.1:4173` 本地服务并自动打开浏览器。
 - 正式数据保存在 `data/amoya_project_forecast.db`；`data/*.db` 不提交 Git，升级源码不得覆盖用户数据库。
-- 默认前端构建输出到 `dist/`，只保留浏览器运行所需的 HTML、JavaScript 和 CSS。
-- 单 HTML 输出到 `dist-singlefile/index.html`，使用内存 SQLite，只作为旧兼容入口，不作为自动持久化验收环境。
+- 默认前端构建输出到 `output/web/`，只保留浏览器运行所需的 HTML、JavaScript 和 CSS。
+- 单 HTML 输出到 `output/legacy-singlefile/index.html`，使用内存 SQLite，只作为旧兼容入口，不作为自动持久化验收环境。
 - 自动化测试使用Vitest、SQLite WASM内存库、纯预测编译器和纯指标引擎测试。
 
 ## 业务原则
@@ -91,7 +92,7 @@ pnpm build:legacy-singlefile
 - 损益行限制在经营期内，自动及直接现金允许延伸到经营期后 36 个月；报表必须标记回收期。
 - 完整增值税核算、日期级账期、多场景、版本快照和 Excel 属于后续阶段。
 - 历史项目必须先保存配置、再通过 `CalculationService` 生成事实；禁止恢复直接写入“结构验证事实”的做法。
-- 历史项目核对以 `docs/reports/02_P1A_历史项目回放与结果核对报告.md`、`docs/reports/03_P1B_参数与公式验收报告.md` 和 `docs/reports/04_P1C_税与现金流验收报告.md` 为基线；源表冲突必须记录，不得用隐藏调整项强行对齐。
+- 历史项目核对以 `docs/04_验收与进度/02_P1A_历史项目回放与结果核对报告.md`、`docs/04_验收与进度/03_P1B_参数与公式验收报告.md` 和 `docs/04_验收与进度/04_P1C_税与现金流验收报告.md` 为基线；源表冲突必须记录，不得用隐藏调整项强行对齐。
 - 不要求财务用户理解或直接操作 Cube，界面继续使用行项目、分月表格、场景和版本等业务语言。
 - 通用底座与专业模型模块分开，避免把所有历史字段堆进单一表单。
 - 将“固定成本 + 单位变动成本 + 单价 × 用户数”的盈亏平衡模型作为分析模块，不要用它替代完整项目模型。

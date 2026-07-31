@@ -1,8 +1,7 @@
 node_modules/
-dist/
-dist-singlefile/
+output/*
+!output/README.md
 .playwright-cli/
-output/
 coverage/
 *.tsbuildinfo
 .DS_Store
