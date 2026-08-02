@@ -14,6 +14,7 @@ import type { Department } from '../../domain/types'
 import { DepartmentRepository } from '../../repositories/departmentRepository'
 import { DepartmentDialog } from '../../ui/DepartmentDialog'
 import { formatDateTime } from '../../ui/formatters'
+import { PageBreadcrumbs } from '../../components/PageBreadcrumbs'
 
 type DataTab = 'projects' | 'departments' | 'modules' | 'periods' | 'scenarios' | 'versions'
 
@@ -60,7 +61,8 @@ export function DataFoundationPage({ database, snapshot, onRefresh, onOpenReport
   return (
     <>
       <header className="page-head">
-        <div>
+        <div className="page-head-main">
+          <PageBreadcrumbs items={[{ label: '平台配置' }, { label: '主数据管理' }]} />
           <h1>主数据管理</h1>
           <p>只维护六类业务维度；事实与计算结果回到具体项目中查看。</p>
         </div>

@@ -6,13 +6,13 @@ import type { AppSnapshot } from '../../state/types'
 import { ProjectRepository } from '../../repositories/projectRepository'
 import { ProjectDialog } from '../../ui/ProjectDialog'
 import { formatDateTime } from '../../ui/formatters'
+import { PageBreadcrumbs } from '../../components/PageBreadcrumbs'
 
 interface ProjectCenterPageProps {
   database: DatabaseClient
   snapshot: AppSnapshot
-  mode: 'active' | 'archived'
   onRefresh: () => Promise<void>
-  onOpenProject: (projectId: string) => void
+  onOpenProject: (projectId: string, archived: boolean) => void
 }
 
 function periodEnd(startPeriod: string, durationMonths: number) {
@@ -24,10 +24,10 @@ function periodEnd(startPeriod: string, durationMonths: number) {
 export function ProjectCenterPage({
   database,
   snapshot,
-  mode,
   onRefresh,
   onOpenProject,
 }: ProjectCenterPageProps) {
+  const [showArchived, setShowArchived] = useState(false)
   const [query, setQuery] = useState('')
   const [departmentId, setDepartmentId] = useState('')
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -38,8 +38,8 @@ export function ProjectCenterPage({
   )
 
   const projects = snapshot.projects.filter((project) => {
-    if (mode === 'active' && project.status !== 'calculating') return false
-    if (mode === 'archived' && project.status !== 'archived') return false
+    if (!showArchived && project.status !== 'calculating') return false
+    if (showArchived && project.status !== 'archived') return false
     if (departmentId && project.departmentId !== departmentId) return false
     if (!query.trim()) return true
     const department =
@@ -89,21 +89,21 @@ export function ProjectCenterPage({
   return (
     <>
       <div className="page-head">
-        <div>
-          <h1>{mode === 'active' ? '项目中心' : '归档项目'}</h1>
+        <div className="page-head-main">
+          <PageBreadcrumbs items={[{ label: '项目管理' }, { label: showArchived ? '归档项目' : '测算中项目' }]} />
+          <h1>项目中心</h1>
           <p>
-            {mode === 'active'
+            {!showArchived
               ? '管理正在测算的项目；进入项目后查看计算结果与财务报表。'
-              : '已归档项目只读保留，真实项目可恢复后继续使用。'}
+              : '当前显示已归档项目；恢复后可继续测算。'}
           </p>
         </div>
-        {mode === 'active' && (
-          <div className="page-head-actions">
-            <button className="btn primary" onClick={openNewProject}>
-              <Plus size={14} /> 新建项目
-            </button>
-          </div>
-        )}
+        <div className="page-head-actions">
+          <button className={`project-archive-switch ${showArchived ? 'active' : ''}`} role="switch" aria-checked={showArchived} onClick={() => setShowArchived((current) => !current)}><span className="switch-track"><span /></span><Archive size={14} />查看归档<span className="switch-count">{snapshot.projects.filter((item) => item.status === 'archived').length}</span></button>
+          <button className="btn primary" onClick={openNewProject}>
+            <Plus size={14} /> 新建项目
+          </button>
+        </div>
       </div>
 
       <div className="page-body">
@@ -195,7 +195,7 @@ export function ProjectCenterPage({
                       <div className="row-actions">
                         <button
                           className="action-link"
-                          onClick={() => onOpenProject(project.id)}
+                          onClick={() => onOpenProject(project.id, showArchived)}
                         >
                           <FolderOpen size={13} /> 进入项目
                         </button>
@@ -216,7 +216,7 @@ export function ProjectCenterPage({
               {projects.length === 0 && (
                 <tr>
                   <td colSpan={7} className="empty-cell">
-                    {mode === 'active'
+                    {!showArchived
                       ? '当前没有符合条件的测算中项目'
                       : '当前没有归档项目'}
                   </td>

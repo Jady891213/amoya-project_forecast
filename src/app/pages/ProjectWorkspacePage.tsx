@@ -2,7 +2,6 @@ import Decimal from 'decimal.js'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Archive,
-  ArrowLeft,
   Calculator,
   Copy,
   Download,
@@ -28,6 +27,7 @@ import type { AppSnapshot } from '../state/types'
 import { ApiClient } from '../api/client'
 import { generatePeriods } from '../domain/periods'
 import { FinancialGrid, type FinancialGridChange, type FinancialGridRow } from '../components/FinancialGrid'
+import { PageBreadcrumbs } from '../components/PageBreadcrumbs'
 import { formatPercent, formatWan } from '../ui/formatters'
 
 const ReportCharts = lazy(async () => {
@@ -379,13 +379,14 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, view, onNavigat
       originalValues,
     }
   }) ?? []
+  const workspaceViewLabel = view === 'config' ? '项目配置' : view === 'calculation' ? '计算工作表' : '项目报告'
 
   return <main className="workspace semantic-workspace">
     <div className="workspace-head unified-workspace-head">
-      <button className="back-btn" onClick={() => onNavigate('/projects')}><ArrowLeft size={15} />项目中心</button>
-      <span className="project-title">{projectDraft.name}</span>
-      <span className="project-version">基准场景 · 工作版</span>
-      <span className={`workspace-save-state ${dirty ? 'dirty' : ''}`}>{statusText}</span>
+      <div className="workspace-heading">
+        <PageBreadcrumbs items={[{ label: '项目管理', onClick: () => onNavigate('/projects') }, { label: projectDraft.name }, { label: workspaceViewLabel }]} />
+        <div className="workspace-title-line"><h1>{projectDraft.name}</h1><span className="project-version">基准场景 · 工作版</span><span className={`workspace-save-state ${dirty ? 'dirty' : ''}`}>{statusText}</span></div>
+      </div>
       <div className="workspace-tabs">
         <button className={view === 'config' ? 'workspace-tab active' : 'workspace-tab'} onClick={() => onNavigate(`/projects/${projectId}/config`)}><Calculator size={14} />项目配置</button>
         <button className={view === 'calculation' ? 'workspace-tab active' : 'workspace-tab'} onClick={() => onNavigate(`/projects/${projectId}/calculation`)}><TableProperties size={14} />计算工作表</button>

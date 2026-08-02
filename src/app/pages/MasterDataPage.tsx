@@ -12,6 +12,7 @@ import type { Department, DepartmentInput } from '../../shared/domain/types'
 import type { AppSnapshot } from '../state/types'
 import { DepartmentDialog } from '../ui/DepartmentDialog'
 import { formatDateTime } from '../ui/formatters'
+import { PageBreadcrumbs } from '../components/PageBreadcrumbs'
 
 export type MasterDataTab =
   | 'projects'
@@ -64,7 +65,8 @@ export function MasterDataPage({
   return (
     <main className="page master-data-page">
       <div className="page-head">
-        <div>
+        <div className="page-head-main">
+          <PageBreadcrumbs items={[{ label: '平台配置' }, { label: '主数据管理' }]} />
           <h1>主数据管理</h1>
           <p>统一查看项目、部门、业务模块、期间、场景和版本；事实与计算结果回到具体项目中查看。</p>
         </div>

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Archive,
-  ArrowLeft,
   BarChart3,
   BriefcaseBusiness,
   Calculator,
@@ -9,6 +8,8 @@ import {
   Download,
   FileChartColumn,
   HardDrive,
+  PanelLeftClose,
+  PanelLeftOpen,
   Sigma,
   TableProperties,
   Upload,
@@ -28,8 +29,9 @@ import { DataFoundationPage } from './legacy/pages/DataFoundationPage'
 import { MetricDefinitionsPage } from './legacy/pages/MetricDefinitionsPage'
 import { ProjectReportPage } from './legacy/pages/ProjectReportPage'
 import { ForecastConfigPage } from './legacy/pages/ForecastConfigPage'
+import { PageBreadcrumbs } from './components/PageBreadcrumbs'
 
-type AppRoute = 'projects' | 'archived' | 'master-data' | 'metrics'
+type AppRoute = 'projects' | 'master-data' | 'metrics'
 type WorkspaceView = 'forecast' | 'calculation' | 'report'
 
 const bootStorage: StorageRuntimeInfo = {
@@ -53,13 +55,6 @@ const emptySnapshot: AppSnapshot = {
   storage: bootStorage,
 }
 
-const routeTitles: Record<AppRoute, string> = {
-  projects: '项目中心',
-  archived: '归档项目',
-  'master-data': '主数据管理',
-  metrics: '指标管理',
-}
-
 export default function App() {
   const [database, setDatabase] = useState<DatabaseClient>()
   const [route, setRoute] = useState<AppRoute>('projects')
@@ -70,6 +65,9 @@ export default function App() {
   const [fatalError, setFatalError] = useState('')
   const [actionError, setActionError] = useState('')
   const [notice, setNotice] = useState('')
+  const [navCollapsed, setNavCollapsed] = useState(() => window.localStorage.getItem('amoya-nav-collapsed') === '1')
+  const [lastWorkspaceProjectId, setLastWorkspaceProjectId] = useState('')
+  const [lastWorkspaceView, setLastWorkspaceView] = useState<WorkspaceView>('forecast')
   const importInput = useRef<HTMLInputElement>(null)
 
   const projectRepository = useMemo(
@@ -147,8 +145,13 @@ export default function App() {
     return () => window.removeEventListener('beforeunload', warnBeforeUnload)
   }, [snapshot.storage.mode])
 
+  useEffect(() => {
+    if (!workspaceProjectId) return
+    setLastWorkspaceProjectId(workspaceProjectId)
+    setLastWorkspaceView(workspaceView)
+  }, [workspaceProjectId, workspaceView])
+
   const workspaceProject = snapshot.projects.find((project) => project.id === workspaceProjectId)
-  const storageTone = snapshot.storage.persistent ? 'healthy' : 'warning'
 
   async function archiveWorkspaceProject() {
     if (!workspaceProject || workspaceProject.origin !== 'user' || !projectRepository) return
@@ -156,7 +159,7 @@ export default function App() {
       await projectRepository.archive(workspaceProject.id)
       await refresh()
       setWorkspaceProjectId('')
-      setRoute('archived')
+      setRoute('projects')
     } catch (reason) {
       setActionError(reason instanceof Error ? reason.message : '归档失败')
     }
@@ -177,6 +180,34 @@ export default function App() {
     }
   }
 
+  function toggleNavigation() {
+    setNavCollapsed((current) => {
+      const next = !current
+      window.localStorage.setItem('amoya-nav-collapsed', next ? '1' : '0')
+      return next
+    })
+  }
+
+  function openWorkspace(projectId: string, view: WorkspaceView) {
+    setWorkspaceProjectId(projectId)
+    setWorkspaceView(view)
+  }
+
+  function openPlatformRoute(nextRoute: Exclude<AppRoute, 'projects'>) {
+    setWorkspaceProjectId('')
+    setRoute(nextRoute)
+  }
+
+  function openProjectArea() {
+    if (!workspaceProject && route !== 'projects' && lastWorkspaceProjectId && snapshot.projects.some((project) => project.id === lastWorkspaceProjectId)) {
+      openWorkspace(lastWorkspaceProjectId, lastWorkspaceView)
+      return
+    }
+    setWorkspaceProjectId('')
+    setLastWorkspaceProjectId('')
+    setRoute('projects')
+  }
+
   if (loading) {
     return <div className="app-loading"><Database size={30} /><h1>正在连接本地数据服务</h1><p>校验 SQLite 数据库、结构版本与基础数据…</p></div>
   }
@@ -185,73 +216,32 @@ export default function App() {
   }
 
   return (
-    <div className="app">
-      <header className="topbar">
-        <div className="brand">
-          <div className="brand-mark"><BarChart3 size={17} /></div>
-          <div><b>项目测算分析工具</b><span>本地财务与 EPM 工作台</span></div>
-        </div>
-        <div className="top-context">{workspaceProject?.name ?? routeTitles[route]}</div>
-        <div className="top-actions">
-          <span className={`storage-status ${storageTone}`}>
-            <HardDrive size={14} /> {snapshot.storage.label} · {snapshot.storage.detail}
-          </span>
-          {snapshot.storage.mode === 'portable' && (
-            <>
-              <button className="top-icon-button" aria-label="导出数据库备份" title="导出数据库备份" onClick={() => void backupService?.download()}><Download size={15} /></button>
-              <button className="top-icon-button" aria-label="恢复数据库备份" title="恢复数据库备份" onClick={() => importInput.current?.click()}><Upload size={15} /></button>
-            </>
-          )}
-          <input ref={importInput} hidden type="file" accept=".db,.sqlite,.sqlite3,application/vnd.sqlite3" onChange={(event) => void restoreDatabase(event.target.files?.[0])} />
-          <span className="phase-badge">P1C · 税与现金流闭环</span>
-        </div>
-      </header>
-
-      {snapshot.storage.mode === 'portable' && (
-        <div className="portable-banner">
-          <HardDrive size={14} />
-          当前为便携模式：可正常保存并计算，但刷新或关闭页面会重置内存数据；离开前请导出 .sqlite3 文件。
-          <button onClick={() => void backupService?.download()}>立即导出</button>
-        </div>
-      )}
-
+    <div className={`app ${navCollapsed ? 'nav-collapsed' : ''}`}>
       <div className="shell">
-        {!workspaceProject && (
-          <aside className="global-nav">
+        <aside className="global-nav">
+            <div className="sidebar-header"><div className="sidebar-brand"><div className="brand-mark"><BarChart3 size={17} /></div><div className="sidebar-brand-copy"><b>项目测算分析工具</b><span>本地财务与 EPM 工作台</span></div></div><button type="button" className="sidebar-collapse" aria-label={navCollapsed ? '展开侧边栏' : '收起侧边栏'} title={navCollapsed ? '展开侧边栏' : '收起侧边栏'} onClick={toggleNavigation}>{navCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}</button></div>
             <div className="nav-section">
               <div className="nav-title">项目数据</div>
-              <button className={`nav-item ${route === 'projects' ? 'active' : ''}`} onClick={() => setRoute('projects')}><BriefcaseBusiness size={16} />项目列表</button>
-              <button className={`nav-item ${route === 'archived' ? 'active' : ''}`} onClick={() => setRoute('archived')}><Archive size={16} />归档项目</button>
+              <button title="项目列表" className={`nav-item ${route === 'projects' || workspaceProject ? 'active' : ''}`} onClick={openProjectArea}><BriefcaseBusiness size={16} /><span className="nav-label">项目列表</span></button>
             </div>
             <div className="nav-section">
               <div className="nav-title">平台配置</div>
-              <button className={`nav-item ${route === 'master-data' ? 'active' : ''}`} onClick={() => setRoute('master-data')}><Database size={16} />主数据管理</button>
-              <button className={`nav-item ${route === 'metrics' ? 'active' : ''}`} onClick={() => setRoute('metrics')}><Sigma size={16} />指标管理</button>
+              <button title="主数据管理" className={`nav-item ${route === 'master-data' && !workspaceProject ? 'active' : ''}`} onClick={() => openPlatformRoute('master-data')}><Database size={16} /><span className="nav-label">主数据管理</span></button>
+              <button title="指标管理" className={`nav-item ${route === 'metrics' && !workspaceProject ? 'active' : ''}`} onClick={() => openPlatformRoute('metrics')}><Sigma size={16} /><span className="nav-label">指标管理</span></button>
             </div>
-            <div className="db-box">
-              <b><HardDrive size={14} /> {snapshot.storage.label}</b>
-              <span>{snapshot.storage.detail}</span>
-              <span>SQLite {snapshot.storage.sqliteVersion}</span>
-              <span>Schema v{snapshot.storage.schemaVersion}</span>
-              <span>项目 {snapshot.projects.length} 个</span>
-              <span>基础事实 {snapshot.facts.length} 条</span>
-              {snapshot.storage.mode === 'persistent' && (
-                <div className="data-management-actions">
-                  <span>数据实时同步到本地 DB 文件</span>
-                  <button onClick={() => void backupService?.download()}><Download size={13} />备份</button>
-                  <button onClick={() => importInput.current?.click()}><Upload size={13} />恢复</button>
-                </div>
-              )}
+            <div className="sidebar-footer">
+              <div className="db-box"><b><HardDrive size={14} /><span className="db-box-label">{snapshot.storage.label}</span></b><div className="db-box-details"><span>{snapshot.storage.detail}</span><span>SQLite {snapshot.storage.sqliteVersion}</span><span>Schema v{snapshot.storage.schemaVersion} · 项目 {snapshot.projects.length} 个</span>{snapshot.storage.mode === 'portable' && <span className="portable-db-note">关闭前请导出数据库</span>}</div><div className="sidebar-db-actions"><button onClick={() => void backupService?.download()} title="备份数据库" aria-label="备份数据库"><Download size={14} /><span>备份</span></button><button onClick={() => importInput.current?.click()} title="恢复数据库" aria-label="恢复数据库"><Upload size={14} /><span>恢复</span></button></div></div>
             </div>
+            <input ref={importInput} hidden type="file" accept=".db,.sqlite,.sqlite3,application/vnd.sqlite3" onChange={(event) => void restoreDatabase(event.target.files?.[0])} />
           </aside>
-        )}
 
         {workspaceProject ? (
           <main className="workspace">
             <div className="workspace-head">
-              <button className="back-btn" onClick={() => setWorkspaceProjectId('')}><ArrowLeft size={15} />项目中心</button>
-              <span className="project-title">{workspaceProject.name}</span>
-              <span className="project-version">基准场景 · 工作版</span>
+              <div className="workspace-heading">
+                <PageBreadcrumbs items={[{ label: '项目管理', onClick: openProjectArea }, { label: workspaceProject.name }, { label: workspaceView === 'forecast' ? '预测配置' : workspaceView === 'calculation' ? '计算表格' : '项目报表' }]} />
+                <div className="workspace-title-line"><h1>{workspaceProject.name}</h1><span className="project-version">基准场景 · 工作版</span></div>
+              </div>
               <div className="workspace-tabs">
                 <button
                   className={`workspace-tab ${workspaceView === 'forecast' ? 'active' : ''}`}
@@ -292,9 +282,8 @@ export default function App() {
           </main>
         ) : (
           <main className="page">
-            {route === 'projects' && <ProjectCenterPage database={database} snapshot={snapshot} mode="active" onRefresh={refresh} onOpenProject={(id) => { setWorkspaceProjectId(id); setWorkspaceView('forecast') }} />}
-            {route === 'archived' && <ProjectCenterPage database={database} snapshot={snapshot} mode="archived" onRefresh={refresh} onOpenProject={(id) => { setWorkspaceProjectId(id); setWorkspaceView('report') }} />}
-            {route === 'master-data' && <DataFoundationPage database={database} snapshot={snapshot} onRefresh={refresh} onOpenReport={(id) => { setWorkspaceProjectId(id); setWorkspaceView('calculation') }} />}
+            {route === 'projects' && <ProjectCenterPage database={database} snapshot={snapshot} onRefresh={refresh} onOpenProject={(id, archived) => openWorkspace(id, archived ? 'report' : 'forecast')} />}
+            {route === 'master-data' && <DataFoundationPage database={database} snapshot={snapshot} onRefresh={refresh} onOpenReport={(id) => openWorkspace(id, 'calculation')} />}
             {route === 'metrics' && <MetricDefinitionsPage metrics={snapshot.metrics} />}
           </main>
         )}

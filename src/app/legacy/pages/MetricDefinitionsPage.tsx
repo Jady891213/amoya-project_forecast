@@ -1,6 +1,7 @@
 import { LockKeyhole } from 'lucide-react'
 import type { MetricDefinition } from '../../domain/types'
 import { OriginBadge } from '../../ui/OriginBadge'
+import { PageBreadcrumbs } from '../../components/PageBreadcrumbs'
 
 export function MetricDefinitionsPage({ metrics }: { metrics: MetricDefinition[] }) {
   const metricName = (code: string) =>
@@ -9,7 +10,8 @@ export function MetricDefinitionsPage({ metrics }: { metrics: MetricDefinition[]
   return (
     <>
       <header className="page-head">
-        <div>
+        <div className="page-head-main">
+          <PageBreadcrumbs items={[{ label: '平台配置' }, { label: '指标管理' }]} />
           <h1>指标管理</h1>
           <p>基础指标与系统计算指标使用同一张指标维度表统一管理。</p>
         </div>
