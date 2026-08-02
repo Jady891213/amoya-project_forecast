@@ -1436,7 +1436,26 @@ button, input, select, textarea, table { font-size: 12px; }
 .editor-divider { margin-top: 5px; padding: 8px 0 4px; border-top: 1px solid var(--line); color: #254d7b; font-weight: 600; }
 .editor-grid { overflow: auto; padding-bottom: 4px; }
 
-.financial-grid { position: relative; max-width: 100%; overflow: auto; border: 1px solid #cfd9e5; background: #fff; outline: none; }
+.financial-grid-shell { min-width: 0; max-width: 100%; }
+.financial-grid-toolbar {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  padding: 4px 8px;
+  border: 1px solid #cfd9e5;
+  border-bottom: 0;
+  background: #f8fafc;
+  color: #536579;
+}
+.financial-grid-toolbar b { color: #314c69; }
+.financial-grid-toolbar label { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.financial-grid-toolbar select { width: auto; min-width: 64px; height: 26px; padding: 0 24px 0 7px; font-size: 11px; }
+.financial-grid-toolbar label:nth-of-type(4) select { min-width: 108px; }
+.financial-grid-toolbar .financial-format-check input { width: 14px; height: 14px; margin: 0; }
+.financial-grid-toolbar > span { margin-left: auto; color: var(--muted); font-size: 11px; }
+.financial-grid { position: relative; max-width: 100%; overflow: auto; border: 1px solid #cfd9e5; background: #fff; outline: none; user-select: none; }
 .financial-grid table { width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; }
 .financial-grid th, .financial-grid td { height: 34px; min-width: 92px; padding: 0 8px; border-right: 1px solid #e2e7ed; border-bottom: 1px solid #e2e7ed; font-size: 12px; white-space: nowrap; }
 .financial-grid thead th { position: sticky; top: 0; z-index: 3; background: #f2f5f9; color: #45576a; text-align: right; }
@@ -1458,7 +1477,7 @@ button, input, select, textarea, table { font-size: 12px; }
 .calculation-sheet-head p { margin: 3px 0 0; color: var(--muted); }
 .calculation-summary { margin-top: 14px; }
 .calculation-summary h2 { font-size: 14px; }
-.formal-report { padding: 12px; overflow: auto; background: #f3f5f8; }
+.formal-report { display: block; padding: 12px; overflow: auto; background: #f3f5f8; }
 .formal-report .metrics-strip article { padding: 10px 14px; border-right: 1px solid var(--line); background: #fff; }
 .formal-report .metrics-strip article span, .formal-report .metrics-strip article strong { display: block; }
 .formal-report .metrics-strip article strong { margin-top: 4px; font-size: 14px; }
@@ -1512,9 +1531,9 @@ button, input, select, textarea, table { font-size: 12px; }
 .report-chart-grid > section { min-width: 0; padding: 10px; border: 1px solid #e0e6ee; background: #fbfcfe; }
 .report-chart-grid > section.wide { grid-column: 1 / -1; }
 .report-chart-grid h3 { margin: 0 0 3px; color: #4b5f74; font-size: 12px; }
-.report-chart { width: 100%; height: 280px; }
+.report-chart { width: 100%; height: clamp(270px, 34vh, 360px); }
 .report-chart-empty { height: 280px; display: grid; place-items: center; color: var(--muted); background: #f7f9fc; }
-.report-chart-grid .wide .report-chart { height: 250px; }
+.report-chart-grid .wide .report-chart { height: clamp(250px, 30vh, 320px); }
 .report-chart-loading { min-height: 240px; display: grid; place-items: center; color: var(--muted); background: #fbfcfe; }
 .report-data-note { margin: 0 0 8px; color: var(--muted); }
 .report-two-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }

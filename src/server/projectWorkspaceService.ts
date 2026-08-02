@@ -20,6 +20,15 @@ import { ParameterRepository } from './repositories/parameterRepository'
 import { CalculationService } from './services/calculationService'
 import { ProjectReportService } from './services/projectReportService'
 
+const reportAmountFormatter = new Intl.NumberFormat('zh-CN', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+})
+
+function formatReportWan(value: string): string {
+  return `${reportAmountFormatter.format(new Decimal(value).div(10_000).toNumber())} 万元`
+}
+
 export class ProjectWorkspaceService {
   private readonly projects: ProjectRepository
   private readonly departments: DepartmentRepository
@@ -177,7 +186,7 @@ export class ProjectWorkspaceService {
     const measurementSummary = [
       `项目经营期为 ${report.project.startPeriod} 至 ${report.operationEndPeriod}。`,
       report.hasFacts
-        ? `本批次收入 ${report.summary.revenue} 元、成本 ${report.summary.cost} 元。`
+        ? `本批次收入 ${formatReportWan(report.summary.revenue)}、成本 ${formatReportWan(report.summary.cost)}。`
         : '当前批次尚无可展示事实。',
       grossMargin === null
         ? '收入为零，毛利率不适用。'
@@ -187,7 +196,7 @@ export class ProjectWorkspaceService {
       ...(selectedRun && selectedRun.configHash !== state.currentConfigHash ? ['当前计算配置已变更，报告仍基于所选成功批次。'] : []),
       ...(snapshotOverrides.length > 0 ? [`存在 ${snapshotOverrides.length} 个人工期间覆盖，请重点复核。`] : []),
       ...(report.hasCashFacts && report.summary.maximumFunding !== '0'
-        ? [`预测期内最大垫资为 ${report.summary.maximumFunding} 元。`]
+        ? [`预测期内最大垫资为 ${formatReportWan(report.summary.maximumFunding)}。`]
         : []),
     ]
     return {

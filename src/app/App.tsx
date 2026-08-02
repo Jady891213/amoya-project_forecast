@@ -15,9 +15,9 @@ import {
 } from 'lucide-react'
 import { ApiClient } from './api/client'
 import type { AppSnapshot } from './state/types'
-import type { Department, DepartmentInput, ProjectInput } from '../shared/domain/types'
-import { DepartmentDialog } from './ui/DepartmentDialog'
+import type { ProjectInput } from '../shared/domain/types'
 import { ProjectWorkspacePage } from './pages/ProjectWorkspacePage'
+import { MasterDataPage } from './pages/MasterDataPage'
 
 type Route =
   | { type: 'projects'; archived: boolean }
@@ -114,7 +114,14 @@ export default function App() {
       {route.type !== 'workspace' && <aside className="global-nav"><div className="nav-section"><div className="nav-title">项目数据</div><button className={`nav-item ${route.type === 'projects' && !route.archived ? 'active' : ''}`} onClick={() => navigate('/projects')}><BriefcaseBusiness size={16} />项目列表</button><button className={`nav-item ${route.type === 'projects' && route.archived ? 'active' : ''}`} onClick={() => navigate('/projects/archived')}><Archive size={16} />归档项目</button></div><div className="nav-section"><div className="nav-title">平台配置</div><button className={`nav-item ${route.type === 'master-data' ? 'active' : ''}`} onClick={() => navigate('/master-data')}><Database size={16} />主数据管理</button><button className={`nav-item ${route.type === 'metrics' ? 'active' : ''}`} onClick={() => navigate('/metrics')}><Sigma size={16} />指标管理</button></div><div className="db-box"><b><HardDrive size={14} />本地数据库</b><span>{snapshot.storage.detail}</span><span>SQLite {snapshot.storage.sqliteVersion}</span><span>Schema v{snapshot.storage.schemaVersion}</span><span>项目 {snapshot.projects.length} 个</span><span>前端仅调用业务接口</span></div></aside>}
       {route.type === 'projects' && <ProjectList snapshot={snapshot} archived={route.archived} onNavigate={navigate} onArchive={async (id, archived) => { if (archived) await api.restore(id); else await api.archive(id); await refresh() }} />}
       {route.type === 'new' && <NewProjectPage snapshot={snapshot} onCancel={() => navigate('/projects')} onCreate={async (input) => { const workspace = await api.createProject(input); await refresh(); navigate(`/projects/${workspace.project.id}/config`) }} />}
-      {route.type === 'master-data' && <MasterDataPage snapshot={snapshot} onSave={async (input) => { input.id ? await api.updateDepartment(input.id, input) : await api.createDepartment(input); await refresh() }} />}
+      {route.type === 'master-data' && <MasterDataPage
+        snapshot={snapshot}
+        onOpenProject={(projectId) => navigate(`/projects/${projectId}/config`)}
+        onSaveDepartment={async (input) => {
+          input.id ? await api.updateDepartment(input.id, input) : await api.createDepartment(input)
+          await refresh()
+        }}
+      />}
       {route.type === 'metrics' && <MetricPage snapshot={snapshot} />}
       {route.type === 'workspace' && <ProjectWorkspacePage api={api} snapshot={snapshot} projectId={route.projectId} view={route.view} onNavigate={navigate} onRefresh={refresh} onDirtyChange={setDirty} />}
     </div>
@@ -134,11 +141,6 @@ function NewProjectPage({ snapshot, onCancel, onCreate }: { snapshot: AppSnapsho
   const [error, setError] = useState('')
   const patch = (values: Partial<ProjectInput>) => setDraft((current) => ({ ...current, ...values }))
   return <main className="page"><div className="page-head"><div><h1>新建项目</h1><p>先登记项目级信息；首次保存后进入完整项目配置。</p></div></div><div className="page-body"><section className="new-project-form"><div className="project-information-grid"><label>项目编码<input value={draft.code} onChange={(e) => patch({ code: e.target.value })} /></label><label>项目名称<input value={draft.name} onChange={(e) => patch({ name: e.target.value })} /></label><label>客户<input value={draft.customer} onChange={(e) => patch({ customer: e.target.value })} /></label><label>部门<select value={draft.departmentId} onChange={(e) => patch({ departmentId: e.target.value })}>{snapshot.departments.filter((item) => item.status === 'active').map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label>负责人<input value={draft.owner} onChange={(e) => patch({ owner: e.target.value })} /></label><label>开始期间<input type="month" value={draft.startPeriod} onChange={(e) => patch({ startPeriod: e.target.value })} /></label><label>经营周期（月）<input type="number" min={1} max={36} value={draft.durationMonths} onChange={(e) => patch({ durationMonths: Number(e.target.value) })} /></label><label className="project-remark">备注<input value={draft.remark} onChange={(e) => patch({ remark: e.target.value })} /></label></div>{error && <div className="page-alert error">{error}</div>}<div className="form-footer"><button className="btn" onClick={onCancel}>取消</button><button className="btn primary" onClick={() => void onCreate(draft).catch((reason) => setError(reason instanceof Error ? reason.message : '创建失败'))}><Save size={14} />保存并进入项目</button></div></section></div></main>
-}
-
-function MasterDataPage({ snapshot, onSave }: { snapshot: AppSnapshot; onSave: (input: DepartmentInput) => Promise<void> }) {
-  const [dialog, setDialog] = useState<Department | undefined | null>(null)
-  return <main className="page"><div className="page-head"><div><h1>主数据管理</h1><p>项目、部门、业务模块、期间、场景和版本；事实数据不在此维护。</p></div><button className="btn primary" onClick={() => setDialog(undefined)}><Plus size={14} />新增部门</button></div><div className="page-body"><div className="data-panel"><table className="data-table"><thead><tr><th>部门编码</th><th>部门名称</th><th>状态</th><th>项目数</th><th>操作</th></tr></thead><tbody>{snapshot.departments.map((department) => <tr key={department.id}><td>{department.code}</td><td>{department.name}</td><td>{department.status === 'active' ? '启用' : '停用'}</td><td>{snapshot.projects.filter((item) => item.departmentId === department.id).length}</td><td><button className="action-link" onClick={() => setDialog(department)}>编辑</button></td></tr>)}</tbody></table></div></div>{dialog !== null && <DepartmentDialog department={dialog} onClose={() => setDialog(null)} onSave={onSave} />}</main>
 }
 
 function MetricPage({ snapshot }: { snapshot: AppSnapshot }) {

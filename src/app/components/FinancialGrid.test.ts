@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { buildPasteTransaction, parseFinancialValue } from './FinancialGrid'
+import {
+  buildPasteTransaction,
+  financialSelectionBounds,
+  formatFinancialValue,
+  parseFinancialValue,
+} from './FinancialGrid'
 
 describe('FinancialGrid 数值解析', () => {
   it('支持千分位、括号负数和空值', () => {
@@ -10,6 +15,28 @@ describe('FinancialGrid 数值解析', () => {
 
   it('拒绝非数值内容', () => {
     expect(() => parseFinancialValue('abc')).toThrow()
+  })
+
+  it('默认财务格式支持两位小数、千分位、单位与括号负数', () => {
+    expect(formatFinancialValue('188679.245283', {
+      decimalPlaces: 2,
+      negativeStyle: 'minus',
+      thousandSeparator: true,
+      unit: 'yuan',
+    })).toBe('188,679.25')
+    expect(formatFinancialValue('-11498450.695875', {
+      decimalPlaces: 2,
+      negativeStyle: 'parentheses',
+      thousandSeparator: true,
+      unit: 'ten_thousand',
+    })).toBe('(1,149.85)')
+  })
+
+  it('矩形选区不受拖拽方向影响', () => {
+    expect(financialSelectionBounds(
+      { row: 3, column: 4 },
+      { row: 1, column: 2 },
+    )).toEqual({ top: 1, bottom: 3, left: 2, right: 4 })
   })
 
   it('批量粘贴先完整校验，只读行或非法值会取消整个区域', () => {
