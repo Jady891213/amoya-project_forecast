@@ -379,13 +379,10 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, view, onNavigat
       originalValues,
     }
   }) ?? []
-  const workspaceViewLabel = view === 'config' ? '项目配置' : view === 'calculation' ? '计算工作表' : '项目报告'
-
   return <main className="workspace semantic-workspace">
     <div className="workspace-head unified-workspace-head">
       <div className="workspace-heading">
-        <PageBreadcrumbs items={[{ label: '项目管理', onClick: () => onNavigate('/projects') }, { label: projectDraft.name }, { label: workspaceViewLabel }]} />
-        <div className="workspace-title-line"><h1>{projectDraft.name}</h1><span className="project-version">基准场景 · 工作版</span><span className={`workspace-save-state ${dirty ? 'dirty' : ''}`}>{statusText}</span></div>
+        <PageBreadcrumbs back={{ label: '返回', onClick: () => onNavigate('/projects') }} items={[{ label: projectDraft.name }]} />
       </div>
       <div className="workspace-tabs">
         <button className={view === 'config' ? 'workspace-tab active' : 'workspace-tab'} onClick={() => onNavigate(`/projects/${projectId}/config`)}><Calculator size={14} />项目配置</button>
@@ -393,6 +390,7 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, view, onNavigat
         <button className={view === 'report' ? 'workspace-tab active' : 'workspace-tab'} onClick={() => onNavigate(`/projects/${projectId}/report`)}><FileChartColumn size={14} />项目报告</button>
       </div>
       <div className="workspace-head-actions">
+        <span className={`workspace-save-state ${dirty ? 'dirty' : ''}`}>{statusText}</span>
         <button className="btn" disabled={busy || !dirty} onClick={() => void save()}><Save size={14} />保存</button>
         <button className="btn primary" disabled={busy} onClick={() => void calculate()}><Calculator size={14} />计算</button>
         <button className="btn icon-only" aria-label="更多项目操作" title="归档项目" onClick={() => void api.archive(projectId).then(() => onNavigate('/projects'))}><MoreHorizontal size={15} /></button>

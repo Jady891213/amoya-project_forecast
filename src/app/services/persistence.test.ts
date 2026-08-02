@@ -395,6 +395,28 @@ describe('SQLite repositories and reference data isolation', () => {
     expect(after.forecast.lines).toEqual(before.forecast.lines)
   })
 
+  it('复制项目保留完整配置但不复制计算结果，删除后不影响原项目', async () => {
+    await new ReferenceDatasetService(database).initialize()
+    const service = new ProjectWorkspaceService(database)
+    const source = await service.getWorkspace('project-hebei-cable-iptv')
+
+    const copied = await service.copy(source.project.id)
+
+    expect(copied.project.id).not.toBe(source.project.id)
+    expect(copied.project.name).toBe(`${source.project.name} 副本`)
+    expect(copied.project.code).toBe(`${source.project.code}-COPY`)
+    expect(copied.modules.map((item) => item.code)).toEqual(source.modules.map((item) => item.code))
+    expect(copied.forecast.lines.map((item) => item.code)).toEqual(source.forecast.lines.map((item) => item.code))
+    expect(copied.forecast.parameters.map((item) => item.code)).toEqual(source.forecast.parameters.map((item) => item.code))
+    expect(copied.forecast.latestRun).toBeUndefined()
+    expect(await new FactRepository(database).list(copied.project.id)).toHaveLength(0)
+
+    await service.delete(copied.project.id)
+
+    await expect(service.getWorkspace(copied.project.id)).rejects.toThrow('项目不存在')
+    expect(await service.getWorkspace(source.project.id)).toBeDefined()
+  })
+
   it('清除参考数据不影响后续用户部门和项目', async () => {
     const reference = new ReferenceDatasetService(database)
     await reference.initialize()

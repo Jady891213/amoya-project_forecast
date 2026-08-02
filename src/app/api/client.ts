@@ -100,6 +100,14 @@ export class ApiClient {
     return this.request(`/api/projects/${encodeURIComponent(projectId)}/restore`, { method: 'POST' })
   }
 
+  copyProject(projectId: string): Promise<ProjectWorkspace> {
+    return this.request(`/api/projects/${encodeURIComponent(projectId)}/copy`, { method: 'POST' })
+  }
+
+  deleteProject(projectId: string): Promise<void> {
+    return this.request(`/api/projects/${encodeURIComponent(projectId)}`, { method: 'DELETE' })
+  }
+
   createDepartment(input: DepartmentInput): Promise<Department> {
     return this.request('/api/departments', {
       method: 'POST',

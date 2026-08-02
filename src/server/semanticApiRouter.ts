@@ -158,6 +158,18 @@ export class SemanticApiRouter {
         sendJson(response, 200, result)
         return true
       }
+      const copyProject = pathname.match(/^\/api\/projects\/([^/]+)\/copy$/)
+      if (copyProject && request.method === 'POST') {
+        sendJson(response, 201, await this.exclusive(() => this.service.copy(decodeURIComponent(copyProject[1]))))
+        return true
+      }
+      const project = pathname.match(/^\/api\/projects\/([^/]+)$/)
+      if (project && request.method === 'DELETE') {
+        await this.exclusive(() => this.service.delete(decodeURIComponent(project[1])))
+        response.writeHead(204, { 'cache-control': 'no-store' })
+        response.end()
+        return true
+      }
       const report = pathname.match(/^\/api\/projects\/([^/]+)\/report$/)
       if (report && request.method === 'GET') {
         sendJson(response, 200, await this.service.buildReport(

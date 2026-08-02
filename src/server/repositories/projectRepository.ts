@@ -379,6 +379,12 @@ export class ProjectRepository {
     return this.setStatus(id, 'calculating')
   }
 
+  async delete(id: string): Promise<void> {
+    const project = await this.get(id)
+    if (!project) throw Object.assign(new Error('项目不存在'), { code: 'NOT_FOUND' })
+    await this.database.execute('DELETE FROM dim_project WHERE id = ?', [id])
+  }
+
   private async setStatus(id: string, status: Project['status']): Promise<Project> {
     const project = await this.get(id)
     if (!project) throw new Error('项目不存在')

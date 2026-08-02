@@ -8,6 +8,7 @@ import {
   Download,
   FileChartColumn,
   HardDrive,
+  Info,
   PanelLeftClose,
   PanelLeftOpen,
   Sigma,
@@ -230,7 +231,7 @@ export default function App() {
               <button title="指标管理" className={`nav-item ${route === 'metrics' && !workspaceProject ? 'active' : ''}`} onClick={() => openPlatformRoute('metrics')}><Sigma size={16} /><span className="nav-label">指标管理</span></button>
             </div>
             <div className="sidebar-footer">
-              <div className="db-box"><b><HardDrive size={14} /><span className="db-box-label">{snapshot.storage.label}</span></b><div className="db-box-details"><span>{snapshot.storage.detail}</span><span>SQLite {snapshot.storage.sqliteVersion}</span><span>Schema v{snapshot.storage.schemaVersion} · 项目 {snapshot.projects.length} 个</span>{snapshot.storage.mode === 'portable' && <span className="portable-db-note">关闭前请导出数据库</span>}</div><div className="sidebar-db-actions"><button onClick={() => void backupService?.download()} title="备份数据库" aria-label="备份数据库"><Download size={14} /><span>备份</span></button><button onClick={() => importInput.current?.click()} title="恢复数据库" aria-label="恢复数据库"><Upload size={14} /><span>恢复</span></button></div></div>
+              <div className="db-box"><b><HardDrive size={14} /><span className="db-box-label">本地数据库</span><span className="db-info" tabIndex={0} aria-label="查看本地数据库说明"><Info size={13} /><span className="db-info-tooltip" role="tooltip">数据保存在当前浏览器<br />SQLite {snapshot.storage.sqliteVersion}<br />数据结构版本 {snapshot.storage.schemaVersion}</span></span></b><div className="db-box-details"><span>amoya_project_forecast.db</span><span>共 {snapshot.projects.length} 个项目</span>{snapshot.storage.mode === 'portable' && <span className="portable-db-note">关闭前请备份数据</span>}</div><div className="sidebar-db-actions"><button onClick={() => void backupService?.download()} title="导出完整数据备份" aria-label="导出完整数据备份"><Download size={14} /><span>备份</span></button><button onClick={() => importInput.current?.click()} title="从备份恢复全部项目" aria-label="从备份恢复全部项目"><Upload size={14} /><span>恢复</span></button></div></div>
             </div>
             <input ref={importInput} hidden type="file" accept=".db,.sqlite,.sqlite3,application/vnd.sqlite3" onChange={(event) => void restoreDatabase(event.target.files?.[0])} />
           </aside>
@@ -238,10 +239,7 @@ export default function App() {
         {workspaceProject ? (
           <main className="workspace">
             <div className="workspace-head">
-              <div className="workspace-heading">
-                <PageBreadcrumbs items={[{ label: '项目管理', onClick: openProjectArea }, { label: workspaceProject.name }, { label: workspaceView === 'forecast' ? '预测配置' : workspaceView === 'calculation' ? '计算表格' : '项目报表' }]} />
-                <div className="workspace-title-line"><h1>{workspaceProject.name}</h1><span className="project-version">基准场景 · 工作版</span></div>
-              </div>
+              <div className="workspace-heading"><PageBreadcrumbs back={{ label: '返回', onClick: openProjectArea }} items={[{ label: workspaceProject.name }]} /></div>
               <div className="workspace-tabs">
                 <button
                   className={`workspace-tab ${workspaceView === 'forecast' ? 'active' : ''}`}

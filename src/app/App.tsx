@@ -5,12 +5,11 @@ import {
   BriefcaseBusiness,
   Database,
   Download,
-  FolderOpen,
   HardDrive,
+  Info,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
-  RotateCcw,
   Save,
   Sigma,
   Upload,
@@ -125,7 +124,7 @@ export default function App() {
     navigate('/projects')
   }
 
-  if (loading) return <div className="app-loading"><Database size={30} /><h1>正在连接项目数据库</h1><p>初始化语义接口和 SQLite Schema…</p></div>
+  if (loading) return <div className="app-loading"><Database size={30} /><h1>正在打开本地项目数据</h1><p>正在准备项目和测算内容…</p></div>
   if (!api || fatalError) return <div className="app-loading error-state"><Database size={30} /><h1>本地服务连接失败</h1><p>{fatalError}</p><small>请使用根目录启动文件，不要直接双击 output/web/index.html。</small><button className="btn primary" onClick={() => window.location.reload()}>重新连接</button></div>
 
   return <div className={`app semantic-app ${navCollapsed ? 'nav-collapsed' : ''}`}>
@@ -135,11 +134,11 @@ export default function App() {
         <div className="nav-section"><div className="nav-title">项目数据</div><button title="项目列表" className={`nav-item ${route.type === 'projects' || route.type === 'new' || route.type === 'workspace' ? 'active' : ''}`} onClick={openProjectArea}><BriefcaseBusiness size={16} /><span className="nav-label">项目列表</span></button></div>
         <div className="nav-section"><div className="nav-title">平台配置</div><button title="主数据管理" className={`nav-item ${route.type === 'master-data' ? 'active' : ''}`} onClick={() => navigate('/master-data')}><Database size={16} /><span className="nav-label">主数据管理</span></button><button title="指标管理" className={`nav-item ${route.type === 'metrics' ? 'active' : ''}`} onClick={() => navigate('/metrics')}><Sigma size={16} /><span className="nav-label">指标管理</span></button></div>
         <div className="sidebar-footer">
-          <div className="db-box"><b><HardDrive size={14} /><span className="db-box-label">本地数据库</span></b><div className="db-box-details"><span>{snapshot.storage.detail}</span><span>SQLite {snapshot.storage.sqliteVersion}</span><span>Schema v{snapshot.storage.schemaVersion} · 项目 {snapshot.projects.length} 个</span></div><div className="sidebar-db-actions"><button type="button" title="备份数据库" aria-label="备份数据库" onClick={() => void api.backup()}><Download size={14} /><span>备份</span></button><button type="button" title="恢复数据库" aria-label="恢复数据库" onClick={() => restoreInput.current?.click()}><Upload size={14} /><span>恢复</span></button></div></div>
+          <div className="db-box"><b><HardDrive size={14} /><span className="db-box-label">本地数据库</span><span className="db-info" tabIndex={0} aria-label="查看本地数据库说明"><Info size={13} /><span className="db-info-tooltip" role="tooltip">数据自动保存在本机<br />SQLite {snapshot.storage.sqliteVersion}<br />数据结构版本 {snapshot.storage.schemaVersion}</span></span></b><div className="db-box-details"><span>{snapshot.storage.detail.split(' · ')[0] || 'amoya_project_forecast.db'}</span><span>共 {snapshot.projects.length} 个项目</span></div><div className="sidebar-db-actions"><button type="button" title="导出完整数据备份" aria-label="导出完整数据备份" onClick={() => void api.backup()}><Download size={14} /><span>备份</span></button><button type="button" title="从备份恢复全部项目" aria-label="从备份恢复全部项目" onClick={() => restoreInput.current?.click()}><Upload size={14} /><span>恢复</span></button></div></div>
         </div>
-        <input hidden ref={restoreInput} type="file" accept=".db,application/vnd.sqlite3" onChange={(event) => { const file = event.target.files?.[0]; if (file && window.confirm('恢复数据库会替换当前数据，确认继续吗？')) void api.restoreDatabase(file).then(() => refresh()).then(() => setNotice('数据库恢复成功')) }} />
+        <input hidden ref={restoreInput} type="file" accept=".db,application/vnd.sqlite3" onChange={(event) => { const file = event.target.files?.[0]; if (file && window.confirm('恢复备份会替换当前全部项目数据，确认继续吗？')) void api.restoreDatabase(file).then(() => refresh()).then(() => setNotice('项目数据恢复成功')) }} />
       </aside>
-      {route.type === 'projects' && <ProjectList snapshot={snapshot} archived={route.archived} onNavigate={navigate} onArchive={async (id, archived) => { if (archived) await api.restore(id); else await api.archive(id); await refresh() }} />}
+      {route.type === 'projects' && <ProjectList snapshot={snapshot} archived={route.archived} onNavigate={navigate} onArchive={async (id, archived) => { if (archived) await api.restore(id); else await api.archive(id); await refresh() }} onCopy={async (id) => { const copied = await api.copyProject(id); await refresh(); setNotice('项目已复制'); navigate(`/projects/${copied.project.id}/config`) }} onDelete={async (id) => { await api.deleteProject(id); await refresh(); setNotice('项目已删除') }} />}
       {route.type === 'new' && <NewProjectPage snapshot={snapshot} onCancel={() => navigate('/projects')} onCreate={async (input) => { const workspace = await api.createProject(input); await refresh(); navigate(`/projects/${workspace.project.id}/config`) }} />}
       {route.type === 'master-data' && <MasterDataPage
         snapshot={snapshot}
@@ -156,12 +155,68 @@ export default function App() {
   </div>
 }
 
-function ProjectList({ snapshot, archived, onNavigate, onArchive }: { snapshot: AppSnapshot; archived: boolean; onNavigate: (path: string) => void; onArchive: (id: string, archived: boolean) => Promise<void> }) {
+function ProjectList({ snapshot, archived, onNavigate, onArchive, onCopy, onDelete }: {
+  snapshot: AppSnapshot
+  archived: boolean
+  onNavigate: (path: string) => void
+  onArchive: (id: string, archived: boolean) => Promise<void>
+  onCopy: (id: string) => Promise<void>
+  onDelete: (id: string) => Promise<void>
+}) {
   const projects = snapshot.projects.filter((item) => archived ? item.status === 'archived' : item.status === 'calculating')
   const activeCount = snapshot.projects.filter((item) => item.status === 'calculating').length
   const archivedCount = snapshot.projects.filter((item) => item.status === 'archived').length
   const department = (id: string) => snapshot.departments.find((item) => item.id === id)?.name ?? '—'
-  return <main className="page"><div className="page-head"><div className="page-head-main"><PageBreadcrumbs items={[{ label: '项目管理' }, { label: archived ? '归档项目' : '测算中项目' }]} /><h1>项目中心</h1><p>{archived ? '当前显示已归档项目；恢复后可继续测算。' : '进入项目后统一维护项目信息、预测配置、计算工作表和报告。'}</p></div><div className="page-head-actions"><button className={`project-archive-switch ${archived ? 'active' : ''}`} role="switch" aria-checked={archived} onClick={() => onNavigate(archived ? '/projects' : '/projects?view=archived')}><span className="switch-track"><span /></span><Archive size={14} />查看归档<span className="switch-count">{archivedCount}</span></button><button className="btn primary" onClick={() => onNavigate('/projects/new/config')}><Plus size={14} />新建项目</button></div></div><div className="page-body"><div className="project-list-context"><b>{archived ? '已归档项目' : '测算中项目'}</b><span>共 {archived ? archivedCount : activeCount} 个</span></div><div className="data-panel"><table className="data-table"><thead><tr><th>项目</th><th>客户</th><th>部门</th><th>经营期间</th><th>草稿修订</th><th>状态</th><th>操作</th></tr></thead><tbody>{projects.map((project) => <tr key={project.id}><td><b>{project.name}</b><small>{project.code || '无项目编码'}</small></td><td>{project.customer || '—'}</td><td>{department(project.departmentId)}</td><td>{project.startPeriod} · {project.durationMonths}个月</td><td>R{project.draftRevision}</td><td><span className={`status status-${project.status}`}>{project.status === 'calculating' ? '测算中' : '已归档'}</span></td><td><div className="row-actions"><button className="action-link" onClick={() => onNavigate(`/projects/${project.id}/${archived ? 'report' : 'config'}`)}><FolderOpen size={13} />进入项目</button><button className="action-link muted-action" onClick={() => void onArchive(project.id, archived)}>{archived ? <RotateCcw size={13} /> : <Archive size={13} />}{archived ? '恢复' : '归档'}</button></div></td></tr>)}{projects.length === 0 && <tr><td colSpan={7} className="empty-cell">{archived ? '当前没有归档项目' : '当前没有测算中的项目'}</td></tr>}</tbody></table></div></div></main>
+  const openProject = (projectId: string) => onNavigate(`/projects/${projectId}/${archived ? 'report' : 'config'}`)
+  const runAction = async (action: () => Promise<void>) => {
+    try {
+      await action()
+    } catch (reason) {
+      window.alert(reason instanceof Error ? reason.message : '项目操作失败')
+    }
+  }
+
+  return <main className="page">
+    <div className="page-head">
+      <div className="page-head-main">
+        <PageBreadcrumbs items={[{ label: '项目管理' }, { label: archived ? '归档项目' : '测算中项目' }]} />
+        <h1>项目中心</h1>
+        <p>{archived ? '当前显示已归档项目；恢复后可继续测算。' : '点击项目名称或整行即可进入项目。'}</p>
+      </div>
+      <div className="page-head-actions">
+        <button className={`project-archive-switch ${archived ? 'active' : ''}`} role="switch" aria-checked={archived} onClick={() => onNavigate(archived ? '/projects' : '/projects?view=archived')}><span className="switch-track"><span /></span><Archive size={14} />查看归档<span className="switch-count">{archivedCount}</span></button>
+        <button className="btn primary" onClick={() => onNavigate('/projects/new/config')}><Plus size={14} />新建项目</button>
+      </div>
+    </div>
+    <div className="page-body">
+      <div className="project-list-context"><b>{archived ? '已归档项目' : '测算中项目'}</b><span>共 {archived ? archivedCount : activeCount} 个</span></div>
+      <div className="data-panel">
+        <table className="data-table project-list-table">
+          <thead><tr><th>项目</th><th>客户</th><th>部门</th><th>经营期间</th><th>最近更新</th><th>状态</th><th>操作</th></tr></thead>
+          <tbody>
+            {projects.map((project) => <tr key={project.id} className="clickable-project-row" onClick={() => openProject(project.id)}>
+              <td><button className="project-name-button" onClick={(event) => { event.stopPropagation(); openProject(project.id) }}><b>{project.name}</b><small>{project.code || '无项目编码'}</small></button></td>
+              <td>{project.customer || '—'}</td>
+              <td>{department(project.departmentId)}</td>
+              <td>{project.startPeriod} · {project.durationMonths}个月</td>
+              <td>{new Date(project.updatedAt).toLocaleDateString('zh-CN')}</td>
+              <td><span className={`status status-${project.status}`}>{project.status === 'calculating' ? '测算中' : '已归档'}</span></td>
+              <td><div className="row-actions">
+                {archived ? <>
+                  <button className="action-link" onClick={(event) => { event.stopPropagation(); void runAction(() => onArchive(project.id, true)) }}>恢复</button>
+                  <button className="action-link danger-action" title="永久删除项目" onClick={(event) => { event.stopPropagation(); if (window.confirm(`确定删除“${project.name}”？\n\n项目配置、计算结果和报告将一并删除，且无法恢复。`)) void runAction(() => onDelete(project.id)) }}>删除</button>
+                </> : <>
+                  <button className="action-link" title="复制项目配置" onClick={(event) => { event.stopPropagation(); void runAction(() => onCopy(project.id)) }}>复制</button>
+                  <button className="action-link muted-action" onClick={(event) => { event.stopPropagation(); void runAction(() => onArchive(project.id, false)) }}>归档</button>
+                </>}
+              </div></td>
+            </tr>)}
+            {projects.length === 0 && <tr><td colSpan={7} className="empty-cell">{archived ? '当前没有归档项目' : '当前没有测算中的项目'}</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
 }
 
 function NewProjectPage({ snapshot, onCancel, onCreate }: { snapshot: AppSnapshot; onCancel: () => void; onCreate: (input: ProjectInput) => Promise<void> }) {

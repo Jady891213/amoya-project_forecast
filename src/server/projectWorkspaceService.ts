@@ -2,6 +2,7 @@ import Decimal from 'decimal.js'
 import type {
   BaseFact,
   DepartmentInput,
+  ForecastProjectDraft,
   ProjectInput,
   ProjectReportDto,
   ProjectWorkspace,
@@ -19,6 +20,7 @@ import { CashScheduleRepository } from './repositories/cashScheduleRepository'
 import { ParameterRepository } from './repositories/parameterRepository'
 import { CalculationService } from './services/calculationService'
 import { ProjectReportService } from './services/projectReportService'
+import { ForecastOverrideRepository } from './repositories/forecastOverrideRepository'
 
 const reportAmountFormatter = new Intl.NumberFormat('zh-CN', {
   minimumFractionDigits: 2,
@@ -116,6 +118,118 @@ export class ProjectWorkspaceService {
 
   async restore(projectId: string) {
     return this.projects.restore(projectId)
+  }
+
+  async copy(projectId: string): Promise<ProjectWorkspace> {
+    const backup = await this.database.exportDatabase()
+    try {
+      const source = await this.getWorkspace(projectId)
+      const existingCodes = new Set(
+        (await this.projects.list()).flatMap((project) => project.code ? [project.code] : []),
+      )
+      const baseCode = source.project.code ? `${source.project.code}-COPY` : undefined
+      let code = baseCode
+      let suffix = 2
+      while (code && existingCodes.has(code)) code = `${baseCode}-${suffix++}`
+
+      const copiedProject = await this.projects.save({
+        code,
+        name: `${source.project.name} 副本`,
+        customer: source.project.customer,
+        departmentId: source.project.departmentId,
+        owner: source.project.owner,
+        startPeriod: source.project.startPeriod,
+        durationMonths: source.project.durationMonths,
+        remark: source.project.remark,
+        modules: source.modules
+          .filter((module) => !module.isCommon)
+          .map((module) => ({ code: module.code, name: module.name })),
+      })
+      const copiedModules = await this.projects.listModules(copiedProject.id)
+      const copiedModuleByCode = new Map(copiedModules.map((module) => [module.code, module]))
+      const sourceModuleCodeById = new Map(source.modules.map((module) => [module.id, module.code]))
+      const lineValues = new Map<string, Record<string, string>>()
+      source.forecast.values.forEach((item) => {
+        const values = lineValues.get(item.lineId) ?? {}
+        values[item.period] = item.value
+        lineValues.set(item.lineId, values)
+      })
+      const parameterValues = new Map<string, Record<string, string>>()
+      source.forecast.parameterValues.forEach((item) => {
+        const values = parameterValues.get(item.parameterId) ?? {}
+        const parameter = source.forecast.parameters.find((candidate) => candidate.id === item.parameterId)
+        values[item.period] = parameter?.valueType === 'percentage'
+          ? new Decimal(item.value).times(100).toString()
+          : item.value
+        parameterValues.set(item.parameterId, values)
+      })
+      const draft: ForecastProjectDraft = {
+        lines: source.forecast.lines.map((line) => ({
+          code: line.code,
+          name: line.name,
+          category: line.category,
+          businessModuleId: copiedModuleByCode.get(sourceModuleCodeById.get(line.businessModuleId) ?? 'PUBLIC')?.id ?? copiedModules[0].id,
+          forecastMethod: line.forecastMethod,
+          startPeriod: line.startPeriod,
+          endPeriod: line.endPeriod,
+          fixedMonthlyValue: line.fixedMonthlyValue,
+          formulaExpression: line.formulaExpression,
+          amountBasis: line.amountBasis,
+          taxRate: line.taxRate,
+          assumption: line.assumption,
+          sortOrder: line.sortOrder,
+          monthlyValues: lineValues.get(line.id) ?? {},
+        })),
+        parameters: source.forecast.parameters.map((parameter) => ({
+          code: parameter.code,
+          name: parameter.name,
+          parameterType: parameter.parameterType,
+          valueType: parameter.valueType,
+          unit: parameter.unit,
+          fixedValue: parameter.valueType === 'percentage' && parameter.fixedValue
+            ? new Decimal(parameter.fixedValue).times(100).toString()
+            : parameter.fixedValue,
+          description: parameter.description,
+          sortOrder: parameter.sortOrder,
+          monthlyValues: parameterValues.get(parameter.id) ?? {},
+        })),
+        cashRules: source.forecast.cashRules.map((rule) => ({
+          sourceLineCode: rule.sourceLineCode,
+          method: rule.method,
+          delayMonths: rule.delayMonths,
+          installments: rule.installments.map((item) => ({
+            sequence: item.sequence,
+            offsetMonths: item.offsetMonths,
+            ratio: item.ratio,
+          })),
+        })),
+        overrides: [],
+      }
+      const copiedState = await this.calculations.saveDraft(copiedProject.id, draft)
+      const sourceLineCodeById = new Map(source.forecast.lines.map((line) => [line.id, line.code]))
+      const copiedLineIdByCode = new Map(copiedState.lines.map((line) => [line.code, line.id]))
+      await new ForecastOverrideRepository(this.database).saveProjectDraft(
+        copiedProject.id,
+        source.forecast.overrides.flatMap((override) => {
+          const copiedLineId = copiedLineIdByCode.get(sourceLineCodeById.get(override.forecastLineId) ?? '')
+          return copiedLineId ? [{
+            forecastLineId: copiedLineId,
+            period: override.period,
+            originalValue: override.originalValue,
+            overrideValue: override.overrideValue,
+            reason: override.reason,
+          }] : []
+        }),
+      )
+      return this.getWorkspace(copiedProject.id)
+    } catch (reason) {
+      await this.database.importDatabase(backup)
+      throw reason
+    }
+  }
+
+  async delete(projectId: string): Promise<void> {
+    await this.projects.delete(projectId)
   }
 
   async saveDepartment(input: DepartmentInput) {
