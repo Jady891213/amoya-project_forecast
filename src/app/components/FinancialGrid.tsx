@@ -9,6 +9,7 @@ export interface FinancialGridRow {
   secondary?: string
   editable: boolean
   editablePeriods?: Set<string>
+  valueKind?: 'number' | 'percentage'
   values: Record<string, string>
   overriddenPeriods?: Set<string>
   originalValues?: Record<string, string>
@@ -52,6 +53,7 @@ interface Props {
   showToolbar?: boolean
   onRowActivate?: (rowId: string) => void
   activeRowId?: string
+  toolbarPlacement?: 'top' | 'bottom'
 }
 
 export function parseFinancialValue(raw: string): string {
@@ -91,6 +93,15 @@ export function formatFinancialValue(
     return options.negativeStyle === 'parentheses'
       ? `(${formatted})`
       : `-${formatted}`
+  } catch {
+    return raw
+  }
+}
+
+function formatGridCellValue(raw: string, row: FinancialGridRow, options: FinancialDisplayOptions): string {
+  if (row.valueKind !== 'percentage' || raw === '') return formatFinancialValue(raw, options)
+  try {
+    return `${new Decimal(raw).times(100).toFixed(options.decimalPlaces)}%`
   } catch {
     return raw
   }
@@ -146,6 +157,7 @@ export function FinancialGrid({
   showToolbar = true,
   onRowActivate,
   activeRowId,
+  toolbarPlacement = 'top',
 }: Props) {
   const dialog = useAppDialog()
   const root = useRef<HTMLDivElement>(null)
@@ -409,18 +421,21 @@ export function FinancialGrid({
     }
   }
 
+  const toolbar = showToolbar && <div className={`financial-grid-toolbar ${toolbarPlacement}`} aria-label={`${ariaLabel}显示格式`}>
+    {toolbarPlacement === 'bottom' && <span>拖拽或 Shift 扩展选区 · 仅调整显示，不改变计算值</span>}
+    <b>显示格式</b>
+    <label>单位<select aria-label={`${ariaLabel}显示单位`} value={displayUnit} onChange={(event) => setDisplayUnit(event.target.value as FinancialDisplayUnit)}><option value="yuan">元</option><option value="thousand">千元</option><option value="ten_thousand">万元</option></select></label>
+    <label>小数<select aria-label={`${ariaLabel}小数位数`} value={decimalPlaces} onChange={(event) => setDecimalPlaces(Number(event.target.value) as 0 | 2 | 4)}><option value={0}>0 位</option><option value={2}>2 位</option><option value={4}>4 位</option></select></label>
+    <label className="financial-format-check"><input aria-label={`${ariaLabel}使用千分位`} type="checkbox" checked={thousandSeparator} onChange={(event) => setThousandSeparator(event.target.checked)} />千分位</label>
+    <label>负数<select aria-label={`${ariaLabel}负数格式`} value={negativeStyle} onChange={(event) => setNegativeStyle(event.target.value as FinancialNegativeStyle)}><option value="minus">-1,234.56</option><option value="parentheses">(1,234.56)</option></select></label>
+    {toolbarPlacement === 'top' && <span>拖拽或 Shift 扩展选区 · 仅调整显示，不改变计算值</span>}
+  </div>
+
   return (
     <div className="financial-grid-shell">
-      {showToolbar && <div className="financial-grid-toolbar" aria-label={`${ariaLabel}显示格式`}>
-        <b>显示格式</b>
-        <label>单位<select aria-label={`${ariaLabel}显示单位`} value={displayUnit} onChange={(event) => setDisplayUnit(event.target.value as FinancialDisplayUnit)}><option value="yuan">元</option><option value="thousand">千元</option><option value="ten_thousand">万元</option></select></label>
-        <label>小数<select aria-label={`${ariaLabel}小数位数`} value={decimalPlaces} onChange={(event) => setDecimalPlaces(Number(event.target.value) as 0 | 2 | 4)}><option value={0}>0 位</option><option value={2}>2 位</option><option value={4}>4 位</option></select></label>
-        <label className="financial-format-check"><input aria-label={`${ariaLabel}使用千分位`} type="checkbox" checked={thousandSeparator} onChange={(event) => setThousandSeparator(event.target.checked)} />千分位</label>
-        <label>负数<select aria-label={`${ariaLabel}负数格式`} value={negativeStyle} onChange={(event) => setNegativeStyle(event.target.value as FinancialNegativeStyle)}><option value="minus">-1,234.56</option><option value="parentheses">(1,234.56)</option></select></label>
-        <span>拖拽或 Shift 扩展选区 · 仅调整显示，不改变计算值</span>
-      </div>}
+      {toolbarPlacement === 'top' && toolbar}
       <div
-        className="financial-grid"
+        className={`financial-grid ${showToolbar && toolbarPlacement === 'bottom' ? 'with-bottom-toolbar' : ''}`}
         ref={root}
         onKeyDown={onKeyDown}
         onMouseMove={(event) => {
@@ -486,7 +501,7 @@ export function FinancialGrid({
                       if (event.key === 'Escape') setEditing(null)
                     }}
                   />
-                ) : <span>{formatFinancialValue(row.values[period] ?? '', displayOptions)}</span>}
+                ) : <span>{formatGridCellValue(row.values[period] ?? '', row, displayOptions)}</span>}
                 {overridden && <i />}
                 {overridden && onClearOverride && <button aria-label="清除覆盖" onClick={(event) => { event.stopPropagation(); onClearOverride(row.id, period) }}>×</button>}
               </td>
@@ -495,6 +510,7 @@ export function FinancialGrid({
         ))}</tbody>
       </table>
       </div>
+      {toolbarPlacement === 'bottom' && toolbar}
     </div>
   )
 }

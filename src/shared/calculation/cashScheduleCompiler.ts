@@ -141,9 +141,72 @@ export function compileCashSchedule(
       })
       continue
     }
+    const sourceValues = lineValues.filter((value) => value.lineId === line.id)
+    if (rule.method === 'manual_monthly') {
+      const coordinates = sourceValues[0]
+      const monthlyValues = Object.entries(rule.monthlyValues)
+      if (!coordinates || monthlyValues.length === 0) {
+        issues.push({
+          severity: 'error',
+          lineId: line.id,
+          field: 'monthlyValues',
+          message: '逐月指定收付款至少需要填写一个期间',
+        })
+        continue
+      }
+      let manualTotal = new Decimal(0)
+      let invalid = false
+      const valueStartIndex = values.length
+      for (const [period, raw] of monthlyValues.sort(([left], [right]) => left.localeCompare(right))) {
+        let amount: Decimal
+        try {
+          amount = new Decimal(raw)
+          if (!amount.isFinite()) throw new Error('invalid')
+        } catch {
+          issues.push({ severity: 'error', lineId: line.id, field: 'monthlyValues', period, message: '逐月指定收付款金额必须是有效数字' })
+          invalid = true
+          break
+        }
+        manualTotal = manualTotal.plus(amount)
+        const source = sourceValues.find((item) => item.period === period)
+        values.push({
+          sourceLineId: line.id,
+          sourceLineCode: line.code,
+          sourceLineName: line.name,
+          projectId: coordinates.projectId,
+          departmentId: coordinates.departmentId,
+          sourcePeriod: period,
+          settlementPeriod: period,
+          scenarioId: coordinates.scenarioId,
+          versionId: coordinates.versionId,
+          metricCode: line.category === 'revenue' ? 'cash_inflow' : 'cash_outflow',
+          amountBasis: line.amountBasis,
+          taxRate: line.taxRate,
+          netValue: source?.netValue ?? '0',
+          taxValue: source?.taxValue ?? '0',
+          grossValue: source?.grossValue ?? '0',
+          settlementRatio: '0',
+          value: amount.toDecimalPlaces(6).toString(),
+          ruleMethod: rule.method,
+        })
+      }
+      if (invalid) {
+        values.splice(valueStartIndex)
+        continue
+      }
+      const grossTotal = sourceValues.reduce((sum, source) => sum.plus(source.grossValue), new Decimal(0))
+      if (!manualTotal.toDecimalPlaces(6).equals(grossTotal.toDecimalPlaces(6))) {
+        issues.push({
+          severity: 'warning',
+          lineId: line.id,
+          field: 'monthlyValues',
+          message: `${line.category === 'revenue' ? '计划收款' : '计划付款'}与含税结算额存在差额`,
+        })
+      }
+      continue
+    }
     const schedule = scheduleForRule(rule, issues)
     if (schedule.length === 0) continue
-    const sourceValues = lineValues.filter((value) => value.lineId === line.id)
     sourceValues.forEach((source) => {
       const gross = new Decimal(source.grossValue)
       let allocated = new Decimal(0)

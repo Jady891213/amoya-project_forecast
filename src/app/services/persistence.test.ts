@@ -93,4 +93,38 @@ describe('SQLite 当前数据结构与测算闭环', () => {
     })
     expect(report.summary.revenue).toBe('4800')
   })
+
+  it('收入成本行可同时生成损益与逐月指定现金，其他现金仍可独立汇总', async () => {
+    const department = await new DepartmentRepository(database).save({ code: 'CASH', name: '现金测试部' })
+    const project = await new ProjectRepository(database).save({
+      code: 'CASH-001', name: '现金一拖二项目', departmentId: department.id,
+      startPeriod: '2026-01', endPeriod: '2026-02',
+    })
+    const calculation = new CalculationService(database)
+    const result = await calculation.saveAndCalculate(project.id, {
+      lines: [
+        {
+          id: 'line-revenue', code: 'LINE-001', name: '服务收入', category: 'revenue',
+          forecastMethod: 'fixed_monthly', fixedMonthlyValue: '100', startPeriod: '2026-01', endPeriod: '2026-02',
+          amountBasis: 'tax_exclusive', taxRate: '0', assumption: '', sortOrder: 1, monthlyValues: {},
+        },
+        {
+          id: 'line-other-cash', code: 'LINE-002', name: '专项资金', category: 'cash_inflow',
+          forecastMethod: 'monthly_input', startPeriod: '2026-01', endPeriod: '2026-02',
+          amountBasis: 'non_taxable', taxRate: '0', assumption: '', sortOrder: 2,
+          monthlyValues: { '2026-01': '20' },
+        },
+      ],
+      parameters: [],
+      cashRules: [{
+        sourceLineId: 'line-revenue', sourceLineCode: 'LINE-001', method: 'manual_monthly',
+        delayMonths: 0, installments: [], monthlyValues: { '2026-02': '50', '2026-03': '150' },
+      }],
+      overrides: [],
+    })
+    expect(result.success).toBe(true)
+    const report = await new ProjectReportService(database).build({ projectId: project.id, scenarioId: 'baseline', versionId: 'working' })
+    expect(report.summary.revenue).toBe('200')
+    expect(report.summary.cashInflow).toBe('220')
+  })
 })

@@ -400,7 +400,9 @@ export function ProjectReportPage({
                                 ? '当月'
                                 : item.ruleMethod === 'delayed'
                                   ? '延后'
-                                  : `分期 ${formatPercent(item.settlementRatio)}`}
+                                  : item.ruleMethod === 'installment'
+                                    ? `分期 ${formatPercent(item.settlementRatio)}`
+                                    : '逐月指定'}
                             </td>
                             <td className={item.settlementPeriod > report.operationEndPeriod ? 'recovery-period' : ''}>
                               {item.settlementPeriod}
@@ -421,7 +423,7 @@ export function ProjectReportPage({
           ) : (
             <section className="report-section cashflow-pending">
               <Info size={18} />
-              <div><h2>现金流尚未生成</h2><p>请在损益行的“税与收付款”中启用自动规则，或增加直接现金计划。</p></div>
+              <div><h2>现金流尚未生成</h2><p>请在损益行中配置现金生成方式；无法由损益推导的资金事项可使用其他现金兜底。</p></div>
             </section>
           )}
           {view === 'report' && (

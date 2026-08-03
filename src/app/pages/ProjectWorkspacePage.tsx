@@ -32,6 +32,7 @@ import type { AppSnapshot } from '../state/types'
 import { ApiClient } from '../api/client'
 import { countPeriods, generatePeriodRange, generatePeriods } from '../domain/periods'
 import { FinancialGrid, type FinancialGridChange, type FinancialGridRow } from '../components/FinancialGrid'
+import { CalculationBaseGrid } from '../components/CalculationBaseGrid'
 import { PageBreadcrumbs } from '../components/PageBreadcrumbs'
 import { formatPercent, formatWan } from '../ui/formatters'
 import { useAppDialog } from '../ui/AppDialog'
@@ -129,6 +130,7 @@ function stateToCashRules(workspace: ProjectWorkspace): CashRuleDraft[] {
     sourceLineCode: rule.sourceLineCode,
     method: rule.method,
     delayMonths: rule.delayMonths,
+    monthlyValues: rule.monthlyValues,
     installments: rule.installments.map((item) => ({
       id: item.id,
       sequence: item.sequence,
@@ -438,7 +440,7 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, view, onNavigat
     }
     setLines((current) => [...current, line])
     if (category === 'revenue' || category === 'cost') {
-      setCashRules((current) => [...current, { sourceLineId: id, sourceLineCode: line.code ?? '', method: 'immediate', delayMonths: 0, installments: [] }])
+      setCashRules((current) => [...current, { sourceLineId: id, sourceLineCode: line.code ?? '', method: 'immediate', delayMonths: 0, installments: [], monthlyValues: {} }])
     }
     setSelectedParameterId('')
     setSelectedLineId(id); markDirty()
@@ -452,7 +454,7 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, view, onNavigat
     const copy = { ...source, id, code, name: `${source.name} 副本`, sortOrder: lines.length + 1, monthlyValues: { ...source.monthlyValues } }
     setLines((current) => [...current, copy])
     const rule = cashRules.find((item) => item.sourceLineCode === source.code)
-    if (rule) setCashRules((current) => [...current, { ...rule, id: undefined, sourceLineId: id, sourceLineCode: code, installments: rule.installments.map((item) => ({ ...item, id: undefined })) }])
+    if (rule) setCashRules((current) => [...current, { ...rule, id: undefined, sourceLineId: id, sourceLineCode: code, installments: rule.installments.map((item) => ({ ...item, id: undefined })), monthlyValues: { ...rule.monthlyValues } }])
     setSelectedParameterId('')
     setSelectedLineId(id); markDirty()
   }
@@ -490,6 +492,13 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, view, onNavigat
       rowChanges.forEach((change) => { if (change.value) monthlyValues[change.period] = change.value; else delete monthlyValues[change.period] })
       return { ...line, monthlyValues }
     }))
+    setCashRules((current) => current.map((rule) => {
+      const rowChanges = changesByRow.get(`cash-plan:${rule.sourceLineId}`)
+      if (!rowChanges || rule.method !== 'manual_monthly') return rule
+      const monthlyValues = { ...rule.monthlyValues }
+      rowChanges.forEach((change) => { if (change.value) monthlyValues[change.period] = change.value; else delete monthlyValues[change.period] })
+      return { ...rule, monthlyValues }
+    }))
     markDirty()
   }
 
@@ -509,7 +518,7 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, view, onNavigat
           hasChange = true
         }
       } else {
-        next.push({ forecastLineId: change.rowId, period: change.period, originalValue: original, overrideValue: change.value, reason: '计算工作表人工调整' })
+        next.push({ forecastLineId: change.rowId, period: change.period, originalValue: original, overrideValue: change.value, reason: '计算底表人工调整' })
         hasChange = true
       }
     })
@@ -532,12 +541,24 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, view, onNavigat
     const categoryDifference = categoryOrder.indexOf(left.category) - categoryOrder.indexOf(right.category)
     return categoryDifference || left.sortOrder - right.sortOrder
   })
-  const modelRows: Array<{ id: string; kind: 'parameter' | ForecastCategory; parameter?: ProjectParameterDraft; line?: ForecastLineDraft }> = [
+  type ModelRowItem = { id: string; kind: 'parameter' | ForecastCategory | 'cash_plan_inflow' | 'cash_plan_outflow'; parameter?: ProjectParameterDraft; line?: ForecastLineDraft; cashRule?: CashRuleDraft; parentLine?: ForecastLineDraft }
+  const modelRows: ModelRowItem[] = [
     ...[...parameters].sort((left, right) => left.sortOrder - right.sortOrder).map((parameter) => ({ id: parameter.id ?? '', kind: 'parameter' as const, parameter })),
-    ...orderedLines.map((line) => ({ id: line.id ?? '', kind: line.category, line })),
+    ...orderedLines.flatMap((line): ModelRowItem[] => {
+      const base: ModelRowItem = { id: line.id ?? '', kind: line.category, line }
+      if (line.category !== 'revenue' && line.category !== 'cost') return [base]
+      const cashRule = cashRules.find((rule) => rule.sourceLineCode === line.code)
+      if (!cashRule || cashRule.method === 'disabled') return [base]
+      return [base, {
+        id: `cash-plan:${line.id}`,
+        kind: line.category === 'revenue' ? 'cash_plan_inflow' : 'cash_plan_outflow',
+        cashRule,
+        parentLine: line,
+      }]
+    }),
   ]
-  const typeLabels: Record<'parameter' | ForecastCategory, string> = {
-    parameter: '业务参数', revenue: '收入', cost: '成本', cash_inflow: '直接收款', cash_outflow: '直接付款',
+  const typeLabels: Record<ModelRowItem['kind'], string> = {
+    parameter: '业务参数', revenue: '收入', cost: '成本', cash_inflow: '其他收款', cash_outflow: '其他付款', cash_plan_inflow: '收款计划', cash_plan_outflow: '付款计划',
   }
   const previewValuesByLine = new Map<string, Record<string, string>>()
   livePreview.values.forEach((item) => {
@@ -545,27 +566,17 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, view, onNavigat
     values[item.period] = item.value
     previewValuesByLine.set(item.lineId, values)
   })
+  const previewCashValuesByLine = new Map<string, Record<string, string>>()
+  livePreview.cashValues.forEach((item) => {
+    const values = previewCashValuesByLine.get(item.sourceLineId) ?? {}
+    values[item.settlementPeriod] = new Decimal(values[item.settlementPeriod] ?? 0).plus(item.value).toString()
+    previewCashValuesByLine.set(item.sourceLineId, values)
+  })
   const previewIssuesByLine = new Map<string, string[]>()
   livePreview.issues.forEach((issue) => {
     if (!issue.lineId) return
     previewIssuesByLine.set(issue.lineId, [...(previewIssuesByLine.get(issue.lineId) ?? []), issue.message])
   })
-  const calculationRows: FinancialGridRow[] = report?.lineBreakdown.map((item) => {
-    const valueMap = Object.fromEntries(item.values.map((value) => [value.period, value.value]))
-    const overrideMap = new Map(overrides.filter((override) => override.forecastLineId === item.lineId).map((override) => [override.period, override]))
-    overrideMap.forEach((override, period) => { valueMap[period] = override.overrideValue })
-    const originalValues = Object.fromEntries(item.values.map((value) => [value.period, value.value]))
-    overrideMap.forEach((override, period) => { originalValues[period] = override.originalValue })
-    return {
-      id: item.lineId,
-      label: item.lineName,
-      secondary: `${item.lineCode} · ${item.category === 'revenue' ? '收入' : item.category === 'cost' ? '成本' : item.category === 'cash_inflow' ? '直接收款' : '直接付款'}`,
-      editable: true,
-      values: valueMap,
-      overriddenPeriods: new Set(overrideMap.keys()),
-      originalValues,
-    }
-  }) ?? []
   return <main className="workspace semantic-workspace">
     <div className="workspace-head unified-workspace-head">
       <div className="workspace-heading project-inline-heading">
@@ -573,7 +584,7 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, view, onNavigat
       </div>
       <div className="workspace-tabs">
         <button className={view === 'config' ? 'workspace-tab active' : 'workspace-tab'} onClick={() => onNavigate(`/projects/${projectId}/config`)}><Calculator size={14} />项目配置</button>
-        <button className={view === 'calculation' ? 'workspace-tab active' : 'workspace-tab'} onClick={() => onNavigate(`/projects/${projectId}/calculation`)}><TableProperties size={14} />计算工作表</button>
+        <button className={view === 'calculation' ? 'workspace-tab active' : 'workspace-tab'} onClick={() => onNavigate(`/projects/${projectId}/calculation`)}><TableProperties size={14} />计算底表</button>
         <button className={view === 'report' ? 'workspace-tab active' : 'workspace-tab'} onClick={() => onNavigate(`/projects/${projectId}/report`)}><FileChartColumn size={14} />项目报告</button>
       </div>
       <div className="workspace-head-actions">
@@ -611,8 +622,8 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, view, onNavigat
               {createMenu === 'profit' && <div className="toolbar-create-popover"><button onClick={() => { addLine('revenue'); setCreateMenu('') }}><span className="create-type-dot revenue" />收入项目</button><button onClick={() => { addLine('cost'); setCreateMenu('') }}><span className="create-type-dot cost" />成本项目</button></div>}
             </div>
             <div className="toolbar-create-menu">
-              <button className={`btn toolbar-menu-trigger ${createMenu === 'cash' ? 'active' : ''}`} onClick={() => setCreateMenu((current) => current === 'cash' ? '' : 'cash')}><Plus size={14} />新增现金<ChevronDown size={13} /></button>
-              {createMenu === 'cash' && <div className="toolbar-create-popover"><button onClick={() => { addLine('cash_inflow'); setCreateMenu('') }}><span className="create-type-dot cash-inflow" />直接收款</button><button onClick={() => { addLine('cash_outflow'); setCreateMenu('') }}><span className="create-type-dot cash-outflow" />直接付款</button></div>}
+              <button className={`btn toolbar-menu-trigger ${createMenu === 'cash' ? 'active' : ''}`} onClick={() => setCreateMenu((current) => current === 'cash' ? '' : 'cash')}><Plus size={14} />其他现金<ChevronDown size={13} /></button>
+              {createMenu === 'cash' && <div className="toolbar-create-popover"><button onClick={() => { addLine('cash_inflow'); setCreateMenu('') }}><span className="create-type-dot cash-inflow" />其他收款</button><button onClick={() => { addLine('cash_outflow'); setCreateMenu('') }}><span className="create-type-dot cash-outflow" />其他付款</button></div>}
             </div>
           </div>
           <div className="planning-grid-stage unified-preview-grid">
@@ -632,6 +643,16 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, view, onNavigat
                   editablePeriods: item.parameter.parameterType === 'monthly' ? new Set(projectPeriods) : undefined,
                   values: item.parameter.parameterType === 'fixed' ? Object.fromEntries(projectPeriods.map((period) => [period, item.parameter?.fixedValue ?? ''])) : item.parameter.monthlyValues,
                 }
+                if (item.cashRule && item.parentLine) {
+                  const manual = item.cashRule.method === 'manual_monthly'
+                  return {
+                    id: item.id,
+                    label: `${item.parentLine.name}${item.parentLine.category === 'revenue' ? '收款计划' : '付款计划'}`,
+                    editable: manual,
+                    editablePeriods: manual ? new Set(cashPeriods) : undefined,
+                    values: manual ? item.cashRule.monthlyValues : previewCashValuesByLine.get(item.parentLine.id ?? '') ?? {},
+                  }
+                }
                 const line = item.line as ForecastLineDraft
                 const isMonthlyInput = line.forecastMethod === 'monthly_input'
                 return {
@@ -645,20 +666,22 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, view, onNavigat
               onChange={updateModelMonthly}
               onRowActivate={(rowId) => {
                 const item = modelRows.find((candidate) => candidate.id === rowId)
-                if (item?.parameter) { setSelectedLineId(''); setSelectedParameterId(rowId) } else { setSelectedParameterId(''); setSelectedLineId(rowId) }
+                if (item?.parameter) { setSelectedLineId(''); setSelectedParameterId(rowId) }
+                else { setSelectedParameterId(''); setSelectedLineId(item?.parentLine?.id ?? rowId) }
               }}
               renderRowType={(row) => {
                 const item = modelRows.find((candidate) => candidate.id === row.id)
-                return item ? <span className={`model-type-tag ${item.kind.replace('_', '-')}`}>{typeLabels[item.kind]}</span> : null
+                return item ? <span className={`model-type-tag ${item.kind.replaceAll('_', '-')}`}>{typeLabels[item.kind]}</span> : null
               }}
               renderRowLabel={(row) => {
                 const item = modelRows.find((candidate) => candidate.id === row.id)
                 if (item?.parameter) return <div className="model-row-content"><button className="model-row-summary"><b>{item.parameter.name}</b><span>{item.parameter.code} · {item.parameter.parameterType === 'fixed' ? `全期固定 · ${item.parameter.fixedValue || '未填写'} ${item.parameter.unit}` : `逐月填写 · ${Object.keys(item.parameter.monthlyValues).length}/${projectPeriods.length} 月已填`}</span></button><div className="model-row-actions"><button title="复制参数" aria-label={`复制${item.parameter.name}`} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); duplicateParameter(item.id) }}><Copy size={15} /></button><button title="删除参数" aria-label={`删除${item.parameter.name}`} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); removeParameter(item.id) }}><Trash2 size={15} /></button></div></div>
+                if (item?.cashRule && item.parentLine) return <div className="model-row-content cash-plan-row-content"><button className="model-row-summary"><b>{item.parentLine.name} · {item.parentLine.category === 'revenue' ? '收款计划' : '付款计划'}</b><span>{item.parentLine.code} · {item.cashRule.method === 'manual_monthly' ? `逐月指定 · ${Object.keys(item.cashRule.monthlyValues).length} 个月已填` : item.cashRule.method === 'delayed' ? `自动生成 · 延后 ${item.cashRule.delayMonths} 个月` : item.cashRule.method === 'installment' ? '自动生成 · 分期收付' : '自动生成 · 当月收付'}</span></button></div>
                 const line = item?.line
                 if (!line) return row.label
                 const rule = cashRules.find((candidate) => candidate.sourceLineCode === line.code)
                 const method = line.forecastMethod === 'fixed_monthly' ? `${line.fixedMonthlyValue || '未填写'} 元/月` : line.forecastMethod === 'formula' ? formulaSummary(line.formulaExpression, parameters, lines) : `${Object.keys(line.monthlyValues).length} 个月已填`
-                const settlement = line.category === 'revenue' || line.category === 'cost' ? ` · ${line.amountBasis === 'tax_inclusive' ? '含税' : line.amountBasis === 'non_taxable' ? '免税' : '未税'} ${line.taxRate || 0}% · ${rule?.method === 'delayed' ? `延后${rule.delayMonths}月` : rule?.method === 'installment' ? '分期结算' : rule?.method === 'disabled' ? '不生成现金' : '当月结算'}` : ''
+                const settlement = line.category === 'revenue' || line.category === 'cost' ? ` · ${line.amountBasis === 'tax_inclusive' ? '含税' : line.amountBasis === 'non_taxable' ? '免税' : '未税'} ${line.taxRate || 0}% · ${rule?.method === 'delayed' ? `延后${rule.delayMonths}月` : rule?.method === 'installment' ? '分期收付' : rule?.method === 'manual_monthly' ? '逐月指定收付' : rule?.method === 'disabled' ? '不生成现金' : '当月收付'}` : ''
                 const issue = previewIssuesByLine.get(item.id)?.[0]
                 return <div className="model-row-content"><button className="model-row-summary"><b>{line.name}</b><span className={issue ? 'preview-line-error' : ''}>{line.code} · {issue ? `预览错误：${issue}` : `${forecastSchemeLabel(line)} · ${method}${settlement}`}</span></button><div className="model-row-actions"><button title="复制预测项" aria-label={`复制${line.name}`} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); duplicateLine(item.id) }}><Copy size={15} /></button><button title="删除预测项" aria-label={`删除${line.name}`} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); removeLine(item.id) }}><Trash2 size={15} /></button></div></div>
               }}
@@ -672,10 +695,9 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, view, onNavigat
 
     {view === 'calculation' && <div className="workspace-view calculation-sheet-view">
       {!report?.hasFacts ? <div className="empty-report-card"><h2>当前项目尚无成功计算结果</h2><p>请先在项目配置中维护预测行并点击“计算”。</p></div> : <>
-        <div className="calculation-sheet-head"><div><h2>行项目分月计算工作表</h2><p>叶子行可批量粘贴覆盖；汇总指标由系统重新计算。</p></div><span>{report.calculationRun ? `RUN-${String(report.calculationRun.runNumber).padStart(4, '0')}` : ''}</span></div>
+        <div className="calculation-sheet-head"><div><h2>项目计算底表</h2><p>损益、收付款和派生指标使用同一份计算结果，可按视图切换查看。</p></div><span>{report.calculationRun ? `RUN-${String(report.calculationRun.runNumber).padStart(4, '0')}` : ''}</span></div>
         {dirty && <div className="page-alert">人工覆盖尚未保存；点击顶部“保存”后仍需“计算”才会更新汇总和报告。</div>}
-        <FinancialGrid ariaLabel="计算工作表" periods={report.monthly.map((item) => item.period)} rows={calculationRows} onChange={editCalculation} onClearOverride={(rowId, period) => { setOverrides((current) => current.filter((item) => !(item.forecastLineId === rowId && item.period === period))); markDirty() }} includeHeadersOnCopy />
-        <ReadOnlySummaryGrid report={report} />
+        <CalculationBaseGrid report={report} overrides={overrides} onChange={editCalculation} onClearOverride={(rowId, period) => { setOverrides((current) => current.filter((item) => !(item.forecastLineId === rowId && item.period === period))); markDirty() }} />
       </>}
     </div>}
 
@@ -714,6 +736,7 @@ function LineEditor({ line, periods, parameters, lines, cashRule, onPatch, onCas
   const [editingTitle, setEditingTitle] = useState(false)
   const isProfit = line.category === 'revenue' || line.category === 'cost'
   const scheme = forecastScheme(line)
+  const baseCashRule: CashRuleDraft = cashRule ?? { sourceLineId: line.id, sourceLineCode: line.code ?? '', method: 'disabled', delayMonths: 0, installments: [], monthlyValues: {} }
   return <aside className="forecast-editor compact-line-editor"><div className="editor-head"><div>{editingTitle ? <input className="drawer-title-input" value={line.name} autoFocus onChange={(event) => onPatch({ name: event.target.value })} onBlur={() => setEditingTitle(false)} onKeyDown={(event) => { if (event.key === 'Enter') setEditingTitle(false) }} /> : <button className="drawer-title-button" onClick={() => setEditingTitle(true)} title="点击编辑名称"><b>{line.name}</b></button>}<small>{line.code}</small></div><div className="editor-head-actions"><button className="icon-button" aria-label="关闭配置" onClick={onClose}><X size={15} /></button></div></div>
     <div className="editor-form compact-editor-form">
       <div className="drawer-section-title full-field">基本信息与计算规则</div>
@@ -731,10 +754,15 @@ function LineEditor({ line, periods, parameters, lines, cashRule, onPatch, onCas
         </div>
         <small className="drawer-field-note full-field">损益结果统一换算为未税口径。</small>
         <div className="drawer-field-pair full-field">
-          <label className={cashRule?.method === 'delayed' ? '' : 'pair-span-all'}>{line.category === 'revenue' ? '收款方式' : '付款方式'}<select value={cashRule?.method ?? 'disabled'} onChange={(e) => onCashRuleChange({ ...(cashRule ?? { sourceLineId: line.id, sourceLineCode: line.code ?? '', delayMonths: 0, installments: [] }), method: e.target.value as CashRuleDraft['method'] })}><option value="disabled">不自动生成</option><option value="immediate">当月100%</option><option value="delayed">延后N个月</option><option value="installment">自定义分期</option></select></label>
+          <label className={cashRule?.method === 'delayed' ? '' : 'pair-span-all'}>现金生成方式<select value={cashRule?.method ?? 'disabled'} onChange={(e) => { const method = e.target.value as CashRuleDraft['method']; onCashRuleChange({ ...baseCashRule, method, installments: method === 'installment' && baseCashRule.installments.length === 0 ? [{ sequence: 1, offsetMonths: 0, ratio: '50' }, { sequence: 2, offsetMonths: 1, ratio: '50' }] : baseCashRule.installments }) }}><option value="disabled">不生成现金</option><option value="immediate">当月收付</option><option value="delayed">延后N个月</option><option value="installment">分期收付</option><option value="manual_monthly">逐月指定</option></select></label>
           {cashRule?.method === 'delayed' && <label>延后月份<input type="number" min={0} max={36} value={cashRule.delayMonths} onChange={(e) => onCashRuleChange({ ...cashRule, delayMonths: Number(e.target.value) })} /></label>}
         </div>
-        <small className="drawer-field-note full-field">不自动生成时，可在“直接现金”中维护。</small>
+        {cashRule?.method === 'installment' && <div className="compact-installment-editor full-field">
+          <div className="compact-installment-head"><b>分期计划</b><button type="button" onClick={() => onCashRuleChange({ ...cashRule, installments: [...cashRule.installments, { sequence: cashRule.installments.length + 1, offsetMonths: cashRule.installments.length, ratio: '' }] })}><Plus size={13} />增加一期</button></div>
+          {cashRule.installments.map((item, index) => <div className="compact-installment-row" key={item.id ?? index}><span>第 {index + 1} 期</span><label>偏移月<input type="number" min={0} max={36} value={item.offsetMonths} onChange={(event) => onCashRuleChange({ ...cashRule, installments: cashRule.installments.map((current, currentIndex) => currentIndex === index ? { ...current, offsetMonths: Number(event.target.value) } : current) })} /></label><label>比例 %<input value={item.ratio} onChange={(event) => onCashRuleChange({ ...cashRule, installments: cashRule.installments.map((current, currentIndex) => currentIndex === index ? { ...current, ratio: event.target.value } : current) })} /></label><button className="icon-button" aria-label={`删除第${index + 1}期`} onClick={() => onCashRuleChange({ ...cashRule, installments: cashRule.installments.filter((_, currentIndex) => currentIndex !== index).map((current, currentIndex) => ({ ...current, sequence: currentIndex + 1 })) })}><Trash2 size={13} /></button></div>)}
+        </div>}
+        <small className="drawer-field-note full-field">无法由损益推导的专项资金、保证金等，可在“其他现金”中兜底维护。</small>
+        {cashRule?.method === 'manual_monthly' && <div className="drawer-monthly-hint full-field"><b>逐月收付款在左侧子行录入</b><span>对应的收款或付款计划行已变为黄色，可直接编辑或粘贴。</span></div>}
       </>}
       <div className="drawer-section-title full-field">说明与来源</div><label className="full-field">假设说明<textarea className="assumption-editor" value={line.assumption} onChange={(e) => onPatch({ assumption: e.target.value })} /></label><div className="line-source-summary full-field"><b>数据与依赖</b><p>{line.forecastMethod === 'formula' ? `${forecastSchemeLabel(line)}：${formulaSummary(line.formulaExpression, parameters, lines)}` : line.forecastMethod === 'monthly_input' ? `已填写 ${Object.keys(line.monthlyValues).length} 个月` : `每月固定金额 ${line.fixedMonthlyValue || '未填写'} 元`}</p></div>
     </div>

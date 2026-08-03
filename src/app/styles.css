@@ -1849,6 +1849,9 @@ button, input, select, textarea, table { font-size: 12px; }
 .financial-grid-toolbar label:nth-of-type(4) select { min-width: 108px; }
 .financial-grid-toolbar .financial-format-check input { width: 14px; height: 14px; margin: 0; }
 .financial-grid-toolbar > span { margin-left: auto; color: var(--muted); font-size: 12px; }
+.financial-grid-toolbar.bottom { border-top: 0; border-radius: 0 0 10px 10px; justify-content: flex-end; }
+.financial-grid-toolbar.bottom > span { margin: 0 auto 0 0; }
+.financial-grid.with-bottom-toolbar { border-radius: 0; }
 .financial-grid { position: relative; max-width: 100%; overflow: auto; border: 1px solid #cfd9e5; background: #fff; outline: none; user-select: none; }
 .financial-grid table { width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; }
 .financial-grid th, .financial-grid td { height: 34px; min-width: 92px; padding: 0 8px; border-right: 1px solid #e2e7ed; border-bottom: 1px solid #e2e7ed; font-size: 12px; white-space: nowrap; }
@@ -2781,6 +2784,42 @@ textarea:focus {
 }
 .drawer-monthly-hint b { font-size: 12px; }
 .drawer-monthly-hint span { color: #8a6c22; font-size: 12px; }
+.compact-installment-editor { display: grid; gap: 6px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: #fafbfe; }
+.compact-installment-head { display: flex; align-items: center; justify-content: space-between; }
+.compact-installment-head button { display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 7px; border: 1px solid var(--line-dark); border-radius: 6px; color: var(--brand); background: #fff; cursor: pointer; }
+.compact-installment-row { display: grid; grid-template-columns: 48px 1fr 1fr 28px; align-items: end; gap: 6px; }
+.compact-installment-row > span { align-self: center; color: var(--muted); }
+.compact-installment-row label { gap: 2px; }
+.compact-installment-row input { height: 28px; }
+.cash-plan-row-content { padding-left: 12px; }
+.cash-plan-row-content .model-row-summary b { color: #53637a; font-weight: 650; }
+.model-type-tag.cash-plan-inflow,
+.model-type-tag.cash-plan-outflow { color: #52647d; border-color: #d9e1ec; background: #f4f7fb; }
+.calculation-base-stage { min-height: 0; display: flex; flex-direction: column; }
+.calculation-base-toolbar {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 8px;
+  border: 1px solid var(--line-dark);
+  border-bottom: 0;
+  border-radius: 10px 10px 0 0;
+  background: #fff;
+}
+.calculation-base-toolbar > span { margin-left: auto; color: var(--muted); }
+.calculation-view-switch { display: inline-flex; gap: 2px; padding: 2px; border-radius: 8px; background: #f2f4f8; }
+.calculation-view-switch button { height: 28px; padding: 0 12px; border: 0; border-radius: 6px; color: #667085; background: transparent; cursor: pointer; font: inherit; font-weight: 650; }
+.calculation-view-switch button.active { color: var(--brand); background: #fff; box-shadow: 0 1px 4px rgba(31, 38, 55, .1); }
+.calculation-base-stage .financial-grid-shell { min-height: 0; display: flex; flex: 1; flex-direction: column; }
+.calculation-base-stage .financial-grid { min-height: 280px; flex: 1; box-shadow: none; }
+.calculation-base-stage .financial-grid-toolbar.bottom { flex: 0 0 auto; }
+.calculation-group-label { display: block; color: #52647d; font-weight: 700; text-align: center; }
+.calculation-base-label { min-width: 0; }
+.calculation-base-label > div { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.calculation-base-label b { overflow: hidden; text-overflow: ellipsis; }
+.calculation-base-label small { display: block; margin-top: 2px; color: var(--muted); font-weight: 400; }
+.fx-indicator { flex: 0 0 auto; width: 18px; height: 18px; margin-left: auto; color: #73829a; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
 
 .calculation-note { border-color: #dce5ff; border-radius: 9px; color: #5d6b82; background: #f8faff; }
 .calculation-note.stale-note { border-color: #f1d59f; color: #a36a08; background: #fff8e8; }

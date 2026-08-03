@@ -219,7 +219,7 @@ export function compileForecast(
         field: 'period',
         message:
           line.category === 'cash_inflow' || line.category === 'cash_outflow'
-            ? '直接现金计划必须位于经营期开始至结束后36个月内'
+            ? '其他现金事项必须位于经营期开始至结束后36个月内'
             : '收入和成本行必须位于项目经营周期内',
       })
       return

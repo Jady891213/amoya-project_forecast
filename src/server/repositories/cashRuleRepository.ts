@@ -33,6 +33,7 @@ export class CashRuleRepository {
         sourceLineCode: row.code,
         method: rule.method,
         delayMonths: rule.delayMonths,
+        monthlyValues: rule.monthlyValues ?? {},
         installments: rule.installments.map((item, index) => ({
           id: item.id ?? `${ruleId}-${index + 1}`,
           cashRuleId: ruleId,
@@ -79,6 +80,9 @@ export class CashRuleRepository {
               ratio: item.ratio.trim(),
             }))
           : [],
+        monthlyValues: draft.method === 'manual_monthly'
+          ? Object.fromEntries(Object.entries(draft.monthlyValues ?? {}).flatMap(([period, value]) => value.trim() ? [[period, value.trim()]] : []))
+          : {},
       } : undefined
       return {
         sql: 'UPDATE cfg_model_line SET config_json = ?, updated_at = ? WHERE id = ? AND project_id = ?',

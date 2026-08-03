@@ -99,6 +99,7 @@ export function previewForecastDraft(project: Project, draft: ForecastProjectDra
       sourceLineCode: sourceLine.code,
       method: rule.method,
       delayMonths: rule.delayMonths,
+      monthlyValues: rule.monthlyValues,
       installments: rule.installments.map((item, itemIndex) => ({
         id: item.id ?? `preview-installment-${index + 1}-${itemIndex + 1}`,
         cashRuleId: ruleId,

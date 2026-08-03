@@ -11,9 +11,10 @@ export interface ForecastConfig {
   assumption?: string
   cashRule?: {
     id?: string
-    method: 'disabled' | 'immediate' | 'delayed' | 'installment'
+    method: 'disabled' | 'immediate' | 'delayed' | 'installment' | 'manual_monthly'
     delayMonths: number
     installments: Array<{ id?: string; sequence: number; offsetMonths: number; ratio: string }>
+    monthlyValues?: Record<string, string>
   }
 }
 

@@ -172,7 +172,7 @@ export class ReportWorkbookService {
     report.keyAssumptions.forEach((item) => sheet.addRow(['项目参数', item.code, item.name, item.value, item.unit || '—', '计算批次配置快照']))
     report.overrides.forEach((item) => {
       const line = report.lineBreakdown.find((candidate) => candidate.lineId === item.forecastLineId)
-      const row = sheet.addRow(['人工覆盖', line?.lineCode ?? item.forecastLineId, item.period, number(item.overrideValue), number(item.originalValue), item.reason || '计算工作表人工调整'])
+      const row = sheet.addRow(['人工覆盖', line?.lineCode ?? item.forecastLineId, item.period, number(item.overrideValue), number(item.originalValue), item.reason || '计算底表人工调整'])
       row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: LIGHT_ORANGE } }
       row.getCell(4).note = `原计算值：${item.originalValue}`
     })
@@ -191,7 +191,7 @@ export class ReportWorkbookService {
     report.lineBreakdown.forEach((line) => {
       const values = new Map(line.values.map((item) => [item.period, item.value]))
       const row = sheet.addRow([
-        line.category === 'revenue' ? '收入' : line.category === 'cost' ? '成本' : line.category === 'cash_inflow' ? '直接收款' : '直接付款',
+        line.category === 'revenue' ? '收入' : line.category === 'cost' ? '成本' : line.category === 'cash_inflow' ? '其他收款' : '其他付款',
         line.lineCode,
         line.lineName,
         ...report.monthly.map((item) => number(overrideByCell.get(`${line.lineId}:${item.period}`)?.overrideValue ?? values.get(item.period))),
@@ -223,7 +223,7 @@ export class ReportWorkbookService {
     report.cashSchedule.forEach((item) => sheet.addRow([
       item.sourceLineCode, item.sourceLineName, item.sourcePeriod,
       number(item.netValue), number(item.taxValue), number(item.grossValue),
-      item.ruleMethod === 'immediate' ? '当月100%' : item.ruleMethod === 'delayed' ? '延后收付' : item.ruleMethod === 'installment' ? '分期收付' : '不自动生成',
+      item.ruleMethod === 'immediate' ? '当月收付' : item.ruleMethod === 'delayed' ? '延后收付' : item.ruleMethod === 'installment' ? '分期收付' : item.ruleMethod === 'manual_monthly' ? '逐月指定' : '不生成现金',
       item.settlementPeriod, number(item.value),
     ]))
     ;[16, 26, 12, 15, 15, 15, 14, 12, 15].forEach((width, index) => { sheet.getColumn(index + 1).width = width })

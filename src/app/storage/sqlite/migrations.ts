@@ -1,4 +1,4 @@
-export const CURRENT_SCHEMA_VERSION = 10
+export const CURRENT_SCHEMA_VERSION = 11
 
 /**
  * 当前开发库直接按最新结构创建，不承担旧 Schema 的升级兼容。
@@ -192,7 +192,7 @@ CREATE TABLE fact_cash_schedule_value (
   gross_value_text TEXT NOT NULL,
   settlement_ratio_text TEXT NOT NULL,
   value_text TEXT NOT NULL,
-  rule_method TEXT NOT NULL CHECK (rule_method IN ('immediate', 'delayed', 'installment')),
+  rule_method TEXT NOT NULL CHECK (rule_method IN ('immediate', 'delayed', 'installment', 'manual_monthly')),
   created_at TEXT NOT NULL
 );
 

@@ -107,7 +107,7 @@ export async function initializeSqliteDatabase(
   if (!applied.has(CURRENT_SCHEMA_VERSION)) {
     await database.execute(
       `INSERT INTO sys_schema_migration (version, description, applied_at)
-       VALUES (?, '移除业务模块后的当前开发库结构', ?)`,
+       VALUES (?, '收入成本衍生现金与统一计算底表结构', ?)`,
       [CURRENT_SCHEMA_VERSION, now],
     )
   }

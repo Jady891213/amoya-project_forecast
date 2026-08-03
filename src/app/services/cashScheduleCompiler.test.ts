@@ -19,6 +19,7 @@ function rule(
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
     ...overrides,
+    monthlyValues: overrides.monthlyValues ?? {},
   }
 }
 
@@ -205,5 +206,39 @@ describe('CashScheduleCompiler', () => {
 
     expect(cash.values).toHaveLength(0)
     expect(cash.issues[0].message).toContain('0～36')
+  })
+
+  it('逐月指定收款直接生成对应期间现金并核对含税应收总额', () => {
+    const revenue = line({
+      fixedMonthlyValue: '100',
+      amountBasis: 'tax_exclusive',
+      taxRate: '0',
+      startPeriod: '2026-01',
+      endPeriod: '2026-02',
+    })
+    const forecast = compileForecast(project, [revenue], [])
+    const cash = compileCashSchedule([revenue], forecast.values, [rule(revenue, {
+      method: 'manual_monthly',
+      monthlyValues: { '2026-02': '50', '2026-03': '150' },
+    })])
+
+    expect(cash.issues).toHaveLength(0)
+    expect(cash.values.map((item) => [item.settlementPeriod, item.value, item.ruleMethod]))
+      .toEqual([
+        ['2026-02', '50', 'manual_monthly'],
+        ['2026-03', '150', 'manual_monthly'],
+      ])
+  })
+
+  it('逐月指定收付款与含税结算额不一致时保留计划并给出差额提醒', () => {
+    const revenue = line({ fixedMonthlyValue: '100', startPeriod: '2026-01', endPeriod: '2026-01' })
+    const forecast = compileForecast(project, [revenue], [])
+    const cash = compileCashSchedule([revenue], forecast.values, [rule(revenue, {
+      method: 'manual_monthly',
+      monthlyValues: { '2026-02': '80' },
+    })])
+
+    expect(cash.values[0].value).toBe('80')
+    expect(cash.issues).toEqual([expect.objectContaining({ severity: 'warning', message: expect.stringContaining('差额') })])
   })
 })

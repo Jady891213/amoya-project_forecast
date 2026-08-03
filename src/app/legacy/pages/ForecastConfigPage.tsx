@@ -154,6 +154,7 @@ function toCashRuleDrafts(state: ForecastProjectState): CashRuleDraft[] {
         sourceLineCode: line.code,
         method: rule?.method ?? 'disabled',
         delayMonths: rule?.delayMonths ?? 0,
+        monthlyValues: rule?.monthlyValues ?? {},
         installments:
           rule?.installments.map((item) => ({
             id: item.id,
@@ -396,6 +397,7 @@ export function ForecastConfigPage({
           method: 'immediate',
           delayMonths: 0,
           installments: [],
+          monthlyValues: {},
         },
       ])
     }
@@ -433,6 +435,7 @@ export function ForecastConfigPage({
             method: 'disabled',
             delayMonths: 0,
             installments: [],
+            monthlyValues: {},
             ...patch,
           },
         ]
@@ -741,7 +744,7 @@ export function ForecastConfigPage({
           className={activeSection === 'cash' ? 'active' : ''}
           onClick={() => switchSection('cash')}
         >
-          直接现金计划
+          其他现金事项
           <span>{drafts.filter((item) => item.category === 'cash_inflow' || item.category === 'cash_outflow').length}</span>
         </button>
         <button
@@ -760,14 +763,14 @@ export function ForecastConfigPage({
               {activeSection === 'profit'
                 ? '损益行项目'
                 : activeSection === 'cash'
-                  ? '直接现金计划'
+                  ? '其他现金事项'
                   : '项目参数'}
             </b>
             <span>
               {activeSection === 'profit'
                 ? '维护收入成本、税口径和自动收付款规则'
                 : activeSection === 'cash'
-                  ? '维护不由损益规则生成的直接收款和付款计划'
+                  ? '维护不由损益规则生成的其他收款和付款事项'
                   : '维护公式可引用的固定值和逐月业务参数'}
             </span>
           </div>
@@ -941,7 +944,7 @@ export function ForecastConfigPage({
                   <td colSpan={8} className="empty-cell">
                     {activeSection === 'profit'
                       ? '当前还没有损益行项目，请新增收入或成本项'
-                      : '当前没有直接现金计划；损益行仍可通过规则自动生成现金流'}
+                      : '当前没有其他现金事项；损益行仍可通过规则自动生成现金流'}
                   </td>
                 </tr>
               )}
@@ -1249,6 +1252,7 @@ export function ForecastConfigPage({
                       <option value="immediate">当月100%</option>
                       <option value="delayed">延后N个月100%</option>
                       <option value="installment">分期收付款</option>
+                      <option value="manual_monthly">逐月指定</option>
                     </select>
                   </label>
                   {selectedCashRule?.method === 'delayed' && (
@@ -1373,6 +1377,23 @@ export function ForecastConfigPage({
                           .toString()}
                         %
                       </small>
+                    </div>
+                  )}
+                  {selectedCashRule?.method === 'manual_monthly' && (
+                    <div className="monthly-input-grid cash-rule-monthly-grid">
+                      {cashPeriods.map((period) => (
+                        <label key={period}>{period}
+                          <input
+                            value={selectedCashRule.monthlyValues[period] ?? ''}
+                            onChange={(event) => changeSelectedCashRule({
+                              monthlyValues: {
+                                ...selectedCashRule.monthlyValues,
+                                [period]: event.target.value,
+                              },
+                            })}
+                          />
+                        </label>
+                      ))}
                     </div>
                   )}
                   <div className="tax-preview-card">

@@ -29,6 +29,7 @@ export type CashRuleMethod =
   | 'immediate'
   | 'delayed'
   | 'installment'
+  | 'manual_monthly'
 export type ParameterType = 'fixed' | 'monthly'
 export type ParameterValueType =
   | 'currency'
@@ -273,6 +274,7 @@ export interface CashRule {
   method: CashRuleMethod
   delayMonths: number
   installments: CashInstallment[]
+  monthlyValues: Record<string, string>
   createdAt: string
   updatedAt: string
 }
@@ -291,6 +293,7 @@ export interface CashRuleDraft {
   method: CashRuleMethod
   delayMonths: number
   installments: CashInstallmentDraft[]
+  monthlyValues: Record<string, string>
 }
 
 export interface TaxAmountBreakdown {

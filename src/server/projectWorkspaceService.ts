@@ -181,6 +181,7 @@ export class ProjectWorkspaceService {
           sourceLineCode: rule.sourceLineCode,
           method: rule.method,
           delayMonths: rule.delayMonths,
+          monthlyValues: rule.monthlyValues,
           installments: rule.installments.map((item) => ({
             sequence: item.sequence,
             offsetMonths: item.offsetMonths,
