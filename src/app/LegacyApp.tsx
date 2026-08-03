@@ -48,7 +48,6 @@ const bootStorage: StorageRuntimeInfo = {
 const emptySnapshot: AppSnapshot = {
   departments: [],
   projects: [],
-  modules: [],
   periods: [],
   scenarios: [],
   versions: [],
@@ -96,11 +95,9 @@ export default function App() {
         new MetricRepository(client).list(),
         new FactRepository(client).list(),
       ])
-    const moduleGroups = await Promise.all(projects.map((project) => projectsRepo.listModules(project.id)))
     setSnapshot({
       departments,
       projects,
-      modules: moduleGroups.flat(),
       periods,
       scenarios,
       versions,
@@ -265,7 +262,6 @@ export default function App() {
                 database={database}
                 project={workspaceProject}
                 departments={snapshot.departments}
-                modules={snapshot.modules.filter((module) => module.projectId === workspaceProject.id)}
                 onProjectSave={async (input) => {
                   await projectRepository?.save(input)
                   await refresh()

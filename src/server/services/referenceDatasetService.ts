@@ -2,7 +2,6 @@ import type { DatabaseClient, SqlStatement } from '../../app/storage/types'
 import { REFERENCE_DATASET_ID } from '../../shared/domain/types'
 import {
   REFERENCE_DEPARTMENTS,
-  REFERENCE_MODULES,
   REFERENCE_PROJECTS,
 } from '../../app/mocks/p0ReferenceDataset'
 import { HISTORICAL_PROJECT_CONFIGS } from '../../app/mocks/historicalProjectConfigs'
@@ -50,18 +49,6 @@ export class ReferenceDatasetService {
         params: [
           row.id, row.code ?? null, row.name, row.departmentId,
           row.startPeriod, row.endPeriod, row.status,
-          row.origin, row.datasetId, row.createdAt, row.updatedAt,
-        ],
-      }),
-    )
-    REFERENCE_MODULES.forEach((row) =>
-      statements.push({
-        sql: `INSERT OR REPLACE INTO dim_business_module (
-          id, project_id, code, name, is_common, origin, dataset_id,
-          created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        params: [
-          row.id, row.projectId, row.code, row.name, row.isCommon ? 1 : 0,
           row.origin, row.datasetId, row.createdAt, row.updatedAt,
         ],
       }),

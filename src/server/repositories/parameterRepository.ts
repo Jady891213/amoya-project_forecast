@@ -159,9 +159,9 @@ export class ParameterRepository {
       statements.push({
         sql: `INSERT INTO cfg_model_line (
           id, project_id, code, name, line_type, category,
-          business_module_id, calculation_method, start_period, end_period,
+          calculation_method, start_period, end_period,
           unit, config_json, sort_order, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, 'parameter', NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, 'parameter', NULL, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           name = excluded.name, calculation_method = excluded.calculation_method,
           start_period = excluded.start_period, end_period = excluded.end_period,

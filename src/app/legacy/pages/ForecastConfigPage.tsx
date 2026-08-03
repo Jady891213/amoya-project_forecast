@@ -20,7 +20,6 @@ import type {
   Project,
   Department,
   ProjectInput,
-  ProjectModule,
   ProjectParameterDraft,
   ParameterValueType,
   CashRuleDraft,
@@ -45,7 +44,6 @@ interface Props {
   database: DatabaseClient
   project: Project
   departments: Department[]
-  modules: ProjectModule[]
   onProjectSave: (input: ProjectInput) => Promise<void>
   onCalculated: () => Promise<void>
 }
@@ -95,7 +93,6 @@ function toDrafts(state: ForecastProjectState): ForecastLineDraft[] {
     code: line.code,
     name: line.name,
     category: line.category,
-    businessModuleId: line.businessModuleId,
     forecastMethod: line.forecastMethod,
     startPeriod: line.startPeriod,
     endPeriod: line.endPeriod,
@@ -252,7 +249,6 @@ export function ForecastConfigPage({
   database,
   project,
   departments,
-  modules,
   onProjectSave,
   onCalculated,
 }: Props) {
@@ -266,8 +262,6 @@ export function ForecastConfigPage({
     () => generatePeriods(project.startPeriod, countPeriods(project.startPeriod, project.endPeriod) + 36),
     [project.endPeriod, project.startPeriod],
   )
-  const publicModule =
-    modules.find((module) => module.isCommon) ?? modules[0]
   const [drafts, setDrafts] = useState<ForecastLineDraft[]>([])
   const [parameterDrafts, setParameterDrafts] = useState<
     ProjectParameterDraft[]
@@ -373,16 +367,11 @@ export function ForecastConfigPage({
   }
 
   function addLine(category: ForecastCategory) {
-    if (!publicModule) {
-      setMessage('当前项目缺少公共业务模块')
-      return
-    }
     const draft: ForecastLineDraft = {
       id: `draft-${crypto.randomUUID()}`,
       code: nextAvailableCode('LINE', drafts.map((item) => item.code)),
       name: '',
       category,
-      businessModuleId: publicModule.id,
       forecastMethod: 'fixed_monthly',
       startPeriod: projectPeriods[0],
       endPeriod: projectPeriods[projectPeriods.length - 1],
@@ -681,7 +670,7 @@ export function ForecastConfigPage({
     : []
   const draftPreview = useMemo(
     () =>
-      previewForecastDraft(project, modules, {
+      previewForecastDraft(project, {
         lines: normalizedLineDrafts(),
         parameters: parameterDrafts,
         cashRules: cashRuleDrafts.map((rule) => ({
@@ -692,7 +681,7 @@ export function ForecastConfigPage({
           })),
         })),
       }),
-    [cashRuleDrafts, drafts, modules, parameterDrafts, project],
+    [cashRuleDrafts, drafts, parameterDrafts, project],
   )
   const selectedPreviewValues = selected
     ? draftPreview.values.filter((value) => value.lineId === selected.id)
@@ -738,7 +727,6 @@ export function ForecastConfigPage({
       <ProjectInformationEditor
         project={project}
         departments={departments}
-        modules={modules}
         onSave={onProjectSave}
       />
       <div className="forecast-section-tabs">
@@ -847,7 +835,6 @@ export function ForecastConfigPage({
               <tr>
                 <th style={{ width: 72 }}>分类</th>
                 <th style={{ width: 190 }}>行项目名称</th>
-                <th style={{ width: 130 }}>业务模块</th>
                 <th style={{ width: 120 }}>预测方式</th>
                 <th>主要配置</th>
                 <th style={{ width: 145 }}>生效期间</th>
@@ -888,7 +875,6 @@ export function ForecastConfigPage({
                   >
                     <td><span className={`forecast-category ${draft.category}`}>{categoryLabels[draft.category]}</span></td>
                     <td><strong>{draft.name || '未命名行项目'}</strong><small>{draft.code || '保存后生成编码'}</small></td>
-                    <td>{modules.find((module) => module.id === draft.businessModuleId)?.name ?? '—'}</td>
                     <td>
                       {draft.forecastMethod === 'fixed_monthly'
                         ? '固定月金额'
@@ -1013,14 +999,6 @@ export function ForecastConfigPage({
                         <option value="cash_outflow">付款</option>
                       </>
                     )}
-                  </select>
-                </label>
-                <label>业务模块
-                  <select
-                    value={selected.businessModuleId}
-                    onChange={(event) => changeSelected({ businessModuleId: event.target.value })}
-                  >
-                    {modules.map((module) => <option value={module.id} key={module.id}>{module.name}</option>)}
                   </select>
                 </label>
               </div>

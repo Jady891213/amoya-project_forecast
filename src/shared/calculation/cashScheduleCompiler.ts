@@ -159,7 +159,6 @@ export function compileCashSchedule(
           sourceLineName: line.name,
           projectId: source.projectId,
           departmentId: source.departmentId,
-          businessModuleId: source.businessModuleId,
           sourcePeriod: source.period,
           settlementPeriod: addMonths(source.period, item.offsetMonths),
           scenarioId: source.scenarioId,

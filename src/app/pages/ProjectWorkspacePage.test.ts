@@ -6,7 +6,6 @@ const validProject = {
   departmentId: 'department-1',
   startPeriod: '2026-01',
   endPeriod: '2026-12',
-  modules: [],
 }
 
 describe('项目工作区保存前校验', () => {

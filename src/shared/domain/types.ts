@@ -44,7 +44,7 @@ export type CalculationRunStatus = 'success' | 'failed'
 
 export const BASELINE_SCENARIO_CODE = 'baseline'
 export const WORKING_VERSION_CODE = 'working'
-export const REFERENCE_DATASET_ID = 'historical-project-config-v5'
+export const REFERENCE_DATASET_ID = 'historical-project-config-v6'
 
 export type BaseMetricCode =
   | 'revenue'
@@ -108,16 +108,6 @@ export interface ForecastOverrideDraft {
   reason: string
 }
 
-export interface ProjectModule extends OriginFields {
-  id: string
-  projectId: string
-  code: string
-  name: string
-  isCommon: boolean
-  createdAt: string
-  updatedAt: string
-}
-
 export interface PeriodDimension {
   period: string
   displayName: string
@@ -171,7 +161,6 @@ export interface BaseFact extends OriginFields {
   period: string
   scenarioId: string
   versionId: string
-  businessModuleId: string
   metricCode: BaseMetricCode
   value: string
   sourceLabel: string
@@ -187,7 +176,6 @@ export interface ForecastLine {
   name: string
   category: ForecastCategory
   metricCode: BaseMetricCode
-  businessModuleId: string
   forecastMethod: ForecastMethod
   startPeriod: string
   endPeriod: string
@@ -214,7 +202,6 @@ export interface ForecastLineDraft {
   code?: string
   name: string
   category: ForecastCategory
-  businessModuleId: string
   forecastMethod: ForecastMethod
   startPeriod: string
   endPeriod: string
@@ -317,7 +304,6 @@ export interface CompiledLineValue {
   lineId: string
   projectId: string
   departmentId: string
-  businessModuleId: string
   period: string
   scenarioId: string
   versionId: string
@@ -335,7 +321,6 @@ export interface CompiledCashScheduleValue {
   sourceLineName: string
   projectId: string
   departmentId: string
-  businessModuleId: string
   sourcePeriod: string
   settlementPeriod: string
   scenarioId: string
@@ -423,7 +408,6 @@ export interface CalculatedFact {
   period: string
   scenarioId: string
   versionId: string
-  businessModuleId: string | 'all'
   metricCode: CalculatedMetricCode
   value: string | null
   source: 'calculated'
@@ -444,7 +428,6 @@ export interface ProjectInput {
   departmentId: string
   startPeriod: string
   endPeriod: string
-  modules: Array<{ code: string; name: string }>
 }
 
 export interface ProjectWorkspaceDraft {
@@ -454,7 +437,6 @@ export interface ProjectWorkspaceDraft {
 
 export interface ProjectWorkspace {
   project: Project
-  modules: ProjectModule[]
   draftRevision: number
   forecast: ForecastProjectState
 }
@@ -490,7 +472,6 @@ export interface ReportQuery {
   projectId: string
   scenarioId: string
   versionId: string
-  businessModuleId?: string
 }
 
 export interface MonthlyMetricRow {
@@ -525,8 +506,6 @@ export interface ProjectReport {
   query: ReportQuery
   scenario: Scenario
   version: Version
-  modules: ProjectModule[]
-  selectedModule?: ProjectModule
   hasFacts: boolean
   factCount: number
   monthly: MonthlyMetricRow[]

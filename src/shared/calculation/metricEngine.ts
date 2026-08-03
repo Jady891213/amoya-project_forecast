@@ -38,7 +38,6 @@ function value(decimal: Decimal): string {
 function calculatedFact(
   project: Project,
   period: string,
-  businessModuleId: string | undefined,
   metric: MetricDefinition,
   metricValue: Decimal | null,
 ): CalculatedFact {
@@ -47,7 +46,6 @@ function calculatedFact(
     period,
     scenarioId: 'baseline',
     versionId: 'working',
-    businessModuleId: businessModuleId ?? 'all',
     metricCode: metric.code as CalculatedFact['metricCode'],
     value: metricValue === null ? null : value(metricValue),
     source: 'calculated',
@@ -60,7 +58,6 @@ export function calculateMetrics(
   project: Project,
   facts: BaseFact[],
   metricDefinitions: MetricDefinition[],
-  businessModuleId?: string,
 ): MetricEngineResult {
   const operationEndPeriod = project.endPeriod
   const reportEndPeriod = [
@@ -72,10 +69,6 @@ export function calculateMetrics(
   const reportDuration =
     (endYear - startYear) * 12 + (endMonth - startMonth) + 1
   const periods = generatePeriods(project.startPeriod, reportDuration)
-  const filteredFacts = businessModuleId
-    ? facts.filter((fact) => fact.businessModuleId === businessModuleId)
-    : facts
-
   let cumulativeCashFlow = ZERO
   const calculatedDefinitions = new Map(
     metricDefinitions
@@ -85,14 +78,14 @@ export function calculateMetrics(
   const calculatedFacts: CalculatedFact[] = []
 
   const monthly = periods.map((period) => {
-    const revenue = sumMetric(filteredFacts, period, 'revenue')
-    const cost = sumMetric(filteredFacts, period, 'cost')
+    const revenue = sumMetric(facts, period, 'revenue')
+    const cost = sumMetric(facts, period, 'cost')
     const grossProfit = revenue.minus(cost)
     const grossMargin = revenue.isZero()
       ? null
       : grossProfit.dividedBy(revenue)
-    const cashInflow = sumMetric(filteredFacts, period, 'cash_inflow')
-    const cashOutflow = sumMetric(filteredFacts, period, 'cash_outflow')
+    const cashInflow = sumMetric(facts, period, 'cash_inflow')
+    const cashOutflow = sumMetric(facts, period, 'cash_outflow')
     const netCashFlow = cashInflow.minus(cashOutflow)
     cumulativeCashFlow = cumulativeCashFlow.plus(netCashFlow)
 
@@ -112,7 +105,6 @@ export function calculateMetrics(
           calculatedFact(
             project,
             period,
-            businessModuleId,
             definition,
             metricValue,
           ),

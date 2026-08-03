@@ -222,7 +222,6 @@ export function ProjectCenterPage({
       {dialogOpen && (
         <ProjectDialog
           departments={snapshot.departments}
-          modules={[]}
           onClose={() => setDialogOpen(false)}
           onSave={saveProject}
         />

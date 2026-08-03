@@ -26,16 +26,14 @@ function fact(
   period: string,
   metricCode: BaseMetricCode,
   value: number,
-  moduleId = 'module-a',
 ): BaseFact {
   return {
-    id: `${period}:${metricCode}:${moduleId}`,
+    id: `${period}:${metricCode}:${value}`,
     projectId: project.id,
     departmentId: project.departmentId,
     period,
     scenarioId: `${project.id}:${BASELINE_SCENARIO_CODE}`,
     versionId: `${project.id}:${WORKING_VERSION_CODE}`,
-    businessModuleId: moduleId,
     metricCode,
     value: String(value),
     sourceLabel: '测试',
@@ -108,12 +106,12 @@ describe('MetricEngine', () => {
     expect(result.summary.revenue).toBe('300')
   })
 
-  it('按业务模块过滤且毛利率使用汇总值重新计算', () => {
+  it('多条基础事实汇总后重新计算毛利率', () => {
     const facts = [
-      fact('2026-01', 'revenue', 100, 'module-a'),
-      fact('2026-01', 'cost', 60, 'module-a'),
-      fact('2026-01', 'revenue', 300, 'module-b'),
-      fact('2026-01', 'cost', 270, 'module-b'),
+      fact('2026-01', 'revenue', 100),
+      fact('2026-01', 'cost', 60),
+      fact('2026-01', 'revenue', 300),
+      fact('2026-01', 'cost', 270),
     ]
 
     const all = calculateMetrics(
@@ -121,15 +119,7 @@ describe('MetricEngine', () => {
       facts,
       SYSTEM_METRICS,
     )
-    const moduleA = calculateMetrics(
-      { ...project, endPeriod: project.startPeriod },
-      facts,
-      SYSTEM_METRICS,
-      'module-a',
-    )
-
     expect(all.summary.grossMargin).toBe('0.175')
-    expect(moduleA.summary.grossMargin).toBe('0.4')
   })
 
   it('区分无需垫资与预测期内未转正', () => {

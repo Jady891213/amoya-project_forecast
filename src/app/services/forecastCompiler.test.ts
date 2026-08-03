@@ -3,13 +3,12 @@ import type {
   ForecastMonthlyValue,
 } from '../domain/types'
 import { buildForecastConfigHash, compileForecast } from './forecastCompiler'
-import { line, module, project } from './forecastCompiler.testFixtures'
+import { line, project } from './forecastCompiler.testFixtures'
 
 describe('ForecastCompiler', () => {
   it('固定月金额只在生效期间展开并保持十进制精度', () => {
     const result = compileForecast(
       project,
-      [module],
       [line({ startPeriod: '2026-02', endPeriod: '2026-03' })],
       [],
     )
@@ -35,7 +34,7 @@ describe('ForecastCompiler', () => {
       { lineId: monthlyLine.id, period: '2026-03', value: '-5' },
     ]
 
-    const result = compileForecast(project, [module], [monthlyLine], values)
+    const result = compileForecast(project, [monthlyLine], values)
 
     expect(result.values.map((item) => item.value)).toEqual(['20', '0', '-5'])
     expect(result.issues).toEqual(
@@ -88,7 +87,7 @@ describe('ForecastCompiler', () => {
       endPeriod: '2026-01',
     })
 
-    const result = compileForecast(project, [module], [revenue, cost], [])
+    const result = compileForecast(project, [revenue, cost], [])
     const costValue = result.values.find((item) => item.lineId === cost.id)
     expect(result.issues).toHaveLength(0)
     expect(costValue).toEqual(
@@ -103,7 +102,6 @@ describe('ForecastCompiler', () => {
   it('拒绝非法税率', () => {
     const result = compileForecast(
       project,
-      [module],
       [line({ taxRate: '1' })],
       [],
     )
@@ -136,7 +134,7 @@ describe('ForecastCompiler', () => {
       startPeriod: '2026-01',
       endPeriod: '2026-01',
     })
-    const result = compileForecast(project, [module], [revenue, cost], [], [], [], [{
+    const result = compileForecast(project, [revenue, cost], [], [], [], [{
       id: 'override-1',
       projectId: project.id,
       forecastLineId: revenue.id,
@@ -157,7 +155,7 @@ describe('ForecastCompiler', () => {
 
   it('项目计算坐标或期间覆盖变化会改变完整输入摘要', () => {
     const lines = [line()]
-    const base = buildForecastConfigHash(lines, [], [], [], [], project, [module], [])
+    const base = buildForecastConfigHash(lines, [], [], [], [], project, [])
     const changedCoordinate = buildForecastConfigHash(
       lines,
       [],
@@ -165,10 +163,9 @@ describe('ForecastCompiler', () => {
       [],
       [],
       { ...project, departmentId: 'department-other' },
-      [module],
       [],
     )
-    const changedOverride = buildForecastConfigHash(lines, [], [], [], [], project, [module], [{
+    const changedOverride = buildForecastConfigHash(lines, [], [], [], [], project, [{
       id: 'override-1', projectId: project.id, forecastLineId: lines[0].id,
       period: '2026-01', originalValue: '100.25', overrideValue: '101',
       reason: '', updatedAt: '2026-01-01T00:00:00.000Z',
@@ -186,7 +183,7 @@ describe('ForecastCompiler', () => {
       startPeriod: '2026-01',
       endPeriod: '2026-01',
     })
-    const result = compileForecast(project, [module], [formulaLine], [], [], [], [{
+    const result = compileForecast(project, [formulaLine], [], [], [], [{
       id: 'override-error',
       projectId: project.id,
       forecastLineId: formulaLine.id,

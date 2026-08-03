@@ -121,7 +121,6 @@ export function ProjectReportPage({
   view,
   onReturnToForecast,
 }: Props) {
-  const [businessModuleId, setBusinessModuleId] = useState('')
   const [report, setReport] = useState<ProjectReport | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -142,7 +141,6 @@ export function ProjectReportPage({
   const scenario = snapshot.scenarios.find((item) => item.isDefault)
   const version = snapshot.versions.find((item) => item.status === 'working')
 
-  useEffect(() => setBusinessModuleId(''), [requestedProjectId])
   useEffect(() => {
     let cancelled = false
     async function load() {
@@ -157,20 +155,13 @@ export function ProjectReportPage({
           projectId: requestedProjectId,
           scenarioId: scenario.id,
           versionId: version.id,
-          businessModuleId: businessModuleId || undefined,
         })
         const state = await calculation.getProjectState(requestedProjectId)
         const breakdown = state.latestRun
-          ? await lineValues.listBreakdown(
-              state.latestRun.id,
-              businessModuleId || undefined,
-            )
+          ? await lineValues.listBreakdown(state.latestRun.id)
           : []
         const schedule = state.latestRun
-          ? await cashSchedules.listByRun(
-              state.latestRun.id,
-              businessModuleId || undefined,
-            )
+          ? await cashSchedules.listByRun(state.latestRun.id)
           : []
         if (!cancelled) {
           setReport(result)
@@ -187,7 +178,6 @@ export function ProjectReportPage({
     void load()
     return () => { cancelled = true }
   }, [
-    businessModuleId,
     calculation,
     cashSchedules,
     lineValues,
@@ -227,12 +217,6 @@ export function ProjectReportPage({
             </button>
           </>
         )}
-        <label>业务模块
-          <select value={businessModuleId} onChange={(event) => setBusinessModuleId(event.target.value)}>
-            <option value="">全部业务模块</option>
-            {report.modules.map((module) => <option value={module.id} key={module.id}>{module.name}</option>)}
-          </select>
-        </label>
         <span className="readonly-mark">{report.scenario.name}</span>
         <span className="readonly-mark">{report.version.name}</span>
       </div>

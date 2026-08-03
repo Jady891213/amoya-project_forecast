@@ -1,4 +1,4 @@
-import type { ForecastLine, Project, ProjectModule } from '../domain/types'
+import type { ForecastLine, Project } from '../domain/types'
 
 export const project: Project = {
   id: 'project-forecast',
@@ -14,17 +14,6 @@ export const project: Project = {
   updatedAt: '2026-01-01T00:00:00.000Z',
 }
 
-export const module: ProjectModule = {
-  id: 'module-public',
-  projectId: project.id,
-  code: 'PUBLIC',
-  name: '公共',
-  isCommon: true,
-  origin: 'user',
-  createdAt: '2026-01-01T00:00:00.000Z',
-  updatedAt: '2026-01-01T00:00:00.000Z',
-}
-
 export function line(
   overrides: Partial<ForecastLine> = {},
 ): ForecastLine {
@@ -35,7 +24,6 @@ export function line(
     name: '基础收入',
     category: 'revenue',
     metricCode: 'revenue',
-    businessModuleId: module.id,
     forecastMethod: 'fixed_monthly',
     startPeriod: '2026-01',
     endPeriod: '2026-04',

@@ -1,5 +1,5 @@
 import type { DatabaseClient } from '../../app/storage/types'
-import type { PeriodDimension, ProjectModule, Scenario, Version } from '../../shared/domain/types'
+import type { PeriodDimension, Scenario, Version } from '../../shared/domain/types'
 import { ProjectRepository } from './projectRepository'
 
 interface PeriodRow {
@@ -30,10 +30,6 @@ export class DimensionRepository {
       monthNumber: row.month_number,
       sortKey: row.sort_key,
     }))
-  }
-
-  listModules(projectId: string): Promise<ProjectModule[]> {
-    return this.projects.listModules(projectId)
   }
 
   listScenarios(): Promise<Scenario[]> {

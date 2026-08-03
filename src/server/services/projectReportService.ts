@@ -35,10 +35,9 @@ export class ProjectReportService {
     const project = projectOverride ?? await this.projects.get(query.projectId)
     if (!project) throw new Error('项目不存在')
 
-    const [department, modules, scenarios, versions, metricDefinitions] =
+    const [department, scenarios, versions, metricDefinitions] =
       await Promise.all([
         this.departments.get(project.departmentId),
-        this.projects.listModules(project.id),
         this.projects.listScenarios(),
         this.projects.listVersions(),
         this.metrics.list(),
@@ -48,23 +47,13 @@ export class ProjectReportService {
     if (!scenario) throw new Error('场景不存在')
     if (!version) throw new Error('版本不存在')
 
-    const selectedModule = query.businessModuleId
-      ? modules.find((module) => module.id === query.businessModuleId)
-      : undefined
-    const calculation = calculateMetrics(
-      project,
-      facts,
-      metricDefinitions,
-      query.businessModuleId,
-    )
+    const calculation = calculateMetrics(project, facts, metricDefinitions)
     return {
       project,
       department,
       query,
       scenario,
       version,
-      modules,
-      selectedModule,
       hasFacts: facts.length > 0,
       factCount: facts.length,
       monthly: calculation.monthly,

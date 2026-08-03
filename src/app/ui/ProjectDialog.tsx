@@ -1,39 +1,22 @@
-import { useEffect, useState, type FormEvent } from 'react'
-import { Plus, Trash2, X } from 'lucide-react'
+import { useState, type FormEvent } from 'react'
+import { X } from 'lucide-react'
 import type {
   Department,
   Project,
   ProjectInput,
-  ProjectModule,
 } from '../domain/types'
 import { addMonths } from '../domain/periods'
-
-interface ModuleDraft {
-  key: string
-  code: string
-  name: string
-}
 
 interface ProjectDialogProps {
   project?: Project
   departments: Department[]
-  modules: ProjectModule[]
   onClose: () => void
   onSave: (input: ProjectInput) => Promise<void>
-}
-
-function toModuleDrafts(modules: ProjectModule[]): ModuleDraft[] {
-  return modules.map((module) => ({
-    key: module.id,
-    code: module.code,
-    name: module.name,
-  }))
 }
 
 export function ProjectDialog({
   project,
   departments,
-  modules,
   onClose,
   onSave,
 }: ProjectDialogProps) {
@@ -53,40 +36,8 @@ export function ProjectDialog({
   const [endPeriod, setEndPeriod] = useState(
     project?.endPeriod ?? addMonths(new Date().toISOString().slice(0, 7), 11),
   )
-  const [moduleDrafts, setModuleDrafts] = useState<ModuleDraft[]>(
-    toModuleDrafts(modules),
-  )
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
-
-  useEffect(() => {
-    setModuleDrafts(toModuleDrafts(modules))
-  }, [modules])
-
-  function addModule() {
-    setModuleDrafts((current) => [
-      ...current,
-      { key: crypto.randomUUID(), code: '', name: '' },
-    ])
-  }
-
-  function updateModule(
-    key: string,
-    field: 'code' | 'name',
-    value: string,
-  ) {
-    setModuleDrafts((current) =>
-      current.map((module) =>
-        module.key === key ? { ...module, [field]: value } : module,
-      ),
-    )
-  }
-
-  function removeModule(key: string) {
-    setModuleDrafts((current) =>
-      current.filter((module) => module.key !== key),
-    )
-  }
 
   async function submit(event: FormEvent) {
     event.preventDefault()
@@ -100,10 +51,6 @@ export function ProjectDialog({
         departmentId,
         startPeriod,
         endPeriod,
-        modules: moduleDrafts.map(({ code: moduleCode, name: moduleName }) => ({
-          code: moduleCode,
-          name: moduleName,
-        })),
       })
       onClose()
     } catch (reason) {
@@ -185,50 +132,6 @@ export function ProjectDialog({
             />
           </label>
         </div>
-
-        <section className="module-editor">
-          <div className="section-heading">
-            <div>
-              <h3>业务模块</h3>
-              <p className="muted">预测行项目可归属到下列业务模块；系统始终保留“公共”模块。</p>
-            </div>
-            <button type="button" className="button ghost" onClick={addModule}>
-              <Plus size={14} /> 添加模块
-            </button>
-          </div>
-          {moduleDrafts.length === 0 ? (
-            <div className="inline-empty">当前项目未设置业务模块</div>
-          ) : (
-            <div className="module-drafts">
-              {moduleDrafts.map((module) => (
-                <div className="module-draft-row" key={module.key}>
-                  <input
-                    value={module.code}
-                    onChange={(event) =>
-                      updateModule(module.key, 'code', event.target.value)
-                    }
-                    placeholder="模块编码"
-                  />
-                  <input
-                    value={module.name}
-                    onChange={(event) =>
-                      updateModule(module.key, 'name', event.target.value)
-                    }
-                    placeholder="模块名称"
-                  />
-                  <button
-                    type="button"
-                    className="icon-button danger"
-                    onClick={() => removeModule(module.key)}
-                    aria-label="删除业务模块"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
 
         {error && <div className="form-error">{error}</div>}
         <div className="modal-actions">

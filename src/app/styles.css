@@ -2310,6 +2310,16 @@ textarea:focus {
   white-space: nowrap;
 }
 .compact-line-editor .editor-head small { display: block; margin-top: 1px; color: var(--muted); font-size: 12px; }
+.drawer-title-button {
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+  cursor: text;
+}
+.drawer-title-input { width: min(300px, 100%); height: 28px; padding: 0 6px; font-size: 13px; font-weight: 700; }
 .line-editor-tabs {
   height: 39px;
   flex: 0 0 39px;
@@ -2468,7 +2478,6 @@ textarea:focus {
 .parameter-delete { height: 32px; padding: 0 8px; white-space: nowrap; }
 .parameter-description { margin-top: 10px; }
 .parameter-description textarea { min-height: 48px; resize: vertical; }
-.project-measurement-modules { margin: 0; padding: 9px 12px; border-top: 0; border-bottom: 1px solid var(--line); background: #fcfdff; }
 .forecast-config-switcher button { min-height: 42px; padding-top: 8px; padding-bottom: 8px; }
 .new-project-form h2 { margin: 0; font-size: 14px; }
 .new-project-section-title { margin-top: 18px !important; padding-top: 14px; border-top: 1px solid var(--line); }
@@ -2841,12 +2850,22 @@ textarea:focus {
 }
 .project-config-shell > .forecast-editor .editor-head { position: sticky; top: 0; z-index: 5; }
 .project-config-shell > .forecast-editor .editor-form { flex: 1; min-height: 0; overflow: auto; padding-bottom: 28px; }
+.project-config-shell > .forecast-editor .compact-editor-form { gap: 8px; padding: 8px 10px 18px; }
+.project-config-shell > .forecast-editor .compact-editor-form label { gap: 4px; }
+.project-config-shell > .forecast-editor .compact-editor-form input,
+.project-config-shell > .forecast-editor .compact-editor-form select { height: 30px; }
+.project-config-shell > .forecast-editor .drawer-section-title { margin-top: 0; padding: 6px 0 4px; }
+.project-config-shell > .forecast-editor .editor-rule-card { padding: 0; border: 0; border-radius: 0; background: transparent; }
+.project-config-shell > .forecast-editor .editor-rule-card h3 { margin-bottom: 5px; }
+.project-config-shell > .forecast-editor .editor-rule-card p { margin-top: 4px; }
+.project-config-shell > .forecast-editor .assumption-editor { min-height: 56px !important; }
+.project-config-shell > .forecast-editor .line-source-summary { padding: 7px 8px; }
+.preview-line-error { color: #b42318 !important; }
 
 .project-information-card-head > div { min-width: 0; display: flex; align-items: baseline; gap: 10px; }
 .project-code-subtitle { color: #98a2b3; font-size: 12px; font-weight: 500; }
 .project-information-equal-readonly { grid-template-columns: minmax(190px, 1.35fr) repeat(4, minmax(118px, 1fr)); }
 .project-information-equal-form { grid-template-columns: minmax(190px, 1.35fr) repeat(3, minmax(138px, 1fr)) 130px; }
-.project-information-equal-form .project-measurement-modules { grid-column: 1 / -1; }
 
 .unified-model-section { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .unified-model-toolbar {

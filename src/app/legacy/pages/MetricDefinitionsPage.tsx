@@ -24,7 +24,7 @@ export function MetricDefinitionsPage({ metrics }: { metrics: MetricDefinition[]
           <span>指标总数 <b>{metrics.length}</b></span>
           <span>基础指标 <b>{metrics.filter((item) => item.metricType === 'base').length}</b></span>
           <span>系统计算指标 <b>{metrics.filter((item) => item.metricType === 'calculated').length}</b></span>
-          <span>维度口径 <b>项目 · 部门 · 期间 · 场景 · 版本 · 业务模块</b></span>
+          <span>维度口径 <b>项目 · 部门 · 期间 · 场景 · 版本</b></span>
         </div>
         <section className="data-panel">
           <table className="data-table">

@@ -8,7 +8,6 @@ function line(category: ForecastLineDraft['category']): ForecastLineDraft {
     code: 'LINE-002',
     name: '测试预测项',
     category,
-    businessModuleId: 'module-public',
     forecastMethod: 'fixed_monthly',
     startPeriod: '2026-01',
     endPeriod: '2026-12',

@@ -19,7 +19,7 @@ export interface ForecastConfig {
 
 interface ModelLineRow {
   id: string; project_id: string; code: string; name: string
-  category: ForecastLine['category']; business_module_id: string
+  category: ForecastLine['category']
   calculation_method: ForecastLine['forecastMethod']; start_period: string
   end_period: string; config_json: string; sort_order: number
   created_at: string; updated_at: string
@@ -35,7 +35,6 @@ function fromRow(row: ModelLineRow): ForecastLine {
   return {
     id: row.id, projectId: row.project_id, code: row.code, name: row.name,
     category: row.category, metricCode: row.category,
-    businessModuleId: row.business_module_id,
     forecastMethod: row.calculation_method,
     startPeriod: row.start_period, endPeriod: row.end_period,
     fixedMonthlyValue: config.fixedMonthlyValueText,
@@ -60,7 +59,7 @@ export class ForecastLineRepository {
 
   async list(projectId: string): Promise<ForecastLine[]> {
     const rows = await this.database.query<ModelLineRow>(
-      `SELECT id, project_id, code, name, category, business_module_id,
+      `SELECT id, project_id, code, name, category,
               calculation_method, start_period, end_period, config_json,
               sort_order, created_at, updated_at
        FROM cfg_model_line
@@ -123,19 +122,19 @@ export class ForecastLineRepository {
       statements.push({
         sql: `INSERT INTO cfg_model_line (
           id, project_id, code, name, line_type, category,
-          business_module_id, calculation_method, start_period, end_period,
+          calculation_method, start_period, end_period,
           unit, config_json, sort_order, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '元', ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '元', ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           name = excluded.name, line_type = excluded.line_type,
-          category = excluded.category, business_module_id = excluded.business_module_id,
+          category = excluded.category,
           calculation_method = excluded.calculation_method,
           start_period = excluded.start_period, end_period = excluded.end_period,
           config_json = excluded.config_json, sort_order = excluded.sort_order,
           updated_at = excluded.updated_at`,
         params: [id, projectId, code, draft.name.trim(),
           draft.category === 'revenue' || draft.category === 'cost' ? 'profit' : 'cash',
-          draft.category, draft.businessModuleId, draft.forecastMethod,
+          draft.category, draft.forecastMethod,
           draft.startPeriod, draft.endPeriod, JSON.stringify(config), sortOrder,
           previous?.createdAt ?? now, now],
       })

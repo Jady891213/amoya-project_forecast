@@ -1,29 +1,20 @@
 import { useEffect, useState } from 'react'
-import { Plus, Save, Trash2 } from 'lucide-react'
+import { Save } from 'lucide-react'
 import type {
   Department,
   Project,
   ProjectInput,
-  ProjectModule,
 } from '../domain/types'
-
-interface ModuleDraft {
-  key: string
-  code: string
-  name: string
-}
 
 interface Props {
   project: Project
   departments: Department[]
-  modules: ProjectModule[]
   onSave: (input: ProjectInput) => Promise<void>
 }
 
 export function ProjectInformationEditor({
   project,
   departments,
-  modules,
   onSave,
 }: Props) {
   const [draft, setDraft] = useState<ProjectInput>({
@@ -33,9 +24,7 @@ export function ProjectInformationEditor({
     departmentId: project.departmentId,
     startPeriod: project.startPeriod,
     endPeriod: project.endPeriod,
-    modules: [],
   })
-  const [moduleDrafts, setModuleDrafts] = useState<ModuleDraft[]>([])
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
 
@@ -47,18 +36,8 @@ export function ProjectInformationEditor({
       departmentId: project.departmentId,
       startPeriod: project.startPeriod,
       endPeriod: project.endPeriod,
-      modules: [],
     })
-    setModuleDrafts(
-      modules
-        .filter((module) => !module.isCommon)
-        .map((module) => ({
-          key: module.id,
-          code: module.code,
-          name: module.name,
-        })),
-    )
-  }, [modules, project])
+  }, [project])
 
   function patch(values: Partial<ProjectInput>) {
     setDraft((current) => ({ ...current, ...values }))
@@ -69,10 +48,7 @@ export function ProjectInformationEditor({
     setSaving(true)
     setMessage('')
     try {
-      await onSave({
-        ...draft,
-        modules: moduleDrafts.map(({ code, name }) => ({ code, name })),
-      })
+      await onSave(draft)
       setMessage('项目信息已保存')
     } catch (reason) {
       setMessage(reason instanceof Error ? reason.message : '项目信息保存失败')
@@ -86,7 +62,7 @@ export function ProjectInformationEditor({
       <div className="project-information-head">
         <div>
           <b>项目信息</b>
-          <span>直接在项目工作区维护；项目周期或模块被预测行引用时会阻止不安全修改。</span>
+          <span>直接在项目工作区维护；项目周期被预测行引用时会阻止不安全修改。</span>
         </div>
         {message && <span className="project-information-message">{message}</span>}
         <button className="btn" disabled={saving} onClick={() => void save()}>
@@ -113,35 +89,6 @@ export function ProjectInformationEditor({
         <label>结束期间
           <input type="month" value={draft.endPeriod} onChange={(event) => patch({ endPeriod: event.target.value })} />
         </label>
-      </div>
-      <div className="project-module-strip">
-        <span className="project-module-title">业务模块</span>
-        <span className="project-module-fixed">PUBLIC · 公共</span>
-        {moduleDrafts.map((module) => (
-          <span className="project-module-draft" key={module.key}>
-            <input
-              aria-label="业务模块编码"
-              value={module.code}
-              placeholder="模块编码"
-              onChange={(event) => setModuleDrafts((current) => current.map((item) => item.key === module.key ? { ...item, code: event.target.value } : item))}
-            />
-            <input
-              aria-label="业务模块名称"
-              value={module.name}
-              placeholder="模块名称"
-              onChange={(event) => setModuleDrafts((current) => current.map((item) => item.key === module.key ? { ...item, name: event.target.value } : item))}
-            />
-            <button
-              className="icon-button"
-              aria-label="移除业务模块"
-              onClick={() => setModuleDrafts((current) => current.filter((item) => item.key !== module.key))}
-            ><Trash2 size={13} /></button>
-          </span>
-        ))}
-        <button
-          className="btn compact"
-          onClick={() => setModuleDrafts((current) => [...current, { key: crypto.randomUUID(), code: '', name: '' }])}
-        ><Plus size={13} />添加模块</button>
       </div>
     </section>
   )

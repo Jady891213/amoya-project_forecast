@@ -2,7 +2,6 @@ import type { DatabaseClient, SqlStatement } from '../../app/storage/types'
 import type {
   Project,
   ProjectInput,
-  ProjectModule,
   Scenario,
   Version,
 } from '../../shared/domain/types'
@@ -18,18 +17,6 @@ interface ProjectRow {
   attributes_json: string | null
   draft_revision: number
   origin: Project['origin']
-  dataset_id: string | null
-  created_at: string
-  updated_at: string
-}
-
-interface ModuleRow {
-  id: string
-  project_id: string
-  code: string
-  name: string
-  is_common: number
-  origin: ProjectModule['origin']
   dataset_id: string | null
   created_at: string
   updated_at: string
@@ -74,20 +61,6 @@ function projectFromRow(row: ProjectRow): Project {
   }
 }
 
-function moduleFromRow(row: ModuleRow): ProjectModule {
-  return {
-    id: row.id,
-    projectId: row.project_id,
-    code: row.code,
-    name: row.name,
-    isCommon: Boolean(row.is_common),
-    origin: row.origin,
-    datasetId: row.dataset_id ?? undefined,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  }
-}
-
 export function scenarioFromRow(row: ScenarioRow): Scenario {
   return {
     id: row.id,
@@ -113,21 +86,6 @@ export function versionFromRow(row: VersionRow): Version {
   }
 }
 
-function normalizeModules(modules: ProjectInput['modules']) {
-  const seen = new Set<string>(['PUBLIC'])
-  return modules
-    .map((module) => ({
-      code: module.code.trim().toUpperCase(),
-      name: module.name.trim(),
-    }))
-    .filter((module) => module.code && module.name && module.code !== 'PUBLIC')
-    .filter((module) => {
-      if (seen.has(module.code)) return false
-      seen.add(module.code)
-      return true
-    })
-}
-
 function invalidProjectInput(message: string): never {
   throw Object.assign(new Error(message), { code: 'INVALID_REQUEST' })
 }
@@ -149,17 +107,6 @@ export class ProjectRepository {
       [id],
     )
     return rows[0] ? projectFromRow(rows[0]) : undefined
-  }
-
-  async listModules(projectId: string): Promise<ProjectModule[]> {
-    return (
-      await this.database.query<ModuleRow>(
-        `SELECT * FROM dim_business_module
-         WHERE project_id = ?
-         ORDER BY is_common DESC, code`,
-        [projectId],
-      )
-    ).map(moduleFromRow)
   }
 
   async listScenarios(): Promise<Scenario[]> {
@@ -237,9 +184,6 @@ export class ProjectRepository {
       updatedAt: now,
     }
 
-    const existingModules = existing ? await this.listModules(projectId) : []
-    const normalizedModules = normalizeModules(input.modules)
-    const requestedCodes = new Set(['PUBLIC', ...normalizedModules.map((m) => m.code)])
     if (
       existing &&
       (existing.startPeriod !== startPeriod ||
@@ -255,21 +199,6 @@ export class ProjectRepository {
       )
       if ((periodConflicts[0]?.count ?? 0) > 0) {
         invalidProjectInput('新项目周期无法覆盖已有预测行，请先调整行项目生效期间')
-      }
-    }
-    const removedModuleIds = existingModules
-      .filter((module) => !requestedCodes.has(module.code))
-      .map((module) => module.id)
-    if (removedModuleIds.length > 0) {
-      const placeholders = removedModuleIds.map(() => '?').join(', ')
-      const moduleConflicts = await this.database.query<{ count: number }>(
-        `SELECT COUNT(*) AS count
-         FROM cfg_model_line
-         WHERE business_module_id IN (${placeholders})`,
-        removedModuleIds,
-      )
-      if ((moduleConflicts[0]?.count ?? 0) > 0) {
-        throw new Error('待删除业务模块已被预测行引用，请先调整对应行项目')
       }
     }
     const statements: SqlStatement[] = [
@@ -300,54 +229,6 @@ export class ProjectRepository {
         ],
       },
     ]
-
-    const common = existingModules.find((module) => module.code === 'PUBLIC')
-    const modules = [
-      {
-        id: common?.id ?? crypto.randomUUID(),
-        code: 'PUBLIC',
-        name: '公共',
-        isCommon: true,
-        createdAt: common?.createdAt ?? now,
-      },
-      ...normalizedModules.map((module) => {
-        const previous = existingModules.find((item) => item.code === module.code)
-        return {
-          id: previous?.id ?? crypto.randomUUID(),
-          ...module,
-          isCommon: false,
-          createdAt: previous?.createdAt ?? now,
-        }
-      }),
-    ]
-    modules.forEach((module) => {
-      statements.push({
-        sql: `INSERT INTO dim_business_module (
-          id, project_id, code, name, is_common, origin, dataset_id,
-          created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, 'user', NULL, ?, ?)
-        ON CONFLICT(project_id, code) DO UPDATE SET
-          name = excluded.name, is_common = excluded.is_common,
-          updated_at = excluded.updated_at`,
-        params: [
-          module.id,
-          projectId,
-          module.code,
-          module.name,
-          module.isCommon ? 1 : 0,
-          module.createdAt,
-          now,
-        ],
-      })
-    })
-    existingModules
-      .filter((module) => !requestedCodes.has(module.code))
-      .forEach((module) =>
-        statements.push({
-          sql: 'DELETE FROM dim_business_module WHERE id = ? AND is_common = 0',
-          params: [module.id],
-        }),
-      )
 
     await this.database.batch(statements)
     return project

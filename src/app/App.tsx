@@ -31,7 +31,7 @@ type Route =
   | { type: 'metrics' }
 
 const emptySnapshot: AppSnapshot = {
-  departments: [], projects: [], modules: [], periods: [], scenarios: [], versions: [], metrics: [], facts: [],
+  departments: [], projects: [], periods: [], scenarios: [], versions: [], metrics: [], facts: [],
   storage: { mode: 'transient', label: '连接中', detail: '', sqliteVersion: '', schemaVersion: 0, persistent: false },
 }
 
@@ -274,7 +274,7 @@ function ProjectList({ snapshot, archived, onNavigate, onArchive, onCopy, onDele
 function NewProjectPage({ snapshot, onCancel, onCreate }: { snapshot: AppSnapshot; onCancel: () => void; onCreate: (input: ProjectInput) => Promise<void> }) {
   const firstDepartment = snapshot.departments.find((item) => item.status === 'active')
   const currentPeriod = new Date().toISOString().slice(0, 7)
-  const [draft, setDraft] = useState<ProjectInput>({ name: '', code: '', departmentId: firstDepartment?.id ?? '', startPeriod: currentPeriod, endPeriod: addMonths(currentPeriod, 11), modules: [] })
+  const [draft, setDraft] = useState<ProjectInput>({ name: '', code: '', departmentId: firstDepartment?.id ?? '', startPeriod: currentPeriod, endPeriod: addMonths(currentPeriod, 11) })
   const [error, setError] = useState('')
   const patch = (values: Partial<ProjectInput>) => setDraft((current) => ({ ...current, ...values }))
   const periodCount = countPeriods(draft.startPeriod, draft.endPeriod)

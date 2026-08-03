@@ -54,13 +54,9 @@ export class ProjectWorkspaceService {
         new MetricRepository(this.database).list(),
         new FactRepository(this.database).list(),
       ])
-    const moduleGroups = await Promise.all(
-      projects.map((project) => this.projects.listModules(project.id)),
-    )
     return {
       departments,
       projects,
-      modules: moduleGroups.flat(),
       periods,
       scenarios,
       versions,
@@ -78,13 +74,9 @@ export class ProjectWorkspaceService {
   async getWorkspace(projectId: string): Promise<ProjectWorkspace> {
     const project = await this.projects.get(projectId)
     if (!project) throw Object.assign(new Error('项目不存在'), { code: 'NOT_FOUND' })
-    const [modules, forecast] = await Promise.all([
-      this.projects.listModules(projectId),
-      this.calculations.getProjectState(projectId),
-    ])
+    const forecast = await this.calculations.getProjectState(projectId)
     return {
       project,
-      modules,
       draftRevision: project.draftRevision,
       forecast,
     }
@@ -138,13 +130,7 @@ export class ProjectWorkspaceService {
         departmentId: source.project.departmentId,
         startPeriod: source.project.startPeriod,
         endPeriod: source.project.endPeriod,
-        modules: source.modules
-          .filter((module) => !module.isCommon)
-          .map((module) => ({ code: module.code, name: module.name })),
       })
-      const copiedModules = await this.projects.listModules(copiedProject.id)
-      const copiedModuleByCode = new Map(copiedModules.map((module) => [module.code, module]))
-      const sourceModuleCodeById = new Map(source.modules.map((module) => [module.id, module.code]))
       const lineValues = new Map<string, Record<string, string>>()
       source.forecast.values.forEach((item) => {
         const values = lineValues.get(item.lineId) ?? {}
@@ -165,7 +151,6 @@ export class ProjectWorkspaceService {
           code: line.code,
           name: line.name,
           category: line.category,
-          businessModuleId: copiedModuleByCode.get(sourceModuleCodeById.get(line.businessModuleId) ?? 'PUBLIC')?.id ?? copiedModules[0].id,
           forecastMethod: line.forecastMethod,
           startPeriod: line.startPeriod,
           endPeriod: line.endPeriod,
@@ -241,13 +226,12 @@ export class ProjectWorkspaceService {
 
   async buildReport(projectId: string, runId?: string): Promise<ProjectReportDto> {
     const runRepository = new CalculationRunRepository(this.database)
-    const [project, scenarios, versions, availableRuns, modules, state] =
+    const [project, scenarios, versions, availableRuns, state] =
       await Promise.all([
         this.projects.get(projectId),
         new DimensionRepository(this.database).listScenarios(),
         new DimensionRepository(this.database).listVersions(),
         runRepository.listSuccess(projectId),
-        this.projects.listModules(projectId),
         this.calculations.getProjectState(projectId),
       ])
     if (!project) throw Object.assign(new Error('项目不存在'), { code: 'NOT_FOUND' })
@@ -339,19 +323,18 @@ export class ProjectWorkspaceService {
   private async buildFactsForRun(projectId: string, runId: string): Promise<BaseFact[]> {
     const rows = await this.database.query<{
       department_id: string
-      business_module_id: string
       period: string
       scenario_id: string
       version_id: string
       metric_code: BaseFact['metricCode']
       value_text: string
     }>(
-      `SELECT department_id, business_module_id, period, scenario_id,
+      `SELECT department_id, period, scenario_id,
               version_id, metric_code, value_text
        FROM fact_forecast_line_value
        WHERE project_id = ? AND calculation_run_id = ?
        UNION ALL
-       SELECT department_id, business_module_id, settlement_period AS period,
+       SELECT department_id, settlement_period AS period,
               scenario_id, version_id, metric_code, value_text
        FROM fact_cash_schedule_value
        WHERE project_id = ? AND calculation_run_id = ?`,
@@ -359,7 +342,7 @@ export class ProjectWorkspaceService {
     )
     const aggregates = new Map<string, typeof rows[number] & { value: Decimal }>()
     rows.forEach((row) => {
-      const key = [row.department_id, row.business_module_id, row.period, row.scenario_id, row.version_id, row.metric_code].join(':')
+      const key = [row.department_id, row.period, row.scenario_id, row.version_id, row.metric_code].join(':')
       const aggregate = aggregates.get(key) ?? { ...row, value: new Decimal(0) }
       aggregate.value = aggregate.value.plus(row.value_text)
       aggregates.set(key, aggregate)
@@ -368,7 +351,6 @@ export class ProjectWorkspaceService {
       id: `${runId}:${index}`,
       projectId,
       departmentId: row.department_id,
-      businessModuleId: row.business_module_id,
       period: row.period,
       scenarioId: row.scenario_id,
       versionId: row.version_id,

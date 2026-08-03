@@ -8,7 +8,6 @@ import type {
   ForecastOverride,
   ForecastMonthlyValue,
   Project,
-  ProjectModule,
   ProjectParameter,
   ProjectParameterValue,
 } from '../domain/types'
@@ -57,7 +56,6 @@ export function buildForecastConfigHash(
   parameterValues: ProjectParameterValue[] = [],
   cashRules: CashRule[] = [],
   project?: Project,
-  modules: ProjectModule[] = [],
   overrides: ForecastOverride[] = [],
 ): string {
   const payload = JSON.stringify({
@@ -65,9 +63,6 @@ export function buildForecastConfigHash(
       departmentId: project.departmentId,
       startPeriod: project.startPeriod,
       endPeriod: project.endPeriod,
-      modules: [...modules]
-        .sort((a, b) => a.code.localeCompare(b.code))
-        .map((module) => [module.id, module.code, module.name, module.isCommon]),
     } : undefined,
     parameters: [...parameters]
       .sort((a, b) => a.sortOrder - b.sortOrder || a.code.localeCompare(b.code))
@@ -96,7 +91,6 @@ export function buildForecastConfigHash(
         code: line.code,
         name: line.name,
         category: line.category,
-        businessModuleId: line.businessModuleId,
         forecastMethod: line.forecastMethod,
         startPeriod: line.startPeriod,
         endPeriod: line.endPeriod,
@@ -147,7 +141,6 @@ export function buildForecastConfigHash(
 
 export function compileForecast(
   project: Project,
-  modules: ProjectModule[],
   lines: ForecastLine[],
   monthlyValues: ForecastMonthlyValue[],
   parameters: ProjectParameter[] = [],
@@ -161,7 +154,6 @@ export function compileForecast(
     project.startPeriod,
     countPeriods(project.startPeriod, project.endPeriod) + 36,
   )
-  const moduleIds = new Set(modules.map((module) => module.id))
   const lineByCode = new Map(lines.map((line) => [line.code, line]))
   const parameterByCode = new Map(
     parameters.map((parameter) => [parameter.code, parameter]),
@@ -210,14 +202,6 @@ export function compileForecast(
         lineId: line.id,
         field: 'name',
         message: '行项目名称不能为空',
-      })
-    }
-    if (!moduleIds.has(line.businessModuleId)) {
-      issues.push({
-        severity: 'error',
-        lineId: line.id,
-        field: 'businessModuleId',
-        message: '业务模块不属于当前项目',
       })
     }
     const allowedPeriods =
@@ -320,7 +304,6 @@ export function compileForecast(
       lineId: line.id,
       projectId: project.id,
       departmentId: project.departmentId,
-      businessModuleId: line.businessModuleId,
       period,
       scenarioId: 'baseline',
       versionId: 'working',

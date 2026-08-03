@@ -12,7 +12,7 @@ import {
 } from './formulaEngine'
 import { resolveFormulaDependencies } from './formulaDependencyGraph'
 import { compileForecast } from './forecastCompiler'
-import { project, module, line } from './forecastCompiler.testFixtures'
+import { project, line } from './forecastCompiler.testFixtures'
 
 function parameter(
   overrides: Partial<ProjectParameter> = {},
@@ -120,7 +120,6 @@ describe('FormulaEngine', () => {
     })
     const result = compileForecast(
       project,
-      [module],
       [revenue, cost],
       [],
       parameters,
@@ -160,7 +159,6 @@ describe('FormulaEngine', () => {
     })
     const result = compileForecast(
       project,
-      [module],
       [formula],
       [],
       [missing, divisor],

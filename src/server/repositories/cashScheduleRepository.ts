@@ -25,15 +25,7 @@ interface CashScheduleRow {
 export class CashScheduleRepository {
   constructor(private readonly database: DatabaseClient) {}
 
-  async listByRun(
-    runId: string,
-    businessModuleId?: string,
-  ): Promise<CashScheduleBreakdown[]> {
-    const params: unknown[] = [runId]
-    const moduleFilter = businessModuleId
-      ? ' AND business_module_id = ?'
-      : ''
-    if (businessModuleId) params.push(businessModuleId)
+  async listByRun(runId: string): Promise<CashScheduleBreakdown[]> {
     const rows = await this.database.query<CashScheduleRow>(
       `SELECT source_line_id, source_line_code, source_line_name,
               source_period, settlement_period, metric_code,
@@ -41,9 +33,9 @@ export class CashScheduleRepository {
               tax_value_text, gross_value_text, settlement_ratio_text,
               value_text, rule_method
        FROM fact_cash_schedule_value
-       WHERE calculation_run_id = ?${moduleFilter}
+       WHERE calculation_run_id = ?
        ORDER BY settlement_period, source_line_code, source_period`,
-      params,
+      [runId],
     )
     return rows.map((row) => ({
       sourceLineId: row.source_line_id,

@@ -2,7 +2,6 @@ import {
   REFERENCE_DATASET_ID,
   type Department,
   type Project,
-  type ProjectModule,
 } from '../domain/types'
 
 const CREATED_AT = '2026-07-28T00:00:00.000Z'
@@ -101,37 +100,4 @@ export const REFERENCE_PROJECTS: Project[] = [
     createdAt: CREATED_AT,
     updatedAt: CREATED_AT,
   },
-]
-
-function module(
-  projectId: string,
-  code: string,
-  name: string,
-  isCommon = false,
-): ProjectModule {
-  return {
-    id: `module-${projectId.replace('project-', '')}-${code.toLowerCase()}`,
-    projectId,
-    code,
-    name,
-    isCommon,
-    origin: 'user',
-    datasetId: REFERENCE_DATASET_ID,
-    createdAt: CREATED_AT,
-    updatedAt: CREATED_AT,
-  }
-}
-
-export const REFERENCE_MODULES: ProjectModule[] = [
-  module('project-hebei-unicom-cloud', 'PUBLIC', '公共', true),
-  module('project-hebei-unicom-cloud', 'CLOUD_GAME', '云游戏'),
-  module('project-hebei-unicom-cloud', 'ULTRA_HD', '超高清'),
-  module('project-chongqing-mobile-screen', 'PUBLIC', '公共', true),
-  module('project-chongqing-mobile-screen', 'MEDIUM_SCREEN', '中屏'),
-  module('project-hebei-cable-iptv', 'PUBLIC', '公共', true),
-  module('project-hebei-cable-iptv', 'IPTV', '互联网电视'),
-  module('project-bestv-ctv-ad', 'PUBLIC', '公共', true),
-  module('project-bestv-ctv-ad', 'PROGRAMMATIC_AD', '程序化广告'),
-  module('project-hebei-cloud-game-report', 'PUBLIC', '公共', true),
-  module('project-hebei-cloud-game-report', 'CLOUD_GAME', '云游戏'),
 ]

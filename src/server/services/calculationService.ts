@@ -3,14 +3,10 @@ import type {
   BaseMetricCode,
   CalculationIssue,
   CalculationRun,
-  ForecastLine,
   ForecastProjectDraft,
   ForecastLineDraft,
   ForecastProjectState,
   Project,
-  ProjectModule,
-  ProjectParameter,
-  CashRule,
 } from '../../shared/domain/types'
 import type { DatabaseClient, SqlStatement } from '../../app/storage/types'
 import {
@@ -29,6 +25,7 @@ import {
   compileForecast,
 } from '../../shared/calculation/forecastCompiler'
 import { compileCashSchedule } from '../../shared/calculation/cashScheduleCompiler'
+export { previewForecastDraft } from '../../shared/calculation/previewForecastDraft'
 
 export interface SaveAndCalculateResult {
   success: boolean
@@ -36,137 +33,15 @@ export interface SaveAndCalculateResult {
   issues: CalculationIssue[]
 }
 
-export function previewForecastDraft(
-  project: Project,
-  modules: ProjectModule[],
-  draft: ForecastProjectDraft,
-) {
-  const now = new Date(0).toISOString()
-  const lines: ForecastLine[] = draft.lines.map((line, index) => ({
-    id: line.id ?? line.code ?? `preview-line-${index + 1}`,
-    projectId: project.id,
-    code: line.code ?? `LINE-${String(index + 1).padStart(3, '0')}`,
-    name: line.name,
-    category: line.category,
-    metricCode: line.category,
-    businessModuleId: line.businessModuleId,
-    forecastMethod: line.forecastMethod,
-    startPeriod: line.startPeriod,
-    endPeriod: line.endPeriod,
-    fixedMonthlyValue: line.fixedMonthlyValue,
-    formulaExpression: line.formulaExpression,
-    calculationPreset: line.calculationPreset,
-    calculationConfig: line.calculationConfig,
-    amountBasis: line.amountBasis ?? 'tax_exclusive',
-    taxRate: line.taxRate ?? '0',
-    assumption: line.assumption,
-    sortOrder: line.sortOrder,
-    createdAt: now,
-    updatedAt: now,
-  }))
-  const parameters: ProjectParameter[] = draft.parameters.map(
-    (parameter, index) => ({
-      id: parameter.id ?? parameter.code ?? `preview-parameter-${index + 1}`,
-      projectId: project.id,
-      code: parameter.code ?? `PAR-${String(index + 1).padStart(3, '0')}`,
-      name: parameter.name,
-      parameterType: parameter.parameterType,
-      valueType: parameter.valueType,
-      unit: parameter.unit,
-      fixedValue:
-        parameter.parameterType === 'fixed' && parameter.fixedValue?.trim()
-          ? parameter.valueType === 'percentage'
-            ? new Decimal(parameter.fixedValue).div(100).toString()
-            : parameter.fixedValue
-          : undefined,
-      description: parameter.description,
-      sortOrder: parameter.sortOrder,
-      createdAt: now,
-      updatedAt: now,
-    }),
-  )
-  const values = draft.lines.flatMap((line, index) =>
-    Object.entries(line.monthlyValues)
-      .filter(([, value]) => value.trim())
-      .map(([period, value]) => ({
-        lineId: line.id ?? line.code ?? `preview-line-${index + 1}`,
-        period,
-        value,
-      })),
-  )
-  const parameterValues = draft.parameters.flatMap((parameter, index) =>
-    Object.entries(parameter.monthlyValues)
-      .filter(([, value]) => value.trim())
-      .map(([period, value]) => ({
-        parameterId:
-          parameter.id ??
-          parameter.code ??
-          `preview-parameter-${index + 1}`,
-        period,
-        value:
-          parameter.valueType === 'percentage'
-            ? new Decimal(value).div(100).toString()
-            : value,
-      })),
-  )
-  const compilation = compileForecast(
-    project,
-    modules,
-    lines,
-    values,
-    parameters,
-    parameterValues,
-  )
-  const lineByCode = new Map(lines.map((line) => [line.code, line]))
-  const cashRules: CashRule[] = (draft.cashRules ?? []).flatMap(
-    (rule, index) => {
-      const sourceLine = lineByCode.get(rule.sourceLineCode)
-      if (!sourceLine) return []
-      const ruleId = rule.id ?? `preview-cash-rule-${index + 1}`
-      return [{
-        id: ruleId,
-        projectId: project.id,
-        sourceLineId: sourceLine.id,
-        sourceLineCode: sourceLine.code,
-        method: rule.method,
-        delayMonths: rule.delayMonths,
-        installments: rule.installments.map((item, itemIndex) => ({
-          id: item.id ?? `preview-installment-${index + 1}-${itemIndex + 1}`,
-          cashRuleId: ruleId,
-          sequence: itemIndex + 1,
-          offsetMonths: item.offsetMonths,
-          ratio: item.ratio,
-        })),
-        createdAt: now,
-        updatedAt: now,
-      }]
-    },
-  )
-  const cashCompilation = compileCashSchedule(
-    lines,
-    compilation.values,
-    cashRules,
-  )
-  return {
-    values: compilation.values,
-    cashValues: cashCompilation.values,
-    issues: [...compilation.issues, ...cashCompilation.issues],
-  }
-}
-
 function validateDraftCoordinates(
   projectPeriods: string[],
   cashPeriods: string[],
-  moduleIds: Set<string>,
   drafts: ForecastLineDraft[],
 ) {
   if (projectPeriods.length === 0) {
     throw new Error('项目预测周期无效')
   }
   drafts.forEach((draft) => {
-    if (!moduleIds.has(draft.businessModuleId)) {
-      throw new Error('行项目引用了不属于当前项目的业务模块')
-    }
     const allowedPeriods =
       draft.category === 'cash_inflow' || draft.category === 'cash_outflow'
         ? cashPeriods
@@ -204,10 +79,9 @@ export class CalculationService {
   }
 
   async getProjectState(projectId: string): Promise<ForecastProjectState> {
-    const [project, modules, lines, values, parameters, parameterValues, cashRules, overrides, latestRun] =
+    const [project, lines, values, parameters, parameterValues, cashRules, overrides, latestRun] =
       await Promise.all([
       this.projects.get(projectId),
-      this.projects.listModules(projectId),
       this.lines.list(projectId),
       this.values.listForProject(projectId),
       this.parameters.list(projectId),
@@ -223,7 +97,6 @@ export class CalculationService {
       parameterValues,
       cashRules,
       project,
-      modules,
       overrides,
     )
     return {
@@ -248,7 +121,6 @@ export class CalculationService {
     if (project.status !== 'calculating') {
       throw new Error('已归档项目不能修改预测配置')
     }
-    const modules = await this.projects.listModules(projectId)
     const projectPeriods = generatePeriodRange(project.startPeriod, project.endPeriod)
     const cashPeriods = generatePeriods(
       project.startPeriod,
@@ -258,7 +130,6 @@ export class CalculationService {
     validateDraftCoordinates(
       projectPeriods,
       cashPeriods,
-      new Set(modules.map((module) => module.id)),
       lineDrafts,
     )
     const savedLines = await this.lines.saveProjectDraft(projectId, lineDrafts)
@@ -301,7 +172,6 @@ export class CalculationService {
       throw error
     }
     const [
-      modules,
       lines,
       values,
       parameters,
@@ -311,7 +181,6 @@ export class CalculationService {
       runNumber,
     ] =
       await Promise.all([
-      this.projects.listModules(projectId),
       this.lines.list(projectId),
       this.values.listForProject(projectId),
       this.parameters.list(projectId),
@@ -327,7 +196,6 @@ export class CalculationService {
       parameterValues,
       cashRules,
       project,
-      modules,
       overrides,
     )
     const configSnapshotJson = JSON.stringify({
@@ -341,7 +209,6 @@ export class CalculationService {
     })
     const compilation = compileForecast(
       project,
-      modules,
       lines,
       values,
       parameters,
@@ -376,7 +243,6 @@ export class CalculationService {
         startPeriod: project.startPeriod,
         endPeriod: project.endPeriod,
         status: project.status,
-        modules,
       }),
       startedAt: now,
       completedAt: new Date().toISOString(),
@@ -403,9 +269,9 @@ export class CalculationService {
         sql: `INSERT INTO fact_forecast_line_value (
           id, calculation_run_id, project_id, forecast_line_id,
           line_code, line_name, line_category,
-          department_id, business_module_id, period, scenario_id,
+          department_id, period, scenario_id,
           version_id, metric_code, value_text, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         params: [
           crypto.randomUUID(),
           run.id,
@@ -415,7 +281,6 @@ export class CalculationService {
           line.name,
           line.category,
           compiled.departmentId,
-          compiled.businessModuleId,
           compiled.period,
           compiled.scenarioId,
           compiled.versionId,
@@ -430,11 +295,11 @@ export class CalculationService {
         sql: `INSERT INTO fact_cash_schedule_value (
           id, calculation_run_id, project_id, source_line_id,
           source_line_code, source_line_name, department_id,
-          business_module_id, source_period, settlement_period,
+          source_period, settlement_period,
           scenario_id, version_id, metric_code, amount_basis,
           tax_rate_text, net_value_text, tax_value_text, gross_value_text,
           settlement_ratio_text, value_text, rule_method, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         params: [
           crypto.randomUUID(),
           run.id,
@@ -443,7 +308,6 @@ export class CalculationService {
           compiled.sourceLineCode,
           compiled.sourceLineName,
           compiled.departmentId,
-          compiled.businessModuleId,
           compiled.sourcePeriod,
           compiled.settlementPeriod,
           compiled.scenarioId,
@@ -465,20 +329,14 @@ export class CalculationService {
     const aggregates = new Map<
       string,
       {
-        moduleId: string
         period: string
         metricCode: BaseMetricCode
         value: Decimal
       }
     >()
     compilation.values.forEach((compiled) => {
-      const key = [
-        compiled.businessModuleId,
-        compiled.period,
-        compiled.metricCode,
-      ].join(':')
+      const key = [compiled.period, compiled.metricCode].join(':')
       const aggregate = aggregates.get(key) ?? {
-        moduleId: compiled.businessModuleId,
         period: compiled.period,
         metricCode: compiled.metricCode,
         value: new Decimal(0),
@@ -487,13 +345,8 @@ export class CalculationService {
       aggregates.set(key, aggregate)
     })
     cashCompilation.values.forEach((compiled) => {
-      const key = [
-        compiled.businessModuleId,
-        compiled.settlementPeriod,
-        compiled.metricCode,
-      ].join(':')
+      const key = [compiled.settlementPeriod, compiled.metricCode].join(':')
       const aggregate = aggregates.get(key) ?? {
-        moduleId: compiled.businessModuleId,
         period: compiled.settlementPeriod,
         metricCode: compiled.metricCode,
         value: new Decimal(0),
@@ -504,16 +357,15 @@ export class CalculationService {
     aggregates.forEach((aggregate) => {
       statements.push({
         sql: `INSERT INTO fact_metric_value (
-          id, project_id, department_id, business_module_id, period,
+          id, project_id, department_id, period,
           scenario_id, version_id, metric_code, value_text, source_label,
           origin, dataset_id, created_at, updated_at, calculation_run_id
-        ) VALUES (?, ?, ?, ?, ?, 'baseline', 'working', ?, ?,
+        ) VALUES (?, ?, ?, ?, 'baseline', 'working', ?, ?,
           '预测配置计算', 'user', NULL, ?, ?, ?)`,
         params: [
           crypto.randomUUID(),
           project.id,
           project.departmentId,
-          aggregate.moduleId,
           aggregate.period,
           aggregate.metricCode,
           aggregate.value.toDecimalPlaces(6).toString(),

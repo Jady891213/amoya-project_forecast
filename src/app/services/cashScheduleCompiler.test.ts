@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { CashRule, ForecastLine } from '../domain/types'
 import { compileCashSchedule } from './cashScheduleCompiler'
 import { compileForecast } from './forecastCompiler'
-import { line, module, project } from './forecastCompiler.testFixtures'
+import { line, project } from './forecastCompiler.testFixtures'
 
 function rule(
   source: ForecastLine,
@@ -31,7 +31,7 @@ describe('CashScheduleCompiler', () => {
       startPeriod: '2026-01',
       endPeriod: '2026-01',
     })
-    const forecast = compileForecast(project, [module], [revenue], [])
+    const forecast = compileForecast(project, [revenue], [])
     const cash = compileCashSchedule(
       [revenue],
       forecast.values,
@@ -68,7 +68,7 @@ describe('CashScheduleCompiler', () => {
       startPeriod: '2026-04',
       endPeriod: '2026-04',
     })
-    const forecast = compileForecast(project, [module], [cost], [])
+    const forecast = compileForecast(project, [cost], [])
     const cash = compileCashSchedule(
       [cost],
       forecast.values,
@@ -94,7 +94,7 @@ describe('CashScheduleCompiler', () => {
       startPeriod: '2026-01',
       endPeriod: '2026-01',
     })
-    const forecast = compileForecast(project, [module], [revenue], [])
+    const forecast = compileForecast(project, [revenue], [])
     const installmentRule = rule(revenue, {
       method: 'installment',
       installments: [
@@ -130,7 +130,7 @@ describe('CashScheduleCompiler', () => {
 
   it('拒绝重复偏移月份的分期', () => {
     const revenue = line()
-    const forecast = compileForecast(project, [module], [revenue], [])
+    const forecast = compileForecast(project, [revenue], [])
     const cash = compileCashSchedule(
       [revenue],
       forecast.values,
@@ -163,7 +163,7 @@ describe('CashScheduleCompiler', () => {
 
   it('拒绝比例合计不等于100%的分期', () => {
     const revenue = line()
-    const forecast = compileForecast(project, [module], [revenue], [])
+    const forecast = compileForecast(project, [revenue], [])
     const cash = compileCashSchedule(
       [revenue],
       forecast.values,
@@ -196,7 +196,7 @@ describe('CashScheduleCompiler', () => {
 
   it('拒绝超过36个月的收付款偏移', () => {
     const revenue = line()
-    const forecast = compileForecast(project, [module], [revenue], [])
+    const forecast = compileForecast(project, [revenue], [])
     const cash = compileCashSchedule(
       [revenue],
       forecast.values,

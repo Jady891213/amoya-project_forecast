@@ -3,7 +3,6 @@ import {
   Building2,
   CalendarRange,
   GitBranch,
-  Layers3,
   Milestone,
   PackageOpen,
   Plus,
@@ -16,12 +15,11 @@ import { DepartmentDialog } from '../../ui/DepartmentDialog'
 import { formatDateTime } from '../../ui/formatters'
 import { PageBreadcrumbs } from '../../components/PageBreadcrumbs'
 
-type DataTab = 'projects' | 'departments' | 'modules' | 'periods' | 'scenarios' | 'versions'
+type DataTab = 'projects' | 'departments' | 'periods' | 'scenarios' | 'versions'
 
 const tabs = [
   { key: 'projects' as const, label: '项目', note: '项目唯一主表，只读查看', icon: PackageOpen },
   { key: 'departments' as const, label: '部门', note: '可新增、编辑与停用', icon: Building2 },
-  { key: 'modules' as const, label: '业务模块', note: '项目级清单，只读查看', icon: Layers3 },
   { key: 'periods' as const, label: '期间', note: '2020-01 至 2035-12', icon: CalendarRange },
   { key: 'scenarios' as const, label: '场景', note: '平台级场景维度', icon: GitBranch },
   { key: 'versions' as const, label: '版本', note: '平台级版本维度', icon: Milestone },
@@ -41,8 +39,6 @@ export function DataFoundationPage({ database, snapshot, onRefresh, onOpenReport
   const [selectedYear, setSelectedYear] = useState(2026)
   const [pageError, setPageError] = useState('')
   const departments = useMemo(() => new DepartmentRepository(database), [database])
-  const projectName = (id: string) =>
-    snapshot.projects.find((project) => project.id === id)?.name ?? '未知项目'
   const departmentName = (id: string) =>
     snapshot.departments.find((department) => department.id === id)?.name ?? '未知部门'
 
@@ -64,14 +60,13 @@ export function DataFoundationPage({ database, snapshot, onRefresh, onOpenReport
         <div className="page-head-main">
           <PageBreadcrumbs items={[{ label: '平台配置' }, { label: '主数据管理' }]} />
           <h1>主数据管理</h1>
-          <p>只维护六类业务维度；事实与计算结果回到具体项目中查看。</p>
+          <p>只维护项目、部门、期间、场景和版本；事实与计算结果回到具体项目中查看。</p>
         </div>
       </header>
       <div className="page-body">
         <div className="master-summary">
           <div className="master-summary-item"><span>项目</span><b>{snapshot.projects.length}</b><small>dim_project</small></div>
           <div className="master-summary-item"><span>部门</span><b>{snapshot.departments.length}</b><small>dim_department</small></div>
-          <div className="master-summary-item"><span>业务模块</span><b>{snapshot.modules.length}</b><small>含每项目公共模块</small></div>
           <div className="master-summary-item"><span>期间</span><b>{snapshot.periods.length}</b><small>dim_period</small></div>
           <div className="master-summary-item"><span>场景 / 版本</span><b>{snapshot.scenarios.length} / {snapshot.versions.length}</b><small>平台级分析维度</small></div>
         </div>
@@ -140,14 +135,6 @@ export function DataFoundationPage({ database, snapshot, onRefresh, onOpenReport
                         <button className="text-button" onClick={() => run(() => departments.setStatus(department.id, department.status === 'active' ? 'inactive' : 'active').then(() => undefined))}>{department.status === 'active' ? '停用' : '启用'}</button>
                       </div> : <span className="muted">只读</span>}</td>
                     </tr>
-                  ))}</tbody>
-                </table>
-              )}
-              {activeTab === 'modules' && (
-                <table>
-                  <thead><tr><th>项目</th><th>模块编码</th><th>模块名称</th><th>类型</th></tr></thead>
-                  <tbody>{snapshot.modules.map((module) => (
-                    <tr key={module.id}><td>{projectName(module.projectId)}</td><td>{module.code}</td><td className="strong-cell">{module.name}</td><td>{module.isCommon ? '系统公共模块' : '项目业务模块'}</td></tr>
                   ))}</tbody>
                 </table>
               )}

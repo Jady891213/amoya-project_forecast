@@ -20,22 +20,14 @@ interface LineValueRow {
 export class ForecastLineValueRepository {
   constructor(private readonly database: DatabaseClient) {}
 
-  async listBreakdown(
-    runId: string,
-    businessModuleId?: string,
-  ): Promise<ForecastLineBreakdown[]> {
-    const params: unknown[] = [runId]
-    const moduleFilter = businessModuleId
-      ? ' AND business_module_id = ?'
-      : ''
-    if (businessModuleId) params.push(businessModuleId)
+  async listBreakdown(runId: string): Promise<ForecastLineBreakdown[]> {
     const rows = await this.database.query<LineValueRow>(
       `SELECT forecast_line_id, line_code, line_name, line_category,
               period, value_text
        FROM fact_forecast_line_value
-       WHERE calculation_run_id = ?${moduleFilter}
+       WHERE calculation_run_id = ?
        ORDER BY line_category DESC, line_code, period`,
-      params,
+      [runId],
     )
     const runRows = await this.database.query<{
       config_snapshot_json: string

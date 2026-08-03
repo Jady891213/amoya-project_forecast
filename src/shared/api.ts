@@ -11,7 +11,6 @@ export type {
   PeriodDimension,
   Project,
   ProjectInput,
-  ProjectModule,
   ProjectReportDto,
   ProjectWorkspace,
   ProjectWorkspaceDraft,
@@ -26,7 +25,6 @@ import type {
   MetricDefinition,
   PeriodDimension,
   Project,
-  ProjectModule,
   Scenario,
   Version,
 } from './domain/types'
@@ -45,7 +43,6 @@ export interface StorageRuntimeInfo {
 export interface AppSnapshot {
   departments: Department[]
   projects: Project[]
-  modules: ProjectModule[]
   periods: PeriodDimension[]
   scenarios: Scenario[]
   versions: Version[]
@@ -80,8 +77,7 @@ export function isProjectInput(value: unknown): value is import('./domain/types'
     typeof input.name === 'string' &&
     typeof input.departmentId === 'string' &&
     typeof input.startPeriod === 'string' &&
-    typeof input.endPeriod === 'string' &&
-    Array.isArray(input.modules)
+    typeof input.endPeriod === 'string'
   )
 }
 
