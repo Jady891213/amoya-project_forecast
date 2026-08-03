@@ -34,6 +34,12 @@ import {
 import { formatWan } from '../../ui/formatters'
 import { ProjectInformationEditor } from '../../ui/ProjectInformationEditor'
 import { useAppDialog } from '../../ui/AppDialog'
+import {
+  ForecastSchemeFields,
+  forecastScheme,
+  patchForForecastScheme,
+  type ForecastScheme,
+} from '../../ui/ForecastSchemeFields'
 
 interface Props {
   database: DatabaseClient
@@ -95,6 +101,8 @@ function toDrafts(state: ForecastProjectState): ForecastLineDraft[] {
     endPeriod: line.endPeriod,
     fixedMonthlyValue: line.fixedMonthlyValue ?? '',
     formulaExpression: line.formulaExpression ?? '',
+    calculationPreset: line.calculationPreset,
+    calculationConfig: line.calculationConfig,
     amountBasis: line.amountBasis,
     taxRate: new Decimal(line.taxRate || 0).times(100).toString(),
     assumption: line.assumption,
@@ -318,6 +326,7 @@ export function ForecastConfigPage({
 
   const selectedIndex = drafts.findIndex((draft) => draft.id === selectedId)
   const selected = selectedIndex >= 0 ? drafts[selectedIndex] : undefined
+  const selectedScheme = selected ? forecastScheme(selected) : 'fixed_monthly'
   const selectedParameterIndex = parameterDrafts.findIndex(
     (parameter) =>
       (parameter.id ?? parameter.code) === selectedParameterId,
@@ -1019,18 +1028,23 @@ export function ForecastConfigPage({
                 selected.category === 'cash_outflow' ||
                 linePanelSection === 'amount') ? (
                 <>
-              <label>预测方式
+              <label>测算方式
                 <select
-                  value={selected.forecastMethod}
+                  value={selectedScheme}
                   onChange={(event) =>
-                    changeSelected({
-                      forecastMethod: event.target.value as ForecastLineDraft['forecastMethod'],
-                    })
+                    changeSelected(patchForForecastScheme(
+                      selected,
+                      event.target.value as ForecastScheme,
+                      parameterDrafts,
+                      drafts,
+                    ))
                   }
                 >
                   <option value="fixed_monthly">固定月金额</option>
                   <option value="monthly_input">逐月填写</option>
-                  <option value="formula">公式计算</option>
+                  {(selected.category === 'revenue' || selected.category === 'cost') && <option value="price_quantity">单价 × 数量</option>}
+                  {selected.category === 'cost' && <option value="revenue_ratio">按收入比例</option>}
+                  <option value="custom_formula">自定义公式</option>
                 </select>
               </label>
               <div className="forecast-form-row">
@@ -1045,7 +1059,7 @@ export function ForecastConfigPage({
                   </select>
                 </label>
               </div>
-              {selected.forecastMethod === 'fixed_monthly' ? (
+              {selectedScheme === 'fixed_monthly' ? (
                 <label>每月金额（元）
                   <input
                     type="number"
@@ -1056,7 +1070,7 @@ export function ForecastConfigPage({
                   />
                   <small>周期合计：{formatWan(totalValue(selected, selectedPeriods))} 万元</small>
                 </label>
-              ) : selected.forecastMethod === 'monthly_input' ? (
+              ) : selectedScheme === 'monthly_input' ? (
                 <div className="monthly-input-section">
                   <div className="monthly-input-head">
                     <b>逐月金额（元）</b>
@@ -1090,6 +1104,8 @@ export function ForecastConfigPage({
                       ))}
                   </div>
                 </div>
+              ) : selectedScheme === 'price_quantity' || selectedScheme === 'revenue_ratio' ? (
+                <ForecastSchemeFields line={selected} parameters={parameterDrafts} lines={drafts} onPatch={changeSelected} />
               ) : (
                 <div className="formula-editor-section">
                   <div className="formula-template-row">

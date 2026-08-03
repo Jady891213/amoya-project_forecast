@@ -171,6 +171,8 @@ export class ProjectWorkspaceService {
           endPeriod: line.endPeriod,
           fixedMonthlyValue: line.fixedMonthlyValue,
           formulaExpression: line.formulaExpression,
+          calculationPreset: line.calculationPreset,
+          calculationConfig: line.calculationConfig,
           amountBasis: line.amountBasis,
           taxRate: line.taxRate,
           assumption: line.assumption,

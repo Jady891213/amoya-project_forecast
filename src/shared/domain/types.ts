@@ -7,6 +7,19 @@ export type MetricType = 'base' | 'calculated'
 export type PeriodAggregation = 'sum' | 'recompute' | 'ending'
 export type VersionStatus = 'working' | 'snapshot'
 export type ForecastMethod = 'monthly_input' | 'fixed_monthly' | 'formula'
+export type ForecastCalculationPreset =
+  | 'price_quantity'
+  | 'revenue_ratio'
+  | 'custom_formula'
+export interface ForecastCalculationConfig {
+  priceValue?: string
+  quantityValue?: string
+  ratioValue?: string
+  priceParameterCode?: string
+  quantityParameterCode?: string
+  revenueLineCode?: string
+  ratioParameterCode?: string
+}
 export type TaxAmountBasis =
   | 'tax_exclusive'
   | 'tax_inclusive'
@@ -31,7 +44,7 @@ export type CalculationRunStatus = 'success' | 'failed'
 
 export const BASELINE_SCENARIO_CODE = 'baseline'
 export const WORKING_VERSION_CODE = 'working'
-export const REFERENCE_DATASET_ID = 'historical-project-config-v4'
+export const REFERENCE_DATASET_ID = 'historical-project-config-v5'
 
 export type BaseMetricCode =
   | 'revenue'
@@ -180,6 +193,8 @@ export interface ForecastLine {
   endPeriod: string
   fixedMonthlyValue?: string
   formulaExpression?: string
+  calculationPreset?: ForecastCalculationPreset
+  calculationConfig?: ForecastCalculationConfig
   amountBasis: TaxAmountBasis
   taxRate: string
   assumption: string
@@ -205,6 +220,8 @@ export interface ForecastLineDraft {
   endPeriod: string
   fixedMonthlyValue?: string
   formulaExpression?: string
+  calculationPreset?: ForecastCalculationPreset
+  calculationConfig?: ForecastCalculationConfig
   amountBasis?: TaxAmountBasis
   taxRate?: string
   assumption: string

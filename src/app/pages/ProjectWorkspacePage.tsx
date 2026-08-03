@@ -35,6 +35,13 @@ import { FinancialGrid, type FinancialGridChange, type FinancialGridRow } from '
 import { PageBreadcrumbs } from '../components/PageBreadcrumbs'
 import { formatPercent, formatWan } from '../ui/formatters'
 import { useAppDialog } from '../ui/AppDialog'
+import {
+  ForecastSchemeFields,
+  forecastScheme,
+  forecastSchemeLabel,
+  patchForForecastScheme,
+  type ForecastScheme,
+} from '../ui/ForecastSchemeFields'
 
 const ReportCharts = lazy(async () => {
   const module = await import('../components/ReportCharts')
@@ -79,6 +86,8 @@ function stateToLineDrafts(workspace: ProjectWorkspace): ForecastLineDraft[] {
     endPeriod: line.endPeriod,
     fixedMonthlyValue: line.fixedMonthlyValue ?? '',
     formulaExpression: line.formulaExpression ?? '',
+    calculationPreset: line.calculationPreset,
+    calculationConfig: line.calculationConfig,
     amountBasis: line.amountBasis,
     taxRate: new Decimal(line.taxRate || 0).times(100).toString(),
     assumption: line.assumption,
@@ -147,10 +156,6 @@ function formulaSummary(expression: string | undefined, parameters: ProjectParam
     .replace(/\//g, ' ÷ ')
     .replace(/\s+/g, ' ')
     .trim()
-}
-
-function forecastMethodLabel(method: ForecastLineDraft['forecastMethod']) {
-  return method === 'fixed_monthly' ? '固定月金额' : method === 'monthly_input' ? '逐月填写' : '公式计算'
 }
 
 function lineGridValues(line: ForecastLineDraft, periods: string[]) {
@@ -584,7 +589,7 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, view, onNavigat
                 const rule = cashRules.find((candidate) => candidate.sourceLineCode === line.code)
                 const method = line.forecastMethod === 'fixed_monthly' ? `${line.fixedMonthlyValue || '未填写'} 元/月` : line.forecastMethod === 'formula' ? formulaSummary(line.formulaExpression, parameters, lines) : `${Object.keys(line.monthlyValues).length} 个月已填`
                 const settlement = line.category === 'revenue' || line.category === 'cost' ? ` · ${line.amountBasis === 'tax_inclusive' ? '含税' : line.amountBasis === 'non_taxable' ? '免税' : '未税'} ${line.taxRate || 0}% · ${rule?.method === 'delayed' ? `延后${rule.delayMonths}月` : rule?.method === 'installment' ? '分期结算' : rule?.method === 'disabled' ? '不生成现金' : '当月结算'}` : ''
-                return <div className="model-row-content"><button className="model-row-summary"><b>{line.name}</b><span>{forecastMethodLabel(line.forecastMethod)} · {method}{settlement}</span></button><div className="model-row-actions"><button title="复制预测项" aria-label={`复制${line.name}`} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); duplicateLine(item.id) }}><Copy size={15} /></button><button title="删除预测项" aria-label={`删除${line.name}`} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); removeLine(item.id) }}><Trash2 size={15} /></button></div></div>
+                return <div className="model-row-content"><button className="model-row-summary"><b>{line.name}</b><span>{forecastSchemeLabel(line)} · {method}{settlement}</span></button><div className="model-row-actions"><button title="复制预测项" aria-label={`复制${line.name}`} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); duplicateLine(item.id) }}><Copy size={15} /></button><button title="删除预测项" aria-label={`删除${line.name}`} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); removeLine(item.id) }}><Trash2 size={15} /></button></div></div>
               }}
             />
           </div>
@@ -650,19 +655,21 @@ function ParameterLineEditor({ parameter, periods, onPatch, onMonthlyChange, onC
 
 function LineEditor({ line, modules, periods, parameters, lines, cashRule, onPatch, onMonthlyChange, onCashRuleChange, onClose }: { line: ForecastLineDraft; modules: ProjectWorkspace['modules']; periods: string[]; parameters: ProjectParameterDraft[]; lines: ForecastLineDraft[]; cashRule?: CashRuleDraft; onPatch: (patch: Partial<ForecastLineDraft>) => void; onMonthlyChange: (changes: FinancialGridChange[]) => void; onCashRuleChange: (rule: CashRuleDraft) => void; onClose: () => void }) {
   const isProfit = line.category === 'revenue' || line.category === 'cost'
+  const scheme = forecastScheme(line)
   const monthlyRow: FinancialGridRow = { id: line.id ?? '', label: line.name, editable: true, values: line.monthlyValues }
   return <aside className="forecast-editor compact-line-editor"><div className="editor-head"><div><b>{line.name}</b><small>{line.code}</small></div><div className="editor-head-actions"><button className="icon-button" aria-label="关闭配置" onClick={onClose}><X size={15} /></button></div></div>
     <div className="editor-form compact-editor-form">
       <div className="drawer-section-title full-field">基本信息与计算规则</div>
         <label className="full-field">行项目名称<input value={line.name} onChange={(e) => onPatch({ name: e.target.value })} /></label>
         {modules.filter((item) => !item.isCommon).length > 0 && <label>业务模块<select value={line.businessModuleId} onChange={(e) => onPatch({ businessModuleId: e.target.value })}>{modules.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
-        <label>预测方式<select value={line.forecastMethod} onChange={(e) => onPatch({ forecastMethod: e.target.value as ForecastLineDraft['forecastMethod'] })}><option value="fixed_monthly">固定月金额</option><option value="monthly_input">逐月填写</option><option value="formula">公式计算</option></select></label>
+        <label>测算方式<select value={scheme} onChange={(e) => onPatch(patchForForecastScheme(line, e.target.value as ForecastScheme, parameters, lines))}><option value="fixed_monthly">固定月金额</option><option value="monthly_input">逐月填写</option>{isProfit && <option value="price_quantity">单价 × 数量</option>}{line.category === 'cost' && <option value="revenue_ratio">按收入比例</option>}<option value="custom_formula">自定义公式</option></select></label>
         <label>开始期间<select value={line.startPeriod} onChange={(e) => onPatch({ startPeriod: e.target.value })}>{periods.map((period) => <option key={period}>{period}</option>)}</select></label><label>结束期间<select value={line.endPeriod} onChange={(e) => onPatch({ endPeriod: e.target.value })}>{periods.map((period) => <option key={period}>{period}</option>)}</select></label>
-        {line.forecastMethod === 'fixed_monthly' && <label className="full-field">每月金额（元）<input value={line.fixedMonthlyValue ?? ''} onChange={(e) => onPatch({ fixedMonthlyValue: e.target.value })} /></label>}
-        {line.forecastMethod === 'formula' && <div className="formula-editor full-field"><div className="formula-editor-title"><span>fx</span><b>公式表达式</b></div><textarea value={line.formulaExpression ?? ''} onChange={(e) => onPatch({ formulaExpression: e.target.value })} placeholder={'PARAM("PAR-001") * PARAM("PAR-002")'} /><div className="formula-business-summary">业务解释：{formulaSummary(line.formulaExpression, parameters, lines)}</div><details><summary>查看可用参数与行项目</summary><small>可用参数：{parameters.map((item) => `${item.name}(${item.code})`).join('、') || '无'}<br />可用行：{lines.filter((item) => item.id !== line.id).map((item) => `${item.name}(${item.code})`).join('、') || '无'}</small></details></div>}
-        {line.forecastMethod === 'monthly_input' && <div className="editor-grid full-field"><FinancialGrid ariaLabel="逐月预测输入" periods={periods.filter((period) => period >= line.startPeriod && period <= line.endPeriod)} rows={[monthlyRow]} onChange={onMonthlyChange} /></div>}
+        {scheme === 'fixed_monthly' && <label className="full-field">每月金额（元）<input value={line.fixedMonthlyValue ?? ''} onChange={(e) => onPatch({ fixedMonthlyValue: e.target.value })} /></label>}
+        <ForecastSchemeFields line={line} parameters={parameters} lines={lines} onPatch={onPatch} />
+        {scheme === 'custom_formula' && <div className="formula-editor full-field"><div className="formula-editor-title"><span>fx</span><b>公式表达式</b></div><textarea value={line.formulaExpression ?? ''} onChange={(e) => onPatch({ formulaExpression: e.target.value })} placeholder={'PARAM("PAR-001") * PARAM("PAR-002")'} /><div className="formula-business-summary">业务解释：{formulaSummary(line.formulaExpression, parameters, lines)}</div><details><summary>查看可用参数与行项目</summary><small>可用参数：{parameters.map((item) => `${item.name}(${item.code})`).join('、') || '无'}<br />可用行：{lines.filter((item) => item.id !== line.id).map((item) => `${item.name}(${item.code})`).join('、') || '无'}</small></details></div>}
+        {scheme === 'monthly_input' && <div className="editor-grid full-field"><FinancialGrid ariaLabel="逐月预测输入" periods={periods.filter((period) => period >= line.startPeriod && period <= line.endPeriod)} rows={[monthlyRow]} onChange={onMonthlyChange} /></div>}
       {isProfit && <><div className="drawer-section-title full-field">税与收付款</div><div className="editor-rule-card full-field"><h3>损益金额口径</h3><div className="compact-editor-form nested-grid"><label>金额口径<select value={line.amountBasis} onChange={(e) => onPatch({ amountBasis: e.target.value as ForecastLineDraft['amountBasis'] })}><option value="tax_exclusive">未税</option><option value="tax_inclusive">含税</option><option value="non_taxable">免税</option></select></label><label>税率（%）<input value={line.taxRate ?? '0'} disabled={line.amountBasis === 'non_taxable'} onChange={(e) => onPatch({ taxRate: e.target.value })} /></label></div><p>损益结果统一换算为未税口径。</p></div><div className="editor-rule-card full-field"><h3>{line.category === 'revenue' ? '收款规则' : '付款规则'}</h3><label>收付款方式<select value={cashRule?.method ?? 'disabled'} onChange={(e) => onCashRuleChange({ ...(cashRule ?? { sourceLineId: line.id, sourceLineCode: line.code ?? '', delayMonths: 0, installments: [] }), method: e.target.value as CashRuleDraft['method'] })}><option value="disabled">不自动生成</option><option value="immediate">当月100%</option><option value="delayed">延后N个月</option><option value="installment">自定义分期</option></select></label>{cashRule?.method === 'delayed' && <label>延后月份<input type="number" min={0} max={36} value={cashRule.delayMonths} onChange={(e) => onCashRuleChange({ ...cashRule, delayMonths: Number(e.target.value) })} /></label>}<p>不自动生成时，可在“直接现金”中维护。</p></div></>}
-      <div className="drawer-section-title full-field">说明与来源</div><label className="full-field">假设说明<textarea className="assumption-editor" value={line.assumption} onChange={(e) => onPatch({ assumption: e.target.value })} /></label><div className="line-source-summary full-field"><b>数据与依赖</b><p>{line.forecastMethod === 'formula' ? `当前公式：${formulaSummary(line.formulaExpression, parameters, lines)}` : line.forecastMethod === 'monthly_input' ? `已填写 ${Object.keys(line.monthlyValues).length} 个月` : `每月固定金额 ${line.fixedMonthlyValue || '未填写'} 元`}</p></div>
+      <div className="drawer-section-title full-field">说明与来源</div><label className="full-field">假设说明<textarea className="assumption-editor" value={line.assumption} onChange={(e) => onPatch({ assumption: e.target.value })} /></label><div className="line-source-summary full-field"><b>数据与依赖</b><p>{line.forecastMethod === 'formula' ? `${forecastSchemeLabel(line)}：${formulaSummary(line.formulaExpression, parameters, lines)}` : line.forecastMethod === 'monthly_input' ? `已填写 ${Object.keys(line.monthlyValues).length} 个月` : `每月固定金额 ${line.fixedMonthlyValue || '未填写'} 元`}</p></div>
     </div>
   </aside>
 }

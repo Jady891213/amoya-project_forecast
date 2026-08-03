@@ -163,6 +163,28 @@ describe('SQLite repositories and reference data isolation', () => {
         ),
       ).toHaveLength(1)
     }
+
+    const cableConfigRows = await database.query<{ name: string; config_json: string }>(
+      `SELECT name, config_json FROM cfg_model_line
+       WHERE project_id = ? AND name IN ('互联网电视会员收入', '微信支付手续费', 'CDN成本')
+       ORDER BY sort_order`,
+      ['project-hebei-cable-iptv'],
+    )
+    expect(cableConfigRows.map((row) => {
+      const config = JSON.parse(row.config_json) as {
+        calculationPreset?: string
+        calculationConfig?: Record<string, string>
+      }
+      return [row.name, config.calculationPreset, config.calculationConfig]
+    })).toEqual([
+      ['互联网电视会员收入', 'price_quantity', { priceValue: '24', quantityValue: '2642' }],
+      ['微信支付手续费', 'revenue_ratio', { revenueLineCode: 'LINE-001', ratioValue: '1' }],
+      ['CDN成本', 'price_quantity', { priceValue: '1.34', quantityValue: '2642' }],
+    ])
+    expect(await database.query(
+      'SELECT id FROM cfg_model_line WHERE project_id = ? AND line_type = ?',
+      ['project-hebei-cable-iptv', 'parameter'],
+    )).toHaveLength(0)
   })
 
   it('河北联通按17个月经营期和3个月回收期回放，百视通保留成本构成', async () => {

@@ -1808,6 +1808,27 @@ button, input, select, textarea, table { font-size: 12px; }
 .two-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .editor-divider { margin-top: 5px; padding: 8px 0 4px; border-top: 1px solid var(--line); color: #254d7b; font-weight: 600; }
 .editor-grid { overflow: auto; padding-bottom: 4px; }
+.forecast-preset-card {
+  display: grid;
+  gap: 10px;
+  padding: 11px;
+  border: 1px solid #dbe4f2;
+  border-radius: 9px;
+  background: #f8faff;
+}
+.forecast-preset-title { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.forecast-preset-title b { color: #315bc5; font-size: 12px; }
+.forecast-preset-title span,
+.forecast-preset-card > small { color: var(--muted); font-size: 12px; }
+.forecast-preset-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 20px minmax(0, 1fr);
+  gap: 7px;
+  align-items: end;
+}
+.forecast-preset-fields label { min-width: 0; }
+.forecast-preset-fields select { min-width: 0; width: 100%; }
+.forecast-preset-operator { padding-bottom: 7px; color: #667085; font-size: 15px; font-weight: 700; text-align: center; }
 
 .financial-grid-shell { min-width: 0; max-width: 100%; }
 .financial-grid-toolbar {

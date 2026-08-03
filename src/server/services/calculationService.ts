@@ -55,6 +55,8 @@ export function previewForecastDraft(
     endPeriod: line.endPeriod,
     fixedMonthlyValue: line.fixedMonthlyValue,
     formulaExpression: line.formulaExpression,
+    calculationPreset: line.calculationPreset,
+    calculationConfig: line.calculationConfig,
     amountBasis: line.amountBasis ?? 'tax_exclusive',
     taxRate: line.taxRate ?? '0',
     assumption: line.assumption,

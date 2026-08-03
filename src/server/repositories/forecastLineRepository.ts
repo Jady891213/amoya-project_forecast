@@ -4,6 +4,8 @@ import type { DatabaseClient, SqlStatement } from '../../app/storage/types'
 export interface ForecastConfig {
   fixedMonthlyValueText?: string
   formulaExpressionText?: string
+  calculationPreset?: ForecastLine['calculationPreset']
+  calculationConfig?: ForecastLine['calculationConfig']
   amountBasis?: ForecastLine['amountBasis']
   taxRateText?: string
   assumption?: string
@@ -38,6 +40,8 @@ function fromRow(row: ModelLineRow): ForecastLine {
     startPeriod: row.start_period, endPeriod: row.end_period,
     fixedMonthlyValue: config.fixedMonthlyValueText,
     formulaExpression: config.formulaExpressionText,
+    calculationPreset: config.calculationPreset,
+    calculationConfig: config.calculationConfig,
     amountBasis: config.amountBasis ?? (row.category === 'revenue' || row.category === 'cost' ? 'tax_exclusive' : 'non_taxable'),
     taxRate: config.taxRateText ?? '0',
     assumption: config.assumption ?? '', sortOrder: row.sort_order,
@@ -109,6 +113,8 @@ export class ForecastLineRepository {
       const config: ForecastConfig = {
         fixedMonthlyValueText: draft.forecastMethod === 'fixed_monthly' ? draft.fixedMonthlyValue?.trim() || undefined : undefined,
         formulaExpressionText: draft.forecastMethod === 'formula' ? draft.formulaExpression?.trim() || undefined : undefined,
+        calculationPreset: draft.forecastMethod === 'formula' ? draft.calculationPreset : undefined,
+        calculationConfig: draft.forecastMethod === 'formula' ? draft.calculationConfig : undefined,
         amountBasis: draft.category === 'revenue' || draft.category === 'cost' ? draft.amountBasis ?? 'tax_exclusive' : 'non_taxable',
         taxRateText: draft.category === 'revenue' || draft.category === 'cost' ? draft.taxRate?.trim() || '0' : '0',
         assumption: draft.assumption.trim(),

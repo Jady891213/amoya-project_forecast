@@ -2,6 +2,8 @@ import Decimal from 'decimal.js'
 import { generatePeriods } from '../domain/periods'
 import type {
   ForecastCategory,
+  ForecastCalculationConfig,
+  ForecastCalculationPreset,
   ForecastLineDraft,
   ParameterValueType,
   ProjectParameterDraft,
@@ -145,6 +147,17 @@ function taxInclusive<T extends ForecastLineDraft>(
   }
 }
 
+function taxExclusive<T extends ForecastLineDraft>(
+  line: T,
+  taxRate: Decimal.Value,
+): T {
+  return {
+    ...line,
+    amountBasis: 'tax_exclusive',
+    taxRate: new Decimal(taxRate).toString(),
+  }
+}
+
 function annualSeriesToMonthly(valuesInWan: Decimal.Value[]): Decimal[] {
   return valuesInWan.flatMap((annual) =>
     Array.from({ length: 12 }, () => new Decimal(annual).div(12)),
@@ -161,6 +174,8 @@ function formulaLine(
   endPeriod: string,
   expression: string,
   assumption: string,
+  calculationPreset: ForecastCalculationPreset = 'custom_formula',
+  calculationConfig?: ForecastCalculationConfig,
 ): ForecastLineDraft {
   return {
     id: `historical-line:${projectId}:${sequence}`,
@@ -172,6 +187,8 @@ function formulaLine(
     startPeriod,
     endPeriod,
     formulaExpression: expression,
+    calculationPreset,
+    calculationConfig,
     assumption,
     sortOrder: sequence,
     monthlyValues: {},
@@ -187,40 +204,39 @@ function hebeiCable(): HistoricalProjectConfig {
     projectId,
     sourceWorkbook: '河北有线互联网电视项目测算20260721.xlsx',
     sourceSheets: ['总表', 'CDN明细'],
-    parameters: [
-      fixedParameter(projectId, 1, '会员月单价', 'currency', '元/户/月', 24, '总表会员价格。'),
-      fixedParameter(projectId, 2, '订购用户数', 'quantity', '户', 2642, '总表订购用户数。'),
-      fixedParameter(projectId, 3, '不含税换算系数', 'number', '', 1.06, '历史源表当前换算口径；正式税规则留待P1C。'),
-      fixedParameter(projectId, 4, '微信支付费率', 'percentage', '%', 1, '不含税收入的1%。'),
-      fixedParameter(projectId, 5, '渠道分成比例', 'percentage', '%', 30, '扣除支付手续费后收入的30%。'),
-      fixedParameter(projectId, 6, 'CDN户均月单价', 'currency', '元/户/月', 1.34, 'CDN明细户均价格。'),
-    ],
+    parameters: [],
     lines: [
-      formulaLine(
+      taxInclusive(formulaLine(
         projectId, 1, '互联网电视会员收入', 'revenue', moduleId, start, end,
-        'PARAM("PAR-001") * PARAM("PAR-002") / PARAM("PAR-003")',
-        '24元/月 × 2,642户 ÷ 1.06；来源：总表第16行。',
-      ),
+        '24 * 2642',
+        '24元/月 × 2,642户；按含税6%自动换算为未税收入，来源：总表第16行。',
+        'price_quantity',
+        { priceValue: '24', quantityValue: '2642' },
+      ), 0.06),
       formulaLine(
         projectId, 2, '微信支付手续费', 'cost', moduleId, start, end,
-        'LINE("LINE-001") * PARAM("PAR-004")',
+        'LINE("LINE-001") * 1%',
         '不含税收入的1%；来源：总表第18行。',
+        'revenue_ratio',
+        { revenueLineCode: 'LINE-001', ratioValue: '1' },
       ),
       formulaLine(
         projectId, 3, '河北有线收入分成', 'cost', moduleId, start, end,
-        '(LINE("LINE-001") - LINE("LINE-002")) * PARAM("PAR-005")',
+        '(LINE("LINE-001") - LINE("LINE-002")) * 30%',
         '扣除微信手续费后的收入 × 30%；来源：总表第19行。',
       ),
       formulaLine(
         projectId, 4, '当贝收入分成', 'cost', moduleId, start, end,
-        '(LINE("LINE-001") - LINE("LINE-002")) * PARAM("PAR-005")',
+        '(LINE("LINE-001") - LINE("LINE-002")) * 30%',
         '扣除微信手续费后的收入 × 30%；来源：总表第20行。',
       ),
-      formulaLine(
+      taxInclusive(formulaLine(
         projectId, 5, 'CDN成本', 'cost', moduleId, start, end,
-        'PARAM("PAR-006") * PARAM("PAR-002") / PARAM("PAR-003")',
-        '1.34元/户/月 × 2,642户 ÷ 1.06；来源：总表第21行和CDN明细。',
-      ),
+        '1.34 * 2642',
+        '1.34元/户/月 × 2,642户；按含税6%自动换算，来源：总表第21行和CDN明细。',
+        'price_quantity',
+        { priceValue: '1.34', quantityValue: '2642' },
+      ), 0.06),
     ],
   }
 }
@@ -249,44 +265,18 @@ function chongqingMobile(): HistoricalProjectConfig {
         '逐月取自总表第26行，源表单位万户，进入参数时换算为户。',
       ),
       fixedParameter(projectId, 2, '用户月单价', 'currency', '元/户/月', 6.5, '源表月单价。'),
-      fixedParameter(projectId, 3, '不含税换算系数', 'number', '', 1.06, '历史源表当前换算口径。'),
-      fixedParameter(projectId, 4, '爱奇艺APK年度成本', 'currency', '元/年', new Decimal(87.8).times(10_000), '源表年度金额。'),
-      fixedParameter(projectId, 5, '专线年度成本', 'currency', '元/年', new Decimal(56.6).times(10_000), '源表年度金额。'),
-      fixedParameter(projectId, 6, '服务器年度成本', 'currency', '元/年', new Decimal(3.89).times(10_000), '源表年度金额。'),
-      fixedParameter(projectId, 7, '频道年度成本', 'currency', '元/年', new Decimal(19.4).times(10_000), '源表年度金额。'),
-      fixedParameter(projectId, 8, 'FAST云年度成本', 'currency', '元/年', new Decimal(8.56).times(10_000), '源表年度金额。'),
     ],
     lines: [
-      formulaLine(
+      taxInclusive(formulaLine(
         projectId, 1, '中屏业务收入', 'revenue', moduleId, periods[0], periods[11],
-        'PARAM("PAR-001") * PARAM("PAR-002") / PARAM("PAR-003")',
-        '注册用户 × 6.5元 ÷ 1.06；注册用户逐月取自总表第26行。',
-      ),
-      formulaLine(
-        projectId, 2, '爱奇艺APK成本', 'cost', moduleId, periods[0], periods[11],
-        'PARAM("PAR-004") / 12',
-        '源表只给出年度87.8万元，按12个月均匀展开。',
-      ),
-      formulaLine(
-        projectId, 3, '专线成本', 'cost', moduleId, periods[0], periods[11],
-        'PARAM("PAR-005") / 12',
-        '源表年度56.6万元，按12个月均匀展开。',
-      ),
-      formulaLine(
-        projectId, 4, '服务器成本', 'cost', moduleId, periods[0], periods[11],
-        'PARAM("PAR-006") / 12',
-        '源表年度3.89万元，按12个月均匀展开。',
-      ),
-      formulaLine(
-        projectId, 5, '频道成本', 'cost', moduleId, periods[0], periods[11],
-        'PARAM("PAR-007") / 12',
-        '源表年度19.4万元，按12个月均匀展开。',
-      ),
-      formulaLine(
-        projectId, 6, 'FAST云成本', 'cost', moduleId, periods[0], periods[11],
-        'PARAM("PAR-008") / 12',
-        '源表年度8.56万元，按12个月均匀展开。',
-      ),
+        'PARAM("PAR-001") * PARAM("PAR-002")',
+        '注册用户 × 6.5元；按含税6%自动换算为未税收入，注册用户逐月取自总表第26行。',
+      ), 0.06),
+      fixedLine(projectId, 2, '爱奇艺APK成本', 'cost', moduleId, periods[0], periods[11], new Decimal(87.8).div(12), '源表年度87.8万元，按12个月均匀展开。'),
+      fixedLine(projectId, 3, '专线成本', 'cost', moduleId, periods[0], periods[11], new Decimal(56.6).div(12), '源表年度56.6万元，按12个月均匀展开。'),
+      fixedLine(projectId, 4, '服务器成本', 'cost', moduleId, periods[0], periods[11], new Decimal(3.89).div(12), '源表年度3.89万元，按12个月均匀展开。'),
+      fixedLine(projectId, 5, '频道成本', 'cost', moduleId, periods[0], periods[11], new Decimal(19.4).div(12), '源表年度19.4万元，按12个月均匀展开。'),
+      fixedLine(projectId, 6, 'FAST云成本', 'cost', moduleId, periods[0], periods[11], new Decimal(8.56).div(12), '源表年度8.56万元，按12个月均匀展开。'),
     ],
   }
 }
@@ -495,15 +485,17 @@ function hebeiCloudGameReport(): HistoricalProjectConfig {
     sourceSheets: ['测算报告'],
     parameters: [],
     lines: [
-      taxInclusive(fixedLine(
+      taxInclusive(formulaLine(
         projectId, 1, '云游戏业务收入', 'revenue', moduleId,
-        periods[0], periods[11], 6.348,
+        periods[0], periods[11], '24 * 2645',
         '报告口径：24元/月 × 2,645户；源文件未提供分月表，按12个月均匀重建。',
+        'price_quantity', { priceValue: '24', quantityValue: '2645' },
       ), 0.06),
-      taxInclusive(monthlyLine(
+      taxInclusive(formulaLine(
         projectId, 2, '游戏手柄收入', 'revenue', moduleId,
-        periods, firstMonthThen(9.9, 0),
+        periods[0], periods[0], '99 * 1000',
         '报告口径：99元 × 1,000个；源文件未给出确认时点，暂按首月一次性确认。',
+        'price_quantity', { priceValue: '99', quantityValue: '1000' },
       ), 0.13),
       taxInclusive(monthlyLine(
         projectId, 3, '微信支付手续费', 'cost', moduleId,
@@ -525,14 +517,15 @@ function hebeiCloudGameReport(): HistoricalProjectConfig {
         periods[0], periods[11], 2,
         '报告口径：2万元/月 × 12个月。',
       ), 0.09),
-      taxInclusive(fixedLine(
+      taxInclusive(formulaLine(
         projectId, 7, '游戏诉讼成本', 'cost', moduleId,
-        periods[0], periods[11], 0.39675,
+        periods[0], periods[11], '1.5 * 2645',
         '报告口径：1.5元/月 × 2,645户。',
+        'price_quantity', { priceValue: '1.5', quantityValue: '2645' },
       ), 0.06),
-      taxInclusive(fixedLine(
+      taxExclusive(formulaLine(
         projectId, 8, '渠道成本', 'cost', moduleId,
-        periods[0], periods[11], 1.785375,
+        periods[0], periods[11], '(LINE("LINE-001") - LINE("LINE-007")) * 30%',
         '报告口径：（云游戏收入－诉讼成本）×30%。',
       ), 0.06),
     ],
