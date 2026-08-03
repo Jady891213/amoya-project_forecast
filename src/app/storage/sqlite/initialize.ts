@@ -10,6 +10,7 @@ import {
   SCHEMA_V5,
   SCHEMA_V6,
   SCHEMA_V7,
+  SCHEMA_V9,
 } from './migrations'
 
 function periodStatements(): SqlStatement[] {
@@ -162,6 +163,34 @@ export async function initializeSqliteDatabase(
     await database.execute(
       `INSERT INTO sys_schema_migration (version, description, applied_at)
        VALUES (7, '项目聚合修订、期间覆盖与计算项目快照', ?)`,
+      [now],
+    )
+  }
+  const projectColumns = await database.query<{ name: string }>(
+    'PRAGMA table_info(dim_project)',
+  )
+  const projectColumnNames = new Set(projectColumns.map((column) => column.name))
+  if (
+    !projectColumnNames.has('end_period')
+    || projectColumnNames.has('duration_months')
+    || projectColumnNames.has('customer')
+    || projectColumnNames.has('owner')
+    || projectColumnNames.has('remark')
+  ) {
+    throw new Error('当前开发版本不兼容旧项目表，请使用当前结构重新建立开发数据库')
+  }
+  if (!applied.has(8)) {
+    await database.execute(
+      `INSERT INTO sys_schema_migration (version, description, applied_at)
+       VALUES (8, '当前开发库项目主信息与起止期间结构', ?)`,
+      [now],
+    )
+  }
+  if (!applied.has(9)) {
+    await database.execute(SCHEMA_V9)
+    await database.execute(
+      `INSERT INTO sys_schema_migration (version, description, applied_at)
+       VALUES (9, '三类测算内容统一行项目与JSON配置', ?)`,
       [now],
     )
   }

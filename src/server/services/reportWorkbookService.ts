@@ -138,8 +138,7 @@ export class ReportWorkbookService {
     title(sheet, '项目测算报告', 4)
     const rows = [
       ['项目编码', report.projectSnapshot.code ?? '—', '项目名称', report.projectSnapshot.name],
-      ['客户', report.projectSnapshot.customer || '—', '负责人', report.projectSnapshot.owner || '—'],
-      ['开始期间', report.projectSnapshot.startPeriod, '经营周期（月）', report.projectSnapshot.durationMonths],
+      ['申报部门', report.department?.name ?? '—', '测算期间', `${report.projectSnapshot.startPeriod} 至 ${report.projectSnapshot.endPeriod}`],
       ['场景', report.scenario.name, '版本', report.version.name],
       ['计算批次', report.calculationRun ? `RUN-${String(report.calculationRun.runNumber).padStart(4, '0')}` : '无', '草稿修订', report.calculationRun?.draftRevision ?? '—'],
       ['结果状态', report.isBehindDraft ? '落后于当前配置' : '与当前配置一致', '导出时间', new Date()],

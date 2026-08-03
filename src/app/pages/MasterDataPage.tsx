@@ -117,16 +117,14 @@ export function MasterDataPage({
             <div className="table-wrap tall-table">
               {activeTab === 'projects' && (
                 <table>
-                  <thead><tr><th>项目编码</th><th>项目名称</th><th>客户</th><th>部门</th><th>负责人</th><th>开始期间</th><th>月数</th><th>状态</th><th>操作</th></tr></thead>
+                  <thead><tr><th>项目编码</th><th>项目名称</th><th>申报部门</th><th>开始期间</th><th>结束期间</th><th>状态</th><th>操作</th></tr></thead>
                   <tbody>{snapshot.projects.map((project) => (
                     <tr key={project.id}>
                       <td>{project.code ?? '—'}</td>
                       <td className="strong-cell">{project.name}</td>
-                      <td>{project.customer || '—'}</td>
                       <td>{departmentName(project.departmentId)}</td>
-                      <td>{project.owner || '—'}</td>
                       <td>{project.startPeriod}</td>
-                      <td>{project.durationMonths}</td>
+                      <td>{project.endPeriod}</td>
                       <td><span className={`status status-${project.status}`}>{project.status === 'calculating' ? '测算中' : '已归档'}</span></td>
                       <td><button className="text-button" onClick={() => onOpenProject(project.id)}>进入项目</button></td>
                     </tr>

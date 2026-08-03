@@ -42,13 +42,13 @@ export class ReferenceDatasetService {
     REFERENCE_PROJECTS.forEach((row) =>
       statements.push({
         sql: `INSERT OR REPLACE INTO dim_project (
-          id, code, name, customer, department_id, owner, start_period,
-          duration_months, status, remark, attributes_json, origin,
+          id, code, name, department_id, start_period, end_period,
+          status, attributes_json, origin,
           dataset_id, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
         params: [
-          row.id, row.code ?? null, row.name, row.customer, row.departmentId,
-          row.owner, row.startPeriod, row.durationMonths, row.status, row.remark,
+          row.id, row.code ?? null, row.name, row.departmentId,
+          row.startPeriod, row.endPeriod, row.status,
           row.origin, row.datasetId, row.createdAt, row.updatedAt,
         ],
       }),

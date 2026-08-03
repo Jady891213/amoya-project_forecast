@@ -47,7 +47,8 @@ export class ForecastOverrideRepository {
     drafts: ForecastOverrideDraft[],
   ): Promise<ForecastOverride[]> {
     const lineRows = await this.database.query<{ id: string }>(
-      'SELECT id FROM cfg_forecast_line WHERE project_id = ?',
+      `SELECT id FROM cfg_model_line
+       WHERE project_id = ? AND line_type IN ('profit', 'cash')`,
       [projectId],
     )
     const lineIds = new Set(lineRows.map((row) => row.id))

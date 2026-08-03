@@ -1,5 +1,6 @@
 import Decimal from 'decimal.js'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 
 export interface FinancialGridRow {
   id: string
@@ -36,6 +37,15 @@ interface Props {
   onClearOverride?: (rowId: string, period: string) => void
   includeHeadersOnCopy?: boolean
   ariaLabel: string
+  labelColumnTitle?: string
+  labelColumnWidth?: number
+  typeColumnTitle?: string
+  typeColumnWidth?: number
+  renderRowType?: (row: FinancialGridRow) => ReactNode
+  renderRowLabel?: (row: FinancialGridRow) => ReactNode
+  showToolbar?: boolean
+  onRowActivate?: (rowId: string) => void
+  activeRowId?: string
 }
 
 export function parseFinancialValue(raw: string): string {
@@ -116,6 +126,15 @@ export function FinancialGrid({
   onClearOverride,
   includeHeadersOnCopy = false,
   ariaLabel,
+  labelColumnTitle = '行项目',
+  labelColumnWidth = 190,
+  typeColumnTitle = '类型',
+  typeColumnWidth = 86,
+  renderRowType,
+  renderRowLabel,
+  showToolbar = true,
+  onRowActivate,
+  activeRowId,
 }: Props) {
   const root = useRef<HTMLDivElement>(null)
   const dragging = useRef(false)
@@ -126,6 +145,10 @@ export function FinancialGrid({
   const [decimalPlaces, setDecimalPlaces] = useState<0 | 2 | 4>(2)
   const [thousandSeparator, setThousandSeparator] = useState(true)
   const [negativeStyle, setNegativeStyle] = useState<FinancialNegativeStyle>('minus')
+  const [currentTypeWidth, setCurrentTypeWidth] = useState(typeColumnWidth)
+  const [currentLabelWidth, setCurrentLabelWidth] = useState(labelColumnWidth)
+  const [periodWidths, setPeriodWidths] = useState<Record<string, number>>({})
+  const resizeCleanup = useRef<(() => void) | null>(null)
   const undoStack = useRef<EditTransaction[]>([])
   const redoStack = useRef<EditTransaction[]>([])
   const selected = useMemo(
@@ -142,8 +165,37 @@ export function FinancialGrid({
   useEffect(() => {
     const finishDrag = () => { dragging.current = false }
     window.addEventListener('mouseup', finishDrag)
-    return () => window.removeEventListener('mouseup', finishDrag)
+    return () => {
+      window.removeEventListener('mouseup', finishDrag)
+      resizeCleanup.current?.()
+    }
   }, [])
+
+  function startColumnResize(
+    event: React.MouseEvent<HTMLElement>,
+    currentWidth: number,
+    minimum: number,
+    maximum: number,
+    onResize: (width: number) => void,
+  ) {
+    event.preventDefault()
+    event.stopPropagation()
+    resizeCleanup.current?.()
+    const startX = event.clientX
+    const move = (moveEvent: MouseEvent) => {
+      onResize(Math.max(minimum, Math.min(maximum, currentWidth + moveEvent.clientX - startX)))
+    }
+    const finish = () => {
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', finish)
+      resizeCleanup.current = null
+      document.body.classList.remove('resizing-financial-column')
+    }
+    resizeCleanup.current = finish
+    document.body.classList.add('resizing-financial-column')
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', finish)
+  }
 
   useEffect(() => {
     if (rows.length === 0 || periods.length === 0) return
@@ -342,14 +394,14 @@ export function FinancialGrid({
 
   return (
     <div className="financial-grid-shell">
-      <div className="financial-grid-toolbar" aria-label={`${ariaLabel}显示格式`}>
+      {showToolbar && <div className="financial-grid-toolbar" aria-label={`${ariaLabel}显示格式`}>
         <b>显示格式</b>
         <label>单位<select aria-label={`${ariaLabel}显示单位`} value={displayUnit} onChange={(event) => setDisplayUnit(event.target.value as FinancialDisplayUnit)}><option value="yuan">元</option><option value="thousand">千元</option><option value="ten_thousand">万元</option></select></label>
         <label>小数<select aria-label={`${ariaLabel}小数位数`} value={decimalPlaces} onChange={(event) => setDecimalPlaces(Number(event.target.value) as 0 | 2 | 4)}><option value={0}>0 位</option><option value={2}>2 位</option><option value={4}>4 位</option></select></label>
         <label className="financial-format-check"><input aria-label={`${ariaLabel}使用千分位`} type="checkbox" checked={thousandSeparator} onChange={(event) => setThousandSeparator(event.target.checked)} />千分位</label>
         <label>负数<select aria-label={`${ariaLabel}负数格式`} value={negativeStyle} onChange={(event) => setNegativeStyle(event.target.value as FinancialNegativeStyle)}><option value="minus">-1,234.56</option><option value="parentheses">(1,234.56)</option></select></label>
         <span>拖拽或 Shift 扩展选区 · 仅调整显示，不改变计算值</span>
-      </div>
+      </div>}
       <div
         className="financial-grid"
         ref={root}
@@ -370,15 +422,18 @@ export function FinancialGrid({
         tabIndex={-1}
       >
       <table>
-        <thead><tr><th className="grid-label-column" onMouseDown={() => { setAnchor({ row: 0, column: 0 }); setFocus({ row: rows.length - 1, column: periods.length - 1 }); root.current?.focus() }}>行项目</th>{periods.map((period, columnIndex) => <th key={period} onMouseDown={() => { setAnchor({ row: 0, column: columnIndex }); setFocus({ row: rows.length - 1, column: columnIndex }); root.current?.focus() }}>{period}</th>)}</tr></thead>
+        <colgroup>{renderRowType && <col style={{ width: currentTypeWidth }} />}<col style={{ width: currentLabelWidth }} />{periods.map((period) => <col key={period} style={{ width: periodWidths[period] ?? 92 }} />)}</colgroup>
+        <thead><tr>{renderRowType && <th className="grid-type-column" style={{ minWidth: currentTypeWidth, maxWidth: currentTypeWidth, width: currentTypeWidth }}>{typeColumnTitle}<span className="financial-column-resizer" title="拖拽调整列宽" onMouseDown={(event) => startColumnResize(event, currentTypeWidth, 72, 160, setCurrentTypeWidth)} /></th>}<th className="grid-label-column" style={{ left: renderRowType ? currentTypeWidth : 0, minWidth: currentLabelWidth, maxWidth: currentLabelWidth, width: currentLabelWidth }} onMouseDown={() => { setAnchor({ row: 0, column: 0 }); setFocus({ row: rows.length - 1, column: periods.length - 1 }); root.current?.focus() }}>{labelColumnTitle}<span className="financial-column-resizer" title="拖拽调整列宽" onMouseDown={(event) => startColumnResize(event, currentLabelWidth, 220, 560, setCurrentLabelWidth)} /></th>{periods.map((period, columnIndex) => { const periodWidth = periodWidths[period] ?? 92; return <th key={period} style={{ minWidth: periodWidth, maxWidth: periodWidth, width: periodWidth }} onMouseDown={() => { setAnchor({ row: 0, column: columnIndex }); setFocus({ row: rows.length - 1, column: columnIndex }); root.current?.focus() }}>{period}<span className="financial-column-resizer" title="拖拽调整列宽" onMouseDown={(event) => startColumnResize(event, periodWidth, 72, 180, (width) => setPeriodWidths((current) => ({ ...current, [period]: width })))} /></th> })}</tr></thead>
         <tbody>{rows.map((row, rowIndex) => (
-          <tr key={row.id} className={row.editable ? 'editable-row' : 'readonly-row'}>
-            <th onMouseDown={() => { setAnchor({ row: rowIndex, column: 0 }); setFocus({ row: rowIndex, column: periods.length - 1 }); root.current?.focus() }}><span>{row.label}</span>{row.secondary && <small>{row.secondary}</small>}</th>
+          <tr key={row.id} className={`${row.editable ? 'editable-row' : 'readonly-row'} ${activeRowId === row.id ? 'active-grid-row' : ''}`}>
+            {renderRowType && <th className="grid-type-cell" style={{ minWidth: currentTypeWidth, maxWidth: currentTypeWidth, width: currentTypeWidth }} onMouseDown={() => onRowActivate?.(row.id)}>{renderRowType(row)}</th>}
+            <th className="grid-label-cell" style={{ left: renderRowType ? currentTypeWidth : 0, minWidth: currentLabelWidth, maxWidth: currentLabelWidth, width: currentLabelWidth }} onMouseDown={() => { setAnchor({ row: rowIndex, column: 0 }); setFocus({ row: rowIndex, column: periods.length - 1 }); root.current?.focus(); onRowActivate?.(row.id) }}>{renderRowLabel ? renderRowLabel(row) : <><span>{row.label}</span>{row.secondary && <small>{row.secondary}</small>}</>}</th>
             {periods.map((period, columnIndex) => {
               const isSelected = rowIndex >= selected.top && rowIndex <= selected.bottom && columnIndex >= selected.left && columnIndex <= selected.right
               const overridden = row.overriddenPeriods?.has(period)
               return <td
                 key={period}
+                style={{ minWidth: periodWidths[period] ?? 92, maxWidth: periodWidths[period] ?? 92, width: periodWidths[period] ?? 92 }}
                 data-cell={`${rowIndex}:${columnIndex}`}
                 tabIndex={rowIndex === focus.row && columnIndex === focus.column ? 0 : -1}
                 className={`${isSelected ? 'selected-cell' : ''} ${overridden ? 'overridden-cell' : ''}`}
@@ -389,6 +444,7 @@ export function FinancialGrid({
                     event.preventDefault()
                     dragging.current = true
                     focusCell({ row: rowIndex, column: columnIndex }, event.shiftKey)
+                    onRowActivate?.(row.id)
                   }
                 }}
                 onMouseEnter={() => {

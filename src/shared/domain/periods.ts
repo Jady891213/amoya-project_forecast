@@ -12,8 +12,18 @@ export function generatePeriods(startPeriod: string, durationMonths: number): st
   )
 }
 
+export function countPeriods(startPeriod: string, endPeriod: string): number {
+  const [startYear, startMonth] = startPeriod.split('-').map(Number)
+  const [endYear, endMonth] = endPeriod.split('-').map(Number)
+  return (endYear - startYear) * 12 + (endMonth - startMonth) + 1
+}
+
+export function generatePeriodRange(startPeriod: string, endPeriod: string): string[] {
+  const count = countPeriods(startPeriod, endPeriod)
+  return count > 0 ? generatePeriods(startPeriod, count) : []
+}
+
 export function formatPeriod(period: string): string {
   const [year, month] = period.split('-')
   return `${year}年${Number(month)}月`
 }
-

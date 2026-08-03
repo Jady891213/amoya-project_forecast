@@ -6,6 +6,7 @@ import type {
   ProjectInput,
   ProjectModule,
 } from '../domain/types'
+import { addMonths } from '../domain/periods'
 
 interface ModuleDraft {
   key: string
@@ -38,7 +39,6 @@ export function ProjectDialog({
 }: ProjectDialogProps) {
   const [code, setCode] = useState(project?.code ?? '')
   const [name, setName] = useState(project?.name ?? '')
-  const [customer, setCustomer] = useState(project?.customer ?? '')
   const [departmentId, setDepartmentId] = useState(
     project?.departmentId ??
       departments.find(
@@ -47,14 +47,12 @@ export function ProjectDialog({
       )?.id ??
       '',
   )
-  const [owner, setOwner] = useState(project?.owner ?? '')
   const [startPeriod, setStartPeriod] = useState(
     project?.startPeriod ?? new Date().toISOString().slice(0, 7),
   )
-  const [durationMonths, setDurationMonths] = useState(
-    project?.durationMonths ?? 12,
+  const [endPeriod, setEndPeriod] = useState(
+    project?.endPeriod ?? addMonths(new Date().toISOString().slice(0, 7), 11),
   )
-  const [remark, setRemark] = useState(project?.remark ?? '')
   const [moduleDrafts, setModuleDrafts] = useState<ModuleDraft[]>(
     toModuleDrafts(modules),
   )
@@ -99,12 +97,9 @@ export function ProjectDialog({
         id: project?.id,
         code,
         name,
-        customer,
         departmentId,
-        owner,
         startPeriod,
-        durationMonths: Number(durationMonths),
-        remark,
+        endPeriod,
         modules: moduleDrafts.map(({ code: moduleCode, name: moduleName }) => ({
           code: moduleCode,
           name: moduleName,
@@ -153,15 +148,7 @@ export function ProjectDialog({
             />
           </label>
           <label>
-            <span>客户</span>
-            <input
-              value={customer}
-              onChange={(event) => setCustomer(event.target.value)}
-              placeholder="请输入客户名称"
-            />
-          </label>
-          <label>
-            <span>所属部门 *</span>
+            <span>申报部门 *</span>
             <select
               value={departmentId}
               onChange={(event) => setDepartmentId(event.target.value)}
@@ -182,14 +169,6 @@ export function ProjectDialog({
             </select>
           </label>
           <label>
-            <span>负责人</span>
-            <input
-              value={owner}
-              onChange={(event) => setOwner(event.target.value)}
-              placeholder="请输入负责人"
-            />
-          </label>
-          <label>
             <span>开始期间 *</span>
             <input
               type="month"
@@ -198,24 +177,11 @@ export function ProjectDialog({
             />
           </label>
           <label>
-            <span>预测周期（月）*</span>
+            <span>结束期间 *</span>
             <input
-              type="number"
-              min={1}
-              max={36}
-              value={durationMonths}
-              onChange={(event) =>
-                setDurationMonths(Number(event.target.value))
-              }
-            />
-          </label>
-          <label className="full-width">
-            <span>备注</span>
-            <textarea
-              rows={3}
-              value={remark}
-              onChange={(event) => setRemark(event.target.value)}
-              placeholder="说明项目背景或当前状态"
+              type="month"
+              value={endPeriod}
+              onChange={(event) => setEndPeriod(event.target.value)}
             />
           </label>
         </div>

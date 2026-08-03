@@ -17,6 +17,7 @@ import {
 import { ApiClient } from './api/client'
 import type { AppSnapshot } from './state/types'
 import type { ProjectInput } from '../shared/domain/types'
+import { addMonths, countPeriods } from '../shared/domain/periods'
 import { ProjectWorkspacePage } from './pages/ProjectWorkspacePage'
 import { MasterDataPage } from './pages/MasterDataPage'
 import { PageBreadcrumbs } from './components/PageBreadcrumbs'
@@ -192,13 +193,13 @@ function ProjectList({ snapshot, archived, onNavigate, onArchive, onCopy, onDele
       <div className="project-list-context"><b>{archived ? '已归档项目' : '测算中项目'}</b><span>共 {archived ? archivedCount : activeCount} 个</span></div>
       <div className="data-panel">
         <table className="data-table project-list-table">
-          <thead><tr><th>项目</th><th>客户</th><th>部门</th><th>经营期间</th><th>最近更新</th><th>状态</th><th>操作</th></tr></thead>
+          <thead><tr><th>项目</th><th>申报部门</th><th>项目期间</th><th>月数</th><th>最近更新</th><th>状态</th><th>操作</th></tr></thead>
           <tbody>
             {projects.map((project) => <tr key={project.id} className="clickable-project-row" onClick={() => openProject(project.id)}>
               <td><button className="project-name-button" onClick={(event) => { event.stopPropagation(); openProject(project.id) }}><b>{project.name}</b><small>{project.code || '无项目编码'}</small></button></td>
-              <td>{project.customer || '—'}</td>
               <td>{department(project.departmentId)}</td>
-              <td>{project.startPeriod} · {project.durationMonths}个月</td>
+              <td>{project.startPeriod} 至 {project.endPeriod}</td>
+              <td>{countPeriods(project.startPeriod, project.endPeriod)}个月</td>
               <td>{new Date(project.updatedAt).toLocaleDateString('zh-CN')}</td>
               <td><span className={`status status-${project.status}`}>{project.status === 'calculating' ? '测算中' : '已归档'}</span></td>
               <td><div className="row-actions">
@@ -221,10 +222,12 @@ function ProjectList({ snapshot, archived, onNavigate, onArchive, onCopy, onDele
 
 function NewProjectPage({ snapshot, onCancel, onCreate }: { snapshot: AppSnapshot; onCancel: () => void; onCreate: (input: ProjectInput) => Promise<void> }) {
   const firstDepartment = snapshot.departments.find((item) => item.status === 'active')
-  const [draft, setDraft] = useState<ProjectInput>({ name: '', code: '', customer: '', departmentId: firstDepartment?.id ?? '', owner: '', startPeriod: new Date().toISOString().slice(0, 7), durationMonths: 12, remark: '', modules: [] })
+  const currentPeriod = new Date().toISOString().slice(0, 7)
+  const [draft, setDraft] = useState<ProjectInput>({ name: '', code: '', departmentId: firstDepartment?.id ?? '', startPeriod: currentPeriod, endPeriod: addMonths(currentPeriod, 11), modules: [] })
   const [error, setError] = useState('')
   const patch = (values: Partial<ProjectInput>) => setDraft((current) => ({ ...current, ...values }))
-  return <main className="page"><div className="page-head"><div className="page-head-main"><PageBreadcrumbs items={[{ label: '项目管理', onClick: onCancel }, { label: '新建项目' }]} /><h1>新建项目</h1><p>先登记项目级信息；首次保存后进入完整项目配置。</p></div></div><div className="page-body"><section className="new-project-form"><div className="project-information-grid"><label>项目编码<input value={draft.code} onChange={(e) => patch({ code: e.target.value })} /></label><label>项目名称<input value={draft.name} onChange={(e) => patch({ name: e.target.value })} /></label><label>客户<input value={draft.customer} onChange={(e) => patch({ customer: e.target.value })} /></label><label>部门<select value={draft.departmentId} onChange={(e) => patch({ departmentId: e.target.value })}>{snapshot.departments.filter((item) => item.status === 'active').map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label>负责人<input value={draft.owner} onChange={(e) => patch({ owner: e.target.value })} /></label><label>开始期间<input type="month" value={draft.startPeriod} onChange={(e) => patch({ startPeriod: e.target.value })} /></label><label>经营周期（月）<input type="number" min={1} max={36} value={draft.durationMonths} onChange={(e) => patch({ durationMonths: Number(e.target.value) })} /></label><label className="project-remark">备注<input value={draft.remark} onChange={(e) => patch({ remark: e.target.value })} /></label></div>{error && <div className="page-alert error">{error}</div>}<div className="form-footer"><button className="btn" onClick={onCancel}>取消</button><button className="btn primary" onClick={() => void onCreate(draft).catch((reason) => setError(reason instanceof Error ? reason.message : '创建失败'))}><Save size={14} />保存并进入项目</button></div></section></div></main>
+  const periodCount = countPeriods(draft.startPeriod, draft.endPeriod)
+  return <main className="page"><div className="page-head"><div className="page-head-main"><PageBreadcrumbs items={[{ label: '项目管理', onClick: onCancel }, { label: '新建项目' }]} /><h1>新建项目</h1></div></div><div className="page-body"><section className="new-project-form"><h2>项目信息</h2><div className="project-information-grid compact-project-master-form"><label>项目编码<input value={draft.code} onChange={(e) => patch({ code: e.target.value })} /></label><label>项目名称<input value={draft.name} onChange={(e) => patch({ name: e.target.value })} /></label><label>申报部门<select value={draft.departmentId} onChange={(e) => patch({ departmentId: e.target.value })}>{snapshot.departments.filter((item) => item.status === 'active').map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label></div><h2 className="new-project-section-title">业务参数</h2><div className="project-information-grid project-period-fields"><label>开始期间<input type="month" value={draft.startPeriod} onChange={(e) => patch({ startPeriod: e.target.value })} /></label><label>结束期间<input type="month" value={draft.endPeriod} onChange={(e) => patch({ endPeriod: e.target.value })} /></label><div className={`period-count-preview ${periodCount < 1 ? 'error' : ''}`}><span>项目周期</span><b>{periodCount < 1 ? '结束期间不能早于开始期间' : `共 ${periodCount} 个月`}</b></div></div>{error && <div className="page-alert error">{error}</div>}<div className="form-footer"><button className="btn" onClick={onCancel}>取消</button><button className="btn primary" disabled={periodCount < 1} onClick={() => void onCreate(draft).catch((reason) => setError(reason instanceof Error ? reason.message : '创建失败'))}><Save size={14} />保存并进入项目</button></div></section></div></main>
 }
 
 function MetricPage({ snapshot }: { snapshot: AppSnapshot }) {

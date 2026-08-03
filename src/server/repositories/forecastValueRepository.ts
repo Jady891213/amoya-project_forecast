@@ -15,9 +15,9 @@ export class ForecastValueRepository {
   async listForProject(projectId: string): Promise<ForecastMonthlyValue[]> {
     const rows = await this.database.query<ForecastValueRow>(
       `SELECT value.line_id, value.period, value.value_text
-       FROM cfg_forecast_value value
-       JOIN cfg_forecast_line line ON line.id = value.line_id
-       WHERE line.project_id = ?
+       FROM cfg_model_line_value value
+       JOIN cfg_model_line line ON line.id = value.line_id
+       WHERE line.project_id = ? AND line.line_type IN ('profit', 'cash')
        ORDER BY line.sort_order, value.period`,
       [projectId],
     )

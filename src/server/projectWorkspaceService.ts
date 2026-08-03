@@ -135,12 +135,9 @@ export class ProjectWorkspaceService {
       const copiedProject = await this.projects.save({
         code,
         name: `${source.project.name} 副本`,
-        customer: source.project.customer,
         departmentId: source.project.departmentId,
-        owner: source.project.owner,
         startPeriod: source.project.startPeriod,
-        durationMonths: source.project.durationMonths,
-        remark: source.project.remark,
+        endPeriod: source.project.endPeriod,
         modules: source.modules
           .filter((module) => !module.isCommon)
           .map((module) => ({ code: module.code, name: module.name })),

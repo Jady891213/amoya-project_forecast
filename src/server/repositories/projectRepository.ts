@@ -11,13 +11,10 @@ interface ProjectRow {
   id: string
   code: string | null
   name: string
-  customer: string
   department_id: string
-  owner: string
   start_period: string
-  duration_months: number
+  end_period: string
   status: Project['status']
-  remark: string
   attributes_json: string | null
   draft_revision: number
   origin: Project['origin']
@@ -64,13 +61,10 @@ function projectFromRow(row: ProjectRow): Project {
     id: row.id,
     code: row.code ?? undefined,
     name: row.name,
-    customer: row.customer,
     departmentId: row.department_id,
-    owner: row.owner,
     startPeriod: row.start_period,
-    durationMonths: row.duration_months,
+    endPeriod: row.end_period,
     status: row.status,
-    remark: row.remark,
     attributesJson: row.attributes_json ?? undefined,
     draftRevision: row.draft_revision ?? 0,
     origin: row.origin,
@@ -134,12 +128,6 @@ function normalizeModules(modules: ProjectInput['modules']) {
     })
 }
 
-function endPeriod(startPeriod: string, durationMonths: number) {
-  const [year, month] = startPeriod.split('-').map(Number)
-  const date = new Date(year, month - 1 + durationMonths - 1, 1)
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
-}
-
 export class ProjectRepository {
   constructor(private readonly database: DatabaseClient) {}
 
@@ -190,19 +178,15 @@ export class ProjectRepository {
     const name = input.name.trim()
     const departmentId = input.departmentId.trim()
     const startPeriod = input.startPeriod.trim()
+    const endPeriod = input.endPeriod.trim()
     const code = input.code?.trim().toUpperCase() || undefined
     if (!name) throw new Error('项目名称不能为空')
     if (!departmentId) throw new Error('所属部门不能为空')
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(startPeriod)) {
       throw new Error('开始期间格式不正确')
     }
-    if (
-      !Number.isInteger(input.durationMonths) ||
-      input.durationMonths < 1 ||
-      input.durationMonths > 36
-    ) {
-      throw new Error('预测周期必须是1～36个月')
-    }
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(endPeriod)) throw new Error('结束期间格式不正确')
+    if (endPeriod < startPeriod) throw new Error('结束期间不能早于开始期间')
 
     const departments = await this.database.query<{ origin: string }>(
       'SELECT origin FROM dim_department WHERE id = ?',
@@ -239,13 +223,10 @@ export class ProjectRepository {
       id: projectId,
       code,
       name,
-      customer: input.customer.trim(),
       departmentId,
-      owner: input.owner.trim(),
       startPeriod,
-      durationMonths: input.durationMonths,
+      endPeriod,
       status: existing?.status ?? 'calculating',
-      remark: input.remark.trim(),
       draftRevision: (existing?.draftRevision ?? 0) + 1,
       origin: 'user',
       createdAt: existing?.createdAt ?? now,
@@ -258,15 +239,15 @@ export class ProjectRepository {
     if (
       existing &&
       (existing.startPeriod !== startPeriod ||
-        existing.durationMonths !== input.durationMonths)
+        existing.endPeriod !== endPeriod)
     ) {
       const periodConflicts = await this.database.query<{ count: number }>(
         `SELECT COUNT(*) AS count
-         FROM cfg_forecast_line
+         FROM cfg_model_line
          WHERE project_id = ?
-           AND category IN ('revenue', 'cost')
+           AND line_type = 'profit'
            AND (start_period < ? OR end_period > ?)`,
-        [projectId, startPeriod, endPeriod(startPeriod, input.durationMonths)],
+        [projectId, startPeriod, endPeriod],
       )
       if ((periodConflicts[0]?.count ?? 0) > 0) {
         throw new Error('新项目周期无法覆盖已有预测行，请先调整行项目生效期间')
@@ -279,7 +260,7 @@ export class ProjectRepository {
       const placeholders = removedModuleIds.map(() => '?').join(', ')
       const moduleConflicts = await this.database.query<{ count: number }>(
         `SELECT COUNT(*) AS count
-         FROM cfg_forecast_line
+         FROM cfg_model_line
          WHERE business_module_id IN (${placeholders})`,
         removedModuleIds,
       )
@@ -290,28 +271,25 @@ export class ProjectRepository {
     const statements: SqlStatement[] = [
       {
         sql: `INSERT INTO dim_project (
-          id, code, name, customer, department_id, owner, start_period,
-          duration_months, status, remark, attributes_json, origin,
+          id, code, name, department_id, start_period, end_period,
+          status, attributes_json, origin,
           dataset_id, created_at, updated_at, draft_revision
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'user', NULL, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 'user', NULL, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
-          code = excluded.code, name = excluded.name, customer = excluded.customer,
-          department_id = excluded.department_id, owner = excluded.owner,
+          code = excluded.code, name = excluded.name,
+          department_id = excluded.department_id,
           start_period = excluded.start_period,
-          duration_months = excluded.duration_months, remark = excluded.remark,
+          end_period = excluded.end_period,
           updated_at = excluded.updated_at,
           draft_revision = excluded.draft_revision`,
         params: [
           project.id,
           project.code ?? null,
           project.name,
-          project.customer,
           project.departmentId,
-          project.owner,
           project.startPeriod,
-          project.durationMonths,
+          project.endPeriod,
           project.status,
-          project.remark,
           project.createdAt,
           project.updatedAt,
           project.draftRevision,

@@ -1,4 +1,4 @@
-export const CURRENT_SCHEMA_VERSION = 7
+export const CURRENT_SCHEMA_VERSION = 9
 
 export const SCHEMA_V1 = `
 PRAGMA foreign_keys = ON;
@@ -30,18 +30,17 @@ CREATE TABLE IF NOT EXISTS dim_project (
   id TEXT PRIMARY KEY,
   code TEXT UNIQUE,
   name TEXT NOT NULL,
-  customer TEXT NOT NULL DEFAULT '',
   department_id TEXT NOT NULL REFERENCES dim_department(id) ON UPDATE CASCADE,
-  owner TEXT NOT NULL DEFAULT '',
   start_period TEXT NOT NULL CHECK (start_period GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]'),
-  duration_months INTEGER NOT NULL CHECK (duration_months BETWEEN 1 AND 36),
+  end_period TEXT NOT NULL CHECK (end_period GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]'),
   status TEXT NOT NULL CHECK (status IN ('calculating', 'archived')),
-  remark TEXT NOT NULL DEFAULT '',
   attributes_json TEXT,
   origin TEXT NOT NULL CHECK (origin IN ('system', 'user', 'demo')),
   dataset_id TEXT,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  draft_revision INTEGER NOT NULL DEFAULT 0,
+  CHECK (end_period >= start_period)
 );
 
 CREATE TABLE IF NOT EXISTS dim_business_module (
@@ -592,9 +591,6 @@ export const SCHEMA_V7 = `
 PRAGMA foreign_keys = ON;
 BEGIN IMMEDIATE;
 
-ALTER TABLE dim_project
-  ADD COLUMN draft_revision INTEGER NOT NULL DEFAULT 0;
-
 ALTER TABLE sys_calculation_run
   ADD COLUMN draft_revision INTEGER NOT NULL DEFAULT 0;
 
@@ -617,4 +613,84 @@ CREATE INDEX IF NOT EXISTS idx_cfg_forecast_override_project
   ON cfg_forecast_override(project_id, forecast_line_id, period);
 
 COMMIT;
+`
+
+/**
+ * 当前开发阶段直接采用统一行项目结构，不保留旧配置表的数据迁移。
+ * 业务参数、损益预测和直接现金共用一张定义表；差异配置统一存入
+ * config_json，逐月值继续使用独立明细表，便于批量读写和计算。
+ */
+export const SCHEMA_V9 = `
+PRAGMA foreign_keys = OFF;
+BEGIN IMMEDIATE;
+
+DROP TABLE IF EXISTS cfg_forecast_override;
+DROP TABLE IF EXISTS cfg_cash_rule_installment;
+DROP TABLE IF EXISTS cfg_cash_rule;
+DROP TABLE IF EXISTS cfg_parameter_value;
+DROP TABLE IF EXISTS cfg_parameter;
+DROP TABLE IF EXISTS cfg_forecast_value;
+DROP TABLE IF EXISTS cfg_forecast_line;
+
+CREATE TABLE cfg_model_line (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES dim_project(id) ON DELETE CASCADE,
+  code TEXT NOT NULL,
+  name TEXT NOT NULL,
+  line_type TEXT NOT NULL CHECK (
+    line_type IN ('parameter', 'profit', 'cash')
+  ),
+  category TEXT CHECK (
+    category IS NULL OR category IN (
+      'revenue', 'cost', 'cash_inflow', 'cash_outflow'
+    )
+  ),
+  business_module_id TEXT REFERENCES dim_business_module(id),
+  calculation_method TEXT NOT NULL CHECK (
+    calculation_method IN ('fixed', 'monthly_input', 'fixed_monthly', 'formula')
+  ),
+  start_period TEXT NOT NULL REFERENCES dim_period(period),
+  end_period TEXT NOT NULL REFERENCES dim_period(period),
+  unit TEXT NOT NULL DEFAULT '',
+  config_json TEXT NOT NULL DEFAULT '{}',
+  sort_order INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (project_id, code),
+  CHECK (end_period >= start_period),
+  CHECK (
+    (line_type = 'parameter' AND category IS NULL)
+    OR (line_type = 'profit' AND category IN ('revenue', 'cost'))
+    OR (line_type = 'cash' AND category IN ('cash_inflow', 'cash_outflow'))
+  )
+);
+
+CREATE TABLE cfg_model_line_value (
+  line_id TEXT NOT NULL REFERENCES cfg_model_line(id) ON DELETE CASCADE,
+  period TEXT NOT NULL REFERENCES dim_period(period),
+  value_text TEXT NOT NULL,
+  PRIMARY KEY (line_id, period)
+);
+
+CREATE TABLE cfg_forecast_override (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES dim_project(id) ON DELETE CASCADE,
+  forecast_line_id TEXT NOT NULL REFERENCES cfg_model_line(id) ON DELETE CASCADE,
+  period TEXT NOT NULL REFERENCES dim_period(period),
+  original_value_text TEXT NOT NULL,
+  override_value_text TEXT NOT NULL,
+  reason TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL,
+  UNIQUE (project_id, forecast_line_id, period)
+);
+
+CREATE INDEX idx_cfg_model_line_project
+  ON cfg_model_line(project_id, line_type, sort_order);
+CREATE INDEX idx_cfg_model_line_value_line
+  ON cfg_model_line_value(line_id, period);
+CREATE INDEX idx_cfg_forecast_override_project
+  ON cfg_forecast_override(project_id, forecast_line_id, period);
+
+COMMIT;
+PRAGMA foreign_keys = ON;
 `

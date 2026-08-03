@@ -10,7 +10,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
-import { generatePeriods } from '../../domain/periods'
+import { countPeriods, generatePeriodRange, generatePeriods } from '../../domain/periods'
 import type {
   CalculationIssue,
   ForecastCategory,
@@ -249,12 +249,12 @@ export function ForecastConfigPage({
 }: Props) {
   const service = useMemo(() => new CalculationService(database), [database])
   const projectPeriods = useMemo(
-    () => generatePeriods(project.startPeriod, project.durationMonths),
-    [project.durationMonths, project.startPeriod],
+    () => generatePeriodRange(project.startPeriod, project.endPeriod),
+    [project.endPeriod, project.startPeriod],
   )
   const cashPeriods = useMemo(
-    () => generatePeriods(project.startPeriod, project.durationMonths + 36),
-    [project.durationMonths, project.startPeriod],
+    () => generatePeriods(project.startPeriod, countPeriods(project.startPeriod, project.endPeriod) + 36),
+    [project.endPeriod, project.startPeriod],
   )
   const publicModule =
     modules.find((module) => module.isCommon) ?? modules[0]

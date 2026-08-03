@@ -1,5 +1,5 @@
 import Decimal from 'decimal.js'
-import { addMonths, generatePeriods } from '../domain/periods'
+import { generatePeriods } from '../domain/periods'
 import type {
   BaseFact,
   CalculatedFact,
@@ -62,10 +62,7 @@ export function calculateMetrics(
   metricDefinitions: MetricDefinition[],
   businessModuleId?: string,
 ): MetricEngineResult {
-  const operationEndPeriod = addMonths(
-    project.startPeriod,
-    project.durationMonths - 1,
-  )
+  const operationEndPeriod = project.endPeriod
   const reportEndPeriod = [
     operationEndPeriod,
     ...facts.map((fact) => fact.period),

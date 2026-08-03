@@ -23,7 +23,7 @@ import { ProjectRepository } from '../repositories/projectRepository'
 import { ParameterRepository } from '../repositories/parameterRepository'
 import { CashRuleRepository } from '../repositories/cashRuleRepository'
 import { ForecastOverrideRepository } from '../repositories/forecastOverrideRepository'
-import { generatePeriods } from '../../app/domain/periods'
+import { countPeriods, generatePeriodRange, generatePeriods } from '../../app/domain/periods'
 import {
   buildForecastConfigHash,
   compileForecast,
@@ -247,13 +247,10 @@ export class CalculationService {
       throw new Error('已归档项目不能修改预测配置')
     }
     const modules = await this.projects.listModules(projectId)
-    const projectPeriods = generatePeriods(
-      project.startPeriod,
-      project.durationMonths,
-    )
+    const projectPeriods = generatePeriodRange(project.startPeriod, project.endPeriod)
     const cashPeriods = generatePeriods(
       project.startPeriod,
-      project.durationMonths + 36,
+      countPeriods(project.startPeriod, project.endPeriod) + 36,
     )
     const lineDrafts = Array.isArray(draft) ? draft : draft.lines
     validateDraftCoordinates(
@@ -373,13 +370,10 @@ export class CalculationService {
         id: project.id,
         code: project.code,
         name: project.name,
-        customer: project.customer,
         departmentId: project.departmentId,
-        owner: project.owner,
         startPeriod: project.startPeriod,
-        durationMonths: project.durationMonths,
+        endPeriod: project.endPeriod,
         status: project.status,
-        remark: project.remark,
         modules,
       }),
       startedAt: now,

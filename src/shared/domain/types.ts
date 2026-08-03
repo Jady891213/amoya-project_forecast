@@ -65,13 +65,10 @@ export interface Project extends OriginFields {
   id: string
   code?: string
   name: string
-  customer: string
   departmentId: string
-  owner: string
   startPeriod: string
-  durationMonths: number
+  endPeriod: string
   status: ProjectStatus
-  remark: string
   attributesJson?: string
   draftRevision: number
   createdAt: string
@@ -427,12 +424,9 @@ export interface ProjectInput {
   id?: string
   code?: string
   name: string
-  customer: string
   departmentId: string
-  owner: string
   startPeriod: string
-  durationMonths: number
-  remark: string
+  endPeriod: string
   modules: Array<{ code: string; name: string }>
 }
 

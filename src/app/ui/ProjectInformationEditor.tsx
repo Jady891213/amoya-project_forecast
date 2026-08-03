@@ -30,12 +30,9 @@ export function ProjectInformationEditor({
     id: project.id,
     code: project.code,
     name: project.name,
-    customer: project.customer,
     departmentId: project.departmentId,
-    owner: project.owner,
     startPeriod: project.startPeriod,
-    durationMonths: project.durationMonths,
-    remark: project.remark,
+    endPeriod: project.endPeriod,
     modules: [],
   })
   const [moduleDrafts, setModuleDrafts] = useState<ModuleDraft[]>([])
@@ -47,12 +44,9 @@ export function ProjectInformationEditor({
       id: project.id,
       code: project.code,
       name: project.name,
-      customer: project.customer,
       departmentId: project.departmentId,
-      owner: project.owner,
       startPeriod: project.startPeriod,
-      durationMonths: project.durationMonths,
-      remark: project.remark,
+      endPeriod: project.endPeriod,
       modules: [],
     })
     setModuleDrafts(
@@ -106,27 +100,18 @@ export function ProjectInformationEditor({
         <label>项目名称
           <input value={draft.name} onChange={(event) => patch({ name: event.target.value })} />
         </label>
-        <label>客户
-          <input value={draft.customer} onChange={(event) => patch({ customer: event.target.value })} />
-        </label>
-        <label>部门
+        <label>申报部门
           <select value={draft.departmentId} onChange={(event) => patch({ departmentId: event.target.value })}>
             {departments
               .filter((department) => department.status === 'active' || department.id === draft.departmentId)
               .map((department) => <option value={department.id} key={department.id}>{department.name}</option>)}
           </select>
         </label>
-        <label>负责人
-          <input value={draft.owner} onChange={(event) => patch({ owner: event.target.value })} />
-        </label>
         <label>开始期间
           <input type="month" value={draft.startPeriod} onChange={(event) => patch({ startPeriod: event.target.value })} />
         </label>
-        <label>项目周期（月）
-          <input type="number" min={1} max={36} value={draft.durationMonths} onChange={(event) => patch({ durationMonths: Number(event.target.value) })} />
-        </label>
-        <label className="project-remark">备注
-          <input value={draft.remark} onChange={(event) => patch({ remark: event.target.value })} />
+        <label>结束期间
+          <input type="month" value={draft.endPeriod} onChange={(event) => patch({ endPeriod: event.target.value })} />
         </label>
       </div>
       <div className="project-module-strip">
@@ -161,4 +146,3 @@ export function ProjectInformationEditor({
     </section>
   )
 }
-

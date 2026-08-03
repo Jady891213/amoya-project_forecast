@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { initializeSqliteDatabase } from '../storage/sqlite/initialize'
-import { SCHEMA_V1, SCHEMA_V2 } from '../storage/sqlite/migrations'
 import { DepartmentRepository } from '../repositories/departmentRepository'
 import { ProjectRepository } from '../repositories/projectRepository'
 import { FactRepository } from '../repositories/factRepository'
@@ -24,7 +23,7 @@ afterEach(async () => {
 })
 
 describe('SQLite repositories and reference data isolation', () => {
-  it('空库迁移幂等并建立规范表结构', async () => {
+  it('空库初始化幂等并建立当前规范表结构', async () => {
     await initializeSqliteDatabase(database)
     const tables = await database.query<{ name: string }>(
       `SELECT name FROM sqlite_master
@@ -39,12 +38,8 @@ describe('SQLite repositories and reference data isolation', () => {
         'dim_scenario',
         'dim_version',
         'dim_metric',
-        'cfg_forecast_line',
-        'cfg_forecast_value',
-        'cfg_parameter',
-        'cfg_parameter_value',
-        'cfg_cash_rule',
-        'cfg_cash_rule_installment',
+        'cfg_model_line',
+        'cfg_model_line_value',
         'fact_metric_value',
         'fact_forecast_line_value',
         'fact_cash_schedule_value',
@@ -55,14 +50,19 @@ describe('SQLite repositories and reference data isolation', () => {
     )
     expect(
       await database.query('SELECT * FROM sys_schema_migration'),
-    ).toHaveLength(7)
+    ).toHaveLength(9)
     const projectColumns = await database.query<{ name: string }>(
       'PRAGMA table_info(dim_project)',
     )
     const runColumns = await database.query<{ name: string }>(
       'PRAGMA table_info(sys_calculation_run)',
     )
-    expect(projectColumns.map((item) => item.name)).toContain('draft_revision')
+    expect(projectColumns.map((item) => item.name)).toEqual(expect.arrayContaining([
+      'start_period', 'end_period', 'draft_revision',
+    ]))
+    expect(projectColumns.map((item) => item.name)).not.toEqual(expect.arrayContaining([
+      'customer', 'owner', 'remark', 'duration_months',
+    ]))
     expect(runColumns.map((item) => item.name)).toEqual(
       expect.arrayContaining(['draft_revision', 'project_snapshot_json']),
     )
@@ -72,79 +72,6 @@ describe('SQLite repositories and reference data isolation', () => {
          WHERE type = 'table' AND name = 'cfg_forecast_override'`,
       ),
     ).toHaveLength(1)
-  })
-
-  it('Schema v1 可迁移为全局场景和版本维度', async () => {
-    const legacy = await NodeSqliteClient.create()
-    await legacy.execute(SCHEMA_V1)
-    await legacy.execute(
-      `INSERT INTO sys_schema_migration (version, description, applied_at)
-       VALUES (1, 'legacy', '2026-07-27T00:00:00.000Z')`,
-    )
-    await initializeSqliteDatabase(legacy)
-    const scenarioColumns = await legacy.query<{ name: string }>(
-      'PRAGMA table_info(dim_scenario)',
-    )
-    const versionColumns = await legacy.query<{ name: string }>(
-      'PRAGMA table_info(dim_version)',
-    )
-    expect(scenarioColumns.some((column) => column.name === 'project_id')).toBe(false)
-    expect(versionColumns.some((column) => column.name === 'project_id')).toBe(false)
-    expect(await legacy.query('SELECT * FROM dim_scenario')).toHaveLength(1)
-    expect(await legacy.query('SELECT * FROM dim_version')).toHaveLength(1)
-    expect(
-      await legacy.query(
-        `SELECT name FROM sqlite_master
-         WHERE type = 'table' AND name = 'cfg_forecast_line'`,
-      ),
-    ).toHaveLength(1)
-    await legacy.close()
-  })
-
-  it('Schema v2 可迁移到预测配置和计算批次结构', async () => {
-    const legacy = await NodeSqliteClient.create()
-    await legacy.execute(SCHEMA_V1)
-    await legacy.execute(
-      `INSERT INTO sys_schema_migration (version, description, applied_at)
-       VALUES (1, 'legacy', '2026-07-27T00:00:00.000Z')`,
-    )
-    await legacy.execute(SCHEMA_V2)
-    await legacy.execute(
-      `INSERT INTO sys_schema_migration (version, description, applied_at)
-       VALUES (2, 'global dimensions', '2026-07-28T00:00:00.000Z')`,
-    )
-    await initializeSqliteDatabase(legacy)
-    expect(
-      await legacy.query('SELECT * FROM sys_schema_migration'),
-    ).toHaveLength(7)
-    const factColumns = await legacy.query<{ name: string }>(
-      'PRAGMA table_info(fact_metric_value)',
-    )
-    expect(
-      factColumns.some((column) => column.name === 'calculation_run_id'),
-    ).toBe(true)
-    const lineFactColumns = await legacy.query<{ name: string }>(
-      'PRAGMA table_info(fact_forecast_line_value)',
-    )
-    expect(lineFactColumns.map((column) => column.name)).toEqual(
-      expect.arrayContaining(['line_code', 'line_name', 'line_category']),
-    )
-    const lineColumns = await legacy.query<{ name: string }>(
-      'PRAGMA table_info(cfg_forecast_line)',
-    )
-    expect(lineColumns.map((column) => column.name)).toContain(
-      'formula_expression_text',
-    )
-    expect(lineColumns.map((column) => column.name)).toEqual(
-      expect.arrayContaining(['amount_basis', 'tax_rate_text']),
-    )
-    const runColumns = await legacy.query<{ name: string }>(
-      'PRAGMA table_info(sys_calculation_run)',
-    )
-    expect(runColumns.map((column) => column.name)).toContain(
-      'config_snapshot_json',
-    )
-    await legacy.close()
   })
 
   it('参考数据初始化幂等且项目数据隔离', async () => {
@@ -224,7 +151,7 @@ describe('SQLite repositories and reference data isolation', () => {
       expect(Number(report.summary.cashOutflow) / 10_000).toBeCloseTo(expected.cashOutflow, 2)
       expect(
         await database.query(
-          'SELECT id FROM cfg_forecast_line WHERE project_id = ?',
+          'SELECT id FROM cfg_model_line WHERE project_id = ?',
           [expected.projectId],
         ),
       ).not.toHaveLength(0)
@@ -252,8 +179,8 @@ describe('SQLite repositories and reference data isolation', () => {
     expect(unicom.monthly.slice(17).every((row) => row.revenue === '0' && row.cost === '0')).toBe(true)
 
     const bestvCostLines = await database.query<{ name: string }>(
-      `SELECT name FROM cfg_forecast_line
-       WHERE project_id = ? AND category = 'cost'
+      `SELECT name FROM cfg_model_line
+       WHERE project_id = ? AND line_type = 'profit' AND category = 'cost'
        ORDER BY sort_order`,
       ['project-bestv-ctv-ad'],
     )
@@ -272,12 +199,9 @@ describe('SQLite repositories and reference data isolation', () => {
     const project = await projects.save({
       code: 'REAL-001',
       name: '真实项目',
-      customer: '真实客户',
       departmentId: department.id,
-      owner: '财务负责人',
       startPeriod: '2026-08',
-      durationMonths: 12,
-      remark: '',
+      endPeriod: '2027-07',
       modules: [{ code: 'SERVICE', name: '服务模块' }],
     })
     expect((await projects.listModules(project.id)).map((item) => item.code)).toEqual([
@@ -295,16 +219,16 @@ describe('SQLite repositories and reference data isolation', () => {
     const projects = new ProjectRepository(database)
     const department = await departments.save({ code: 'REV', name: '修订测试部' })
     const input = {
-      code: 'REV-001', name: '修订测试项目', customer: '',
-      departmentId: department.id, owner: '', startPeriod: '2026-01',
-      durationMonths: 12, remark: '', modules: [],
+      code: 'REV-001', name: '修订测试项目',
+      departmentId: department.id, startPeriod: '2026-01',
+      endPeriod: '2026-12', modules: [],
     }
     const created = await projects.save(input, 0)
     expect(created.draftRevision).toBe(1)
-    const updated = await projects.save({ ...input, id: created.id, owner: '财务' }, 1)
+    const updated = await projects.save({ ...input, id: created.id, name: '修订测试项目（已更新）' }, 1)
     expect(updated.draftRevision).toBe(2)
     await expect(
-      projects.save({ ...input, id: created.id, owner: '过期页面' }, 1),
+      projects.save({ ...input, id: created.id, name: '过期页面修改' }, 1),
     ).rejects.toMatchObject({ code: 'REVISION_CONFLICT', currentRevision: 2 })
   })
 
@@ -323,12 +247,9 @@ describe('SQLite repositories and reference data isolation', () => {
       id: project.id,
       code: project.code,
       name: `${project.name}（展示名调整）`,
-      customer: `${project.customer}（更新）`,
       departmentId: project.departmentId,
-      owner: '新负责人',
       startPeriod: project.startPeriod,
-      durationMonths: project.durationMonths,
-      remark: '仅修改非计算属性',
+      endPeriod: project.endPeriod,
       modules,
     }, project.draftRevision)
     expect((await calculation.getProjectState(project.id)).isResultCurrent).toBe(true)
@@ -338,12 +259,9 @@ describe('SQLite repositories and reference data isolation', () => {
       id: renamed.id,
       code: renamed.code,
       name: renamed.name,
-      customer: renamed.customer,
       departmentId: replacementDepartment.id,
-      owner: renamed.owner,
       startPeriod: renamed.startPeriod,
-      durationMonths: renamed.durationMonths,
-      remark: renamed.remark,
+      endPeriod: renamed.endPeriod,
       modules,
     }, renamed.draftRevision)
     expect((await calculation.getProjectState(project.id)).isResultCurrent).toBe(false)
@@ -360,12 +278,9 @@ describe('SQLite repositories and reference data isolation', () => {
           id: before.project.id,
           code: before.project.code,
           name: '不应落库的名称',
-          customer: before.project.customer,
           departmentId: before.project.departmentId,
-          owner: before.project.owner,
           startPeriod: before.project.startPeriod,
-          durationMonths: before.project.durationMonths,
-          remark: before.project.remark,
+          endPeriod: before.project.endPeriod,
           modules: before.modules.filter((item) => !item.isCommon).map((item) => ({ code: item.code, name: item.name })),
         },
         forecast: {
@@ -425,12 +340,9 @@ describe('SQLite repositories and reference data isolation', () => {
     const department = await departments.save({ code: 'OPS', name: '运营部' })
     const project = await projects.save({
       name: '用户项目',
-      customer: '',
       departmentId: department.id,
-      owner: '',
       startPeriod: '2026-01',
-      durationMonths: 6,
-      remark: '',
+      endPeriod: '2026-06',
       modules: [],
     })
     await reference.clear()
@@ -449,23 +361,17 @@ describe('SQLite repositories and reference data isolation', () => {
     await projects.save({
       code: 'P-001',
       name: '项目一',
-      customer: '',
       departmentId: department.id,
-      owner: '',
       startPeriod: '2026-01',
-      durationMonths: 6,
-      remark: '',
+      endPeriod: '2026-06',
       modules: [],
     })
     await expect(projects.save({
       code: 'P-001',
       name: '项目二',
-      customer: '',
       departmentId: department.id,
-      owner: '',
       startPeriod: '2026-01',
-      durationMonths: 6,
-      remark: '',
+      endPeriod: '2026-06',
       modules: [],
     })).rejects.toThrow('已存在')
   })
@@ -477,12 +383,9 @@ describe('SQLite repositories and reference data isolation', () => {
     const project = await projects.save({
       code: 'SAFE-001',
       name: '引用保护项目',
-      customer: '',
       departmentId: department.id,
-      owner: '',
       startPeriod: '2026-01',
-      durationMonths: 12,
-      remark: '',
+      endPeriod: '2026-12',
       modules: [{ code: 'SERVICE', name: '服务模块' }],
     })
     const serviceModule = (await projects.listModules(project.id))
@@ -503,24 +406,18 @@ describe('SQLite repositories and reference data isolation', () => {
       id: project.id,
       code: project.code,
       name: project.name,
-      customer: project.customer,
       departmentId: project.departmentId,
-      owner: project.owner,
       startPeriod: '2026-02',
-      durationMonths: 11,
-      remark: project.remark,
+      endPeriod: project.endPeriod,
       modules: [{ code: 'SERVICE', name: '服务模块' }],
     })).rejects.toThrow('无法覆盖已有预测行')
     await expect(projects.save({
       id: project.id,
       code: project.code,
       name: project.name,
-      customer: project.customer,
       departmentId: project.departmentId,
-      owner: project.owner,
       startPeriod: project.startPeriod,
-      durationMonths: project.durationMonths,
-      remark: project.remark,
+      endPeriod: project.endPeriod,
       modules: [],
     })).rejects.toThrow('已被预测行引用')
   })
@@ -642,12 +539,9 @@ describe('SQLite repositories and reference data isolation', () => {
     const project = await projects.save({
       code: 'CALC-001',
       name: '事务测试项目',
-      customer: '',
       departmentId: department.id,
-      owner: '',
       startPeriod: '2026-01',
-      durationMonths: 3,
-      remark: '',
+      endPeriod: '2026-03',
       modules: [],
     })
     const module = (await projects.listModules(project.id))[0]
@@ -682,12 +576,9 @@ describe('SQLite repositories and reference data isolation', () => {
     const project = await projects.save({
       code: 'FORMULA-001',
       name: '参数公式项目',
-      customer: '',
       departmentId: department.id,
-      owner: '',
       startPeriod: '2026-01',
-      durationMonths: 2,
-      remark: '',
+      endPeriod: '2026-02',
       modules: [],
     })
     const module = (await projects.listModules(project.id))[0]
@@ -794,12 +685,9 @@ describe('SQLite repositories and reference data isolation', () => {
     const project = await projects.save({
       code: 'CASH-001',
       name: '税与现金流项目',
-      customer: '',
       departmentId: department.id,
-      owner: '',
       startPeriod: '2026-01',
-      durationMonths: 2,
-      remark: '',
+      endPeriod: '2026-02',
       modules: [],
     })
     const module = (await projects.listModules(project.id))[0]
@@ -971,7 +859,7 @@ describe('SQLite repositories and reference data isolation', () => {
     const beforeProjects = await new ProjectRepository(database).list()
     const beforeFacts = await new FactRepository(database).list()
     const beforeLineCount = (
-      await database.query('SELECT id FROM cfg_forecast_line')
+      await database.query('SELECT id FROM cfg_model_line')
     ).length
     const beforeRunCount = (
       await database.query('SELECT id FROM sys_calculation_run')
@@ -979,9 +867,9 @@ describe('SQLite repositories and reference data isolation', () => {
     const beforeLineFactCount = (
       await database.query('SELECT id FROM fact_forecast_line_value')
     ).length
-    const beforeCashRuleCount = (
-      await database.query('SELECT id FROM cfg_cash_rule')
-    ).length
+    const beforeModelConfigs = await database.query<{ id: string; config_json: string }>(
+      'SELECT id, config_json FROM cfg_model_line ORDER BY id',
+    )
     const beforeCashFactCount = (
       await database.query('SELECT id FROM fact_cash_schedule_value')
     ).length
@@ -991,13 +879,13 @@ describe('SQLite repositories and reference data isolation', () => {
     await restored.importDatabase(bytes)
     expect(await new ProjectRepository(restored).list()).toHaveLength(beforeProjects.length)
     expect(await new FactRepository(restored).list()).toHaveLength(beforeFacts.length)
-    expect(await restored.query('SELECT * FROM cfg_forecast_line')).toHaveLength(beforeLineCount)
+    expect(await restored.query('SELECT * FROM cfg_model_line')).toHaveLength(beforeLineCount)
     expect(await restored.query('SELECT * FROM sys_calculation_run')).toHaveLength(beforeRunCount)
     expect(
       await restored.query('SELECT * FROM fact_forecast_line_value'),
     ).toHaveLength(beforeLineFactCount)
-    expect(await restored.query('SELECT * FROM cfg_cash_rule'))
-      .toHaveLength(beforeCashRuleCount)
+    expect(await restored.query('SELECT id, config_json FROM cfg_model_line ORDER BY id'))
+      .toEqual(beforeModelConfigs)
     expect(await restored.query('SELECT * FROM fact_cash_schedule_value'))
       .toHaveLength(beforeCashFactCount)
     await restored.close()

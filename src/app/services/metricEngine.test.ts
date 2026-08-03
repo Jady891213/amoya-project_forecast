@@ -12,13 +12,10 @@ import { calculateMetrics } from './metricEngine'
 const project: Project = {
   id: 'project-test',
   name: '测试项目',
-  customer: '',
   departmentId: 'dept-test',
-  owner: '',
   startPeriod: '2026-01',
-  durationMonths: 3,
+  endPeriod: '2026-03',
   status: 'calculating',
-  remark: '',
   draftRevision: 0,
   origin: 'user',
   createdAt: '2026-01-01T00:00:00.000Z',
@@ -80,7 +77,7 @@ describe('MetricEngine', () => {
 
   it('收入为零时毛利率为空，不产生无穷值', () => {
     const result = calculateMetrics(
-      { ...project, durationMonths: 1 },
+      { ...project, endPeriod: project.startPeriod },
       [
         fact('2026-01', 'revenue', 0),
         fact('2026-01', 'cost', 50),
@@ -120,12 +117,12 @@ describe('MetricEngine', () => {
     ]
 
     const all = calculateMetrics(
-      { ...project, durationMonths: 1 },
+      { ...project, endPeriod: project.startPeriod },
       facts,
       SYSTEM_METRICS,
     )
     const moduleA = calculateMetrics(
-      { ...project, durationMonths: 1 },
+      { ...project, endPeriod: project.startPeriod },
       facts,
       SYSTEM_METRICS,
       'module-a',
@@ -137,7 +134,7 @@ describe('MetricEngine', () => {
 
   it('区分无需垫资与预测期内未转正', () => {
     const noFunding = calculateMetrics(
-      { ...project, durationMonths: 1 },
+      { ...project, endPeriod: project.startPeriod },
       [
         fact('2026-01', 'cash_inflow', 100),
         fact('2026-01', 'cash_outflow', 30),
@@ -145,7 +142,7 @@ describe('MetricEngine', () => {
       SYSTEM_METRICS,
     )
     const notPositive = calculateMetrics(
-      { ...project, durationMonths: 1 },
+      { ...project, endPeriod: project.startPeriod },
       [
         fact('2026-01', 'cash_inflow', 0),
         fact('2026-01', 'cash_outflow', 30),

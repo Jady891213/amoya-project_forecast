@@ -15,12 +15,6 @@ interface ProjectCenterPageProps {
   onOpenProject: (projectId: string, archived: boolean) => void
 }
 
-function periodEnd(startPeriod: string, durationMonths: number) {
-  const [year, month] = startPeriod.split('-').map(Number)
-  const date = new Date(year, month - 1 + durationMonths - 1, 1)
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
-}
-
 export function ProjectCenterPage({
   database,
   snapshot,
@@ -45,7 +39,7 @@ export function ProjectCenterPage({
     const department =
       snapshot.departments.find((item) => item.id === project.departmentId)
         ?.name ?? ''
-    return [project.name, project.code, project.customer, project.owner, department]
+    return [project.name, project.code, department]
       .join(' ')
       .toLowerCase()
       .includes(query.trim().toLowerCase())
@@ -112,7 +106,7 @@ export function ProjectCenterPage({
             className="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="搜索项目名称、客户、部门或负责人"
+            placeholder="搜索项目名称或申报部门"
           />
           <select
             className="select"
@@ -156,9 +150,8 @@ export function ProjectCenterPage({
             <thead>
               <tr>
                 <th style={{ width: '24%' }}>项目名称</th>
-                <th>客户</th>
-                <th>部门</th>
-                <th>预测周期</th>
+                <th>申报部门</th>
+                <th>项目期间</th>
                 <th>数据状态</th>
                 <th>项目状态</th>
                 <th style={{ width: 180 }}>操作</th>
@@ -174,15 +167,11 @@ export function ProjectCenterPage({
                     <td>
                       <span className="project-name">{project.name}</span>
                       <span className="sub">
-                        {project.code || '无业务编码'} · {project.owner || '未指定负责人'} ·{' '}
-                        {formatDateTime(project.updatedAt)}
+                        {project.code || '无业务编码'} · {formatDateTime(project.updatedAt)}
                       </span>
                     </td>
-                    <td>{project.customer || '—'}</td>
                     <td>{departmentName(project.departmentId)}</td>
-                    <td>
-                      {project.startPeriod}—{periodEnd(project.startPeriod, project.durationMonths)}
-                    </td>
+                    <td>{project.startPeriod}—{project.endPeriod}</td>
                     <td>
                       <span className="sub">{factCount > 0 ? `${factCount} 条事实` : '暂无事实'}</span>
                     </td>
@@ -215,7 +204,7 @@ export function ProjectCenterPage({
               })}
               {projects.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="empty-cell">
+                  <td colSpan={6} className="empty-cell">
                     {!showArchived
                       ? '当前没有符合条件的测算中项目'
                       : '当前没有归档项目'}

@@ -80,7 +80,7 @@ export function isProjectInput(value: unknown): value is import('./domain/types'
     typeof input.name === 'string' &&
     typeof input.departmentId === 'string' &&
     typeof input.startPeriod === 'string' &&
-    typeof input.durationMonths === 'number' &&
+    typeof input.endPeriod === 'string' &&
     Array.isArray(input.modules)
   )
 }

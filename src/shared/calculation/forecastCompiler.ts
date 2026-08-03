@@ -1,5 +1,5 @@
 import Decimal from 'decimal.js'
-import { generatePeriods } from '../domain/periods'
+import { countPeriods, generatePeriodRange, generatePeriods } from '../domain/periods'
 import type {
   CalculationIssue,
   CashRule,
@@ -64,7 +64,7 @@ export function buildForecastConfigHash(
     coordinates: project ? {
       departmentId: project.departmentId,
       startPeriod: project.startPeriod,
-      durationMonths: project.durationMonths,
+      endPeriod: project.endPeriod,
       modules: [...modules]
         .sort((a, b) => a.code.localeCompare(b.code))
         .map((module) => [module.id, module.code, module.name, module.isCommon]),
@@ -154,13 +154,10 @@ export function compileForecast(
 ): ForecastCompilation {
   const issues: CalculationIssue[] = []
   const values: CompiledLineValue[] = []
-  const projectPeriods = generatePeriods(
-    project.startPeriod,
-    project.durationMonths,
-  )
+  const projectPeriods = generatePeriodRange(project.startPeriod, project.endPeriod)
   const cashPeriods = generatePeriods(
     project.startPeriod,
-    project.durationMonths + 36,
+    countPeriods(project.startPeriod, project.endPeriod) + 36,
   )
   const moduleIds = new Set(modules.map((module) => module.id))
   const lineByCode = new Map(lines.map((line) => [line.code, line]))
