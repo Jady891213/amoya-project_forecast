@@ -14,7 +14,7 @@ describe('FinancialGrid 数值解析', () => {
   })
 
   it('拒绝非数值内容', () => {
-    expect(() => parseFinancialValue('abc')).toThrow()
+    expect(() => parseFinancialValue('abc')).toThrow('“abc”不是有效数字')
   })
 
   it('默认财务格式支持两位小数、千分位、单位与括号负数', () => {
@@ -48,7 +48,7 @@ describe('FinancialGrid 数值解析', () => {
     expect(() => buildPasteTransaction('10\t20\n30\t40', { row: 0, column: 0 }, rows, periods))
       .toThrow('整个粘贴已取消')
     expect(() => buildPasteTransaction('10\tabc', { row: 0, column: 0 }, rows, periods))
-      .toThrow()
+      .toThrow('“abc”不是有效数字')
     expect(buildPasteTransaction('10\t(20)', { row: 0, column: 0 }, rows.slice(0, 1), periods).after)
       .toEqual([
         { rowId: 'editable', period: '2026-01', value: '10' },

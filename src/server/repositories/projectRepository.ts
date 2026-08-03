@@ -128,6 +128,10 @@ function normalizeModules(modules: ProjectInput['modules']) {
     })
 }
 
+function invalidProjectInput(message: string): never {
+  throw Object.assign(new Error(message), { code: 'INVALID_REQUEST' })
+}
+
 export class ProjectRepository {
   constructor(private readonly database: DatabaseClient) {}
 
@@ -180,28 +184,28 @@ export class ProjectRepository {
     const startPeriod = input.startPeriod.trim()
     const endPeriod = input.endPeriod.trim()
     const code = input.code?.trim().toUpperCase() || undefined
-    if (!name) throw new Error('项目名称不能为空')
-    if (!departmentId) throw new Error('所属部门不能为空')
+    if (!name) invalidProjectInput('项目名称不能为空')
+    if (!departmentId) invalidProjectInput('申报部门不能为空')
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(startPeriod)) {
-      throw new Error('开始期间格式不正确')
+      invalidProjectInput('开始期间格式不正确')
     }
-    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(endPeriod)) throw new Error('结束期间格式不正确')
-    if (endPeriod < startPeriod) throw new Error('结束期间不能早于开始期间')
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(endPeriod)) invalidProjectInput('结束期间格式不正确')
+    if (endPeriod < startPeriod) invalidProjectInput('结束期间不能早于开始期间')
 
     const departments = await this.database.query<{ origin: string }>(
       'SELECT origin FROM dim_department WHERE id = ?',
       [departmentId],
     )
-    if (departments.length === 0) throw new Error('所属部门不存在')
+    if (departments.length === 0) invalidProjectInput('申报部门不存在')
     if (departments[0].origin !== 'user') {
-      throw new Error('真实项目必须引用用户维护的部门')
+      invalidProjectInput('真实项目必须引用用户维护的申报部门')
     }
     if (code) {
       const duplicate = await this.database.query<{ id: string }>(
         'SELECT id FROM dim_project WHERE code = ? AND id <> ?',
         [code, input.id ?? ''],
       )
-      if (duplicate.length > 0) throw new Error(`项目编码“${code}”已存在`)
+      if (duplicate.length > 0) invalidProjectInput(`项目编码“${code}”已存在`)
     }
 
     const existing = input.id ? await this.get(input.id) : undefined
@@ -250,7 +254,7 @@ export class ProjectRepository {
         [projectId, startPeriod, endPeriod],
       )
       if ((periodConflicts[0]?.count ?? 0) > 0) {
-        throw new Error('新项目周期无法覆盖已有预测行，请先调整行项目生效期间')
+        invalidProjectInput('新项目周期无法覆盖已有预测行，请先调整行项目生效期间')
       }
     }
     const removedModuleIds = existingModules

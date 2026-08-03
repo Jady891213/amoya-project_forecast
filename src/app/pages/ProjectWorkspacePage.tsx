@@ -51,6 +51,15 @@ interface Props {
   onDirtyChange: (dirty: boolean) => void
 }
 
+export function validateProjectDraft(input: ProjectInput): string | undefined {
+  if (!input.name.trim()) return '项目名称不能为空'
+  if (!input.departmentId.trim()) return '申报部门不能为空'
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(input.startPeriod)) return '开始期间格式不正确'
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(input.endPeriod)) return '结束期间格式不正确'
+  if (input.endPeriod < input.startPeriod) return '结束期间不能早于开始期间'
+  return undefined
+}
+
 function stateToLineDrafts(workspace: ProjectWorkspace): ForecastLineDraft[] {
   const values = new Map<string, Record<string, string>>()
   workspace.forecast.values.forEach((item) => {
@@ -256,6 +265,11 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, view, onNavigat
 
   async function save(manageBusy = true) {
     if (!workspace || !projectDraft) throw new Error('项目尚未加载')
+    const validationMessage = validateProjectDraft(projectDraft)
+    if (validationMessage) {
+      setMessage(validationMessage)
+      throw new Error(validationMessage)
+    }
     if (manageBusy) setBusy(true)
     setMessage('')
     try {
@@ -271,6 +285,11 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, view, onNavigat
       setMessage(reason instanceof Error ? reason.message : '保存失败')
       throw reason
     } finally { if (manageBusy) setBusy(false) }
+  }
+
+  async function saveFromToolbar() {
+    try { await save() }
+    catch { /* 错误已由 save 显示在工作区消息中。 */ }
   }
 
   async function calculate() {
@@ -482,7 +501,7 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, view, onNavigat
       </div>
       <div className="workspace-head-actions">
         <span className={`workspace-save-state ${dirty ? 'dirty' : ''}`}>{statusText}</span>
-        <button className="btn" disabled={busy || !dirty} onClick={() => void save()}><Save size={14} />保存</button>
+        <button className="btn" disabled={busy || !dirty} onClick={() => void saveFromToolbar()}><Save size={14} />保存</button>
         <button className="btn primary" disabled={busy} onClick={() => void calculate()}><Calculator size={14} />计算</button>
         <button className="btn icon-only" aria-label="更多项目操作" title="归档项目" onClick={() => void api.archive(projectId).then(() => onNavigate('/projects'))}><MoreHorizontal size={15} /></button>
       </div>

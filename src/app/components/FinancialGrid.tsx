@@ -55,7 +55,12 @@ export function parseFinancialValue(raw: string): string {
   const normalized = trimmed
     .replace(/[，,\s]/g, '')
     .replace(/^\((.*)\)$/, '$1')
-  const decimal = new Decimal(normalized)
+  let decimal: Decimal
+  try {
+    decimal = new Decimal(normalized)
+  } catch {
+    throw new Error(`“${raw}”不是有效数字`)
+  }
   if (!decimal.isFinite()) throw new Error('数值无效')
   return (negative ? decimal.negated() : decimal).toDecimalPlaces(6).toString()
 }
@@ -276,7 +281,8 @@ export function FinancialGrid({
     try {
       applyTransaction(buildPasteTransaction(text, focus, rows, periods))
     } catch (reason) {
-      window.alert(reason instanceof Error ? reason.message : '粘贴内容无效')
+      const message = reason instanceof Error ? reason.message : '粘贴内容无效'
+      window.alert(message.includes('整个粘贴') ? message : `${message}，整个粘贴已取消。`)
       return
     }
     focusCell({
