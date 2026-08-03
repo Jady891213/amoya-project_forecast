@@ -1878,7 +1878,8 @@ body.resizing-financial-column * { cursor: col-resize !important; user-select: n
 .financial-grid tbody th small { color: var(--muted); font-weight: 400; }
 .financial-grid td { position: relative; text-align: right; font-variant-numeric: tabular-nums; cursor: cell; outline: none; }
 .financial-grid td > input { position: absolute; inset: 1px; width: calc(100% - 2px); height: calc(100% - 2px); padding: 0 6px; border: 1px solid #2f78c4; background: #fff; text-align: right; font: inherit; z-index: 4; }
-.financial-grid .editable-row td { background: #fffdf3; }
+.financial-grid .editable-row td.editable-cell { background: #fff8d9; }
+.financial-grid .editable-row td.readonly-cell { color: #667085; background: #f7f8fa; }
 .financial-grid .readonly-row td { background: #f7f8fa; color: #526173; }
 .financial-grid td.selected-cell { box-shadow: inset 0 0 0 2px #2f78c4; background: #eaf3ff; z-index: 1; }
 .financial-grid td.overridden-cell > i { position: absolute; top: 0; right: 0; width: 0; height: 0; border-top: 8px solid #e58b1b; border-left: 8px solid transparent; }
@@ -2312,13 +2313,24 @@ textarea:focus {
 .compact-line-editor .editor-head small { display: block; margin-top: 1px; color: var(--muted); font-size: 12px; }
 .drawer-title-button {
   max-width: 100%;
-  padding: 0;
-  border: 0;
+  margin: -4px -6px;
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
   color: inherit;
   background: transparent;
   text-align: left;
-  cursor: text;
+  cursor: pointer;
+  transition: color .15s ease, background-color .15s ease, border-color .15s ease;
 }
+.drawer-title-button:hover,
+.drawer-title-button:focus-visible {
+  color: var(--brand);
+  background: #edf3ff;
+  border-color: #cbd9fb;
+  outline: none;
+}
+.drawer-title-button:active { background: #e3ecff; }
 .drawer-title-input { width: min(300px, 100%); height: 28px; padding: 0 6px; font-size: 13px; font-weight: 700; }
 .line-editor-tabs {
   height: 39px;
@@ -2345,6 +2357,15 @@ textarea:focus {
 }
 .compact-editor-form > .full-field { grid-column: 1 / -1; }
 .compact-editor-form.nested-grid { padding: 0; overflow: visible; }
+.drawer-field-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  align-items: end;
+}
+.drawer-field-pair > label { min-width: 0; }
+.drawer-field-pair .pair-span-all { grid-column: 1 / -1; }
+.drawer-field-note { margin-top: -4px; color: var(--muted); font-size: 12px; line-height: 1.4; }
 .formula-editor {
   overflow: hidden;
   border: 1px solid #cfd9ee;
@@ -2738,14 +2759,28 @@ textarea:focus {
   background-image: none;
 }
 .grid-label-cell:hover .model-row-summary { padding-right: 76px; }
-.financial-grid .editable-row td { background: #fffdf3; }
+.financial-grid .editable-row td.editable-cell { background: #fff8d9; }
+.financial-grid .editable-row td.readonly-cell { color: #667085; background: #f7f8fa; }
 .financial-grid .readonly-row td { color: #475467; background: #fafbfe; }
 .financial-grid td.selected-cell { background: #e9f0ff; box-shadow: none; }
 .financial-grid td.selected-cell:focus { position: relative; z-index: 2; box-shadow: inset 0 0 0 2px var(--brand); }
 .financial-grid tr.active-grid-row > th,
-.financial-grid tr.active-grid-row > td { background: #eef4ff !important; }
+.financial-grid tr.active-grid-row > td.readonly-cell { background: #eef4ff !important; }
+.financial-grid tr.active-grid-row > td.editable-cell { background: #fff3bf !important; }
+.financial-grid tr.active-grid-row > td.editable-cell.selected-cell { background: #ffed9e !important; }
 .financial-grid tr.active-grid-row > .grid-type-cell { box-shadow: inset 3px 0 0 var(--brand); }
 .financial-grid td > input { border-color: var(--brand); }
+.drawer-monthly-hint {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid #f0d48b;
+  border-radius: 8px;
+  color: #7a5a08;
+  background: #fff9df;
+}
+.drawer-monthly-hint b { font-size: 12px; }
+.drawer-monthly-hint span { color: #8a6c22; font-size: 12px; }
 
 .calculation-note { border-color: #dce5ff; border-radius: 9px; color: #5d6b82; background: #f8faff; }
 .calculation-note.stale-note { border-color: #f1d59f; color: #a36a08; background: #fff8e8; }

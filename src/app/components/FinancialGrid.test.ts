@@ -3,6 +3,7 @@ import {
   buildPasteTransaction,
   financialSelectionBounds,
   formatFinancialValue,
+  isFinancialCellEditable,
   parseFinancialValue,
 } from './FinancialGrid'
 
@@ -53,6 +54,26 @@ describe('FinancialGrid 数值解析', () => {
       .toEqual([
         { rowId: 'editable', period: '2026-01', value: '10' },
         { rowId: 'editable', period: '2026-02', value: '-20' },
+      ])
+  })
+
+  it('逐月录入只允许修改配置生效期间内的单元格', () => {
+    const row = {
+      id: 'monthly-line',
+      label: '逐月收入',
+      editable: true,
+      editablePeriods: new Set(['2026-02', '2026-03']),
+      values: {},
+    }
+    const periods = ['2026-01', '2026-02', '2026-03']
+    expect(isFinancialCellEditable(row, '2026-01')).toBe(false)
+    expect(isFinancialCellEditable(row, '2026-02')).toBe(true)
+    expect(() => buildPasteTransaction('10\t20', { row: 0, column: 0 }, [row], periods))
+      .toThrow('2026-01')
+    expect(buildPasteTransaction('10\t20', { row: 0, column: 1 }, [row], periods).after)
+      .toEqual([
+        { rowId: 'monthly-line', period: '2026-02', value: '10' },
+        { rowId: 'monthly-line', period: '2026-03', value: '20' },
       ])
   })
 })

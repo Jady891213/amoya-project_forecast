@@ -8,9 +8,14 @@ export interface FinancialGridRow {
   label: string
   secondary?: string
   editable: boolean
+  editablePeriods?: Set<string>
   values: Record<string, string>
   overriddenPeriods?: Set<string>
   originalValues?: Record<string, string>
+}
+
+export function isFinancialCellEditable(row: FinancialGridRow, period: string): boolean {
+  return row.editable && (!row.editablePeriods || row.editablePeriods.has(period))
 }
 
 export interface FinancialGridChange {
@@ -107,7 +112,7 @@ export function buildPasteTransaction(
       const row = rows[rowIndex]
       const period = periods[columnIndex]
       if (!row || !period) throw new Error('粘贴区域超出表格范围')
-      if (!row.editable) throw new Error(`行“${row.label}”为只读，整个粘贴已取消`)
+      if (!isFinancialCellEditable(row, period)) throw new Error(`“${row.label}”在 ${period} 为只读，整个粘贴已取消`)
       const value = parseFinancialValue(raw)
       before.push({ rowId: row.id, period, value: row.values[period] ?? '' })
       after.push({ rowId: row.id, period, value })
@@ -249,7 +254,7 @@ export function FinancialGrid({
   function editCell(rowIndex: number, columnIndex: number, raw: string) {
     const row = rows[rowIndex]
     const period = periods[columnIndex]
-    if (!row?.editable || !period || !onChange) return
+    if (!row || !period || !isFinancialCellEditable(row, period) || !onChange) return
     try {
       const value = parseFinancialValue(raw)
       applyTransaction({
@@ -298,12 +303,12 @@ export function FinancialGrid({
     const after: FinancialGridChange[] = []
     for (let rowIndex = selected.top; rowIndex <= selected.bottom; rowIndex += 1) {
       const row = rows[rowIndex]
-      if (!row.editable) {
-        void dialog.alert(`行“${row.label}”为只读，整个清空操作已取消。`, { title: '无法清空选区', tone: 'warning' })
-        return
-      }
       for (let columnIndex = selected.left; columnIndex <= selected.right; columnIndex += 1) {
         const period = periods[columnIndex]
+        if (!isFinancialCellEditable(row, period)) {
+          void dialog.alert(`“${row.label}”在 ${period} 为只读，整个清空操作已取消。`, { title: '无法清空选区', tone: 'warning' })
+          return
+        }
         before.push({ rowId: row.id, period, value: row.values[period] ?? '' })
         after.push({ rowId: row.id, period, value: '' })
       }
@@ -329,10 +334,13 @@ export function FinancialGrid({
     if (!onChange) return
     const before: FinancialGridChange[] = []
     const after: FinancialGridChange[] = []
-    const selectionRows = rows.slice(selected.top, selected.bottom + 1)
-    if (selectionRows.some((row) => !row.editable)) {
-      void dialog.alert('选区包含只读行，整个填充操作已取消。', { title: '无法填充选区', tone: 'warning' })
-      return
+    for (let rowIndex = selected.top; rowIndex <= selected.bottom; rowIndex += 1) {
+      for (let columnIndex = selected.left; columnIndex <= selected.right; columnIndex += 1) {
+        if (!isFinancialCellEditable(rows[rowIndex], periods[columnIndex])) {
+          void dialog.alert('选区包含只读单元格，整个填充操作已取消。', { title: '无法填充选区', tone: 'warning' })
+          return
+        }
+      }
     }
     if (direction === 'down') {
       for (let column = selected.left; column <= selected.right; column += 1) {
@@ -378,7 +386,8 @@ export function FinancialGrid({
       event.preventDefault(); fillSelection('right'); return
     }
     const activeRow = rows[focus.row]
-    if (!command && activeRow?.editable && (event.key === 'F2' || (event.key.length === 1 && !event.altKey))) {
+    const activePeriod = periods[focus.column]
+    if (!command && activeRow && activePeriod && isFinancialCellEditable(activeRow, activePeriod) && (event.key === 'F2' || (event.key.length === 1 && !event.altKey))) {
       event.preventDefault()
       setEditing({
         ...focus,
@@ -439,14 +448,15 @@ export function FinancialGrid({
             {periods.map((period, columnIndex) => {
               const isSelected = rowIndex >= selected.top && rowIndex <= selected.bottom && columnIndex >= selected.left && columnIndex <= selected.right
               const overridden = row.overriddenPeriods?.has(period)
+              const cellEditable = isFinancialCellEditable(row, period)
               return <td
                 key={period}
                 style={{ minWidth: periodWidths[period] ?? 92, maxWidth: periodWidths[period] ?? 92, width: periodWidths[period] ?? 92 }}
                 data-cell={`${rowIndex}:${columnIndex}`}
                 tabIndex={rowIndex === focus.row && columnIndex === focus.column ? 0 : -1}
-                className={`${isSelected ? 'selected-cell' : ''} ${overridden ? 'overridden-cell' : ''}`}
+                className={`${cellEditable ? 'editable-cell' : 'readonly-cell'} ${isSelected ? 'selected-cell' : ''} ${overridden ? 'overridden-cell' : ''}`}
                 aria-selected={isSelected}
-                title={overridden ? `原计算值：${row.originalValues?.[period] ?? '—'}；当前覆盖值：${row.values[period] ?? ''}` : row.editable ? '双击编辑；支持从 Excel 粘贴区域' : '只读'}
+                title={overridden ? `原计算值：${row.originalValues?.[period] ?? '—'}；当前覆盖值：${row.values[period] ?? ''}` : cellEditable ? '双击编辑；支持从 Excel 粘贴区域' : '只读'}
                 onMouseDown={(event) => {
                   if (event.button === 0) {
                     event.preventDefault()
@@ -461,7 +471,7 @@ export function FinancialGrid({
                   }
                 }}
                 onMouseUp={() => { dragging.current = false }}
-                onDoubleClick={() => row.editable && setEditing({ row: rowIndex, column: columnIndex, value: row.values[period] ?? '' })}
+                onDoubleClick={() => cellEditable && setEditing({ row: rowIndex, column: columnIndex, value: row.values[period] ?? '' })}
               >
                 {editing?.row === rowIndex && editing.column === columnIndex ? (
                   <input
