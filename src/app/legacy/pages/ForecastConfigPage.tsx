@@ -33,6 +33,7 @@ import {
 } from '../../services/calculationService'
 import { formatWan } from '../../ui/formatters'
 import { ProjectInformationEditor } from '../../ui/ProjectInformationEditor'
+import { useAppDialog } from '../../ui/AppDialog'
 
 interface Props {
   database: DatabaseClient
@@ -247,6 +248,7 @@ export function ForecastConfigPage({
   onProjectSave,
   onCalculated,
 }: Props) {
+  const dialog = useAppDialog()
   const service = useMemo(() => new CalculationService(database), [database])
   const projectPeriods = useMemo(
     () => generatePeriodRange(project.startPeriod, project.endPeriod),
@@ -471,7 +473,7 @@ export function ForecastConfigPage({
     setMessage('')
   }
 
-  function removeSelectedParameter() {
+  async function removeSelectedParameter() {
     if (selectedParameterIndex < 0 || !selectedParameter) return
     const code = selectedParameter.code ?? ''
     const referencedBy = drafts.find((draft) =>
@@ -484,7 +486,12 @@ export function ForecastConfigPage({
       setMessage(`参数正在被行项目“${referencedBy.name || referencedBy.code}”引用，不能删除`)
       return
     }
-    if (!window.confirm(`确认删除参数“${selectedParameter.name || code}”？`)) {
+    if (!await dialog.confirm({
+      title: '删除业务参数？',
+      message: `确定删除“${selectedParameter.name || code}”？保存后该参数及其逐月数据将被移除。`,
+      tone: 'danger',
+      confirmLabel: '删除参数',
+    })) {
       return
     }
     const next = parameterDrafts.filter(
@@ -517,7 +524,7 @@ export function ForecastConfigPage({
     setDirty(true)
   }
 
-  function removeSelected() {
+  async function removeSelected() {
     if (selectedIndex < 0 || !selected) return
     const referencedBy = drafts.find(
       (draft) =>
@@ -532,7 +539,12 @@ export function ForecastConfigPage({
       setMessage(`行项目正在被“${referencedBy.name || referencedBy.code}”引用，不能删除`)
       return
     }
-    if (!window.confirm(`确认删除行项目“${selected.name || '未命名行项目'}”？`)) {
+    if (!await dialog.confirm({
+      title: '删除预测项？',
+      message: `确定删除“${selected.name || '未命名行项目'}”？关联的收付款规则也会一并移除。`,
+      tone: 'danger',
+      confirmLabel: '删除预测项',
+    })) {
       return
     }
     const next = drafts.filter((_, index) => index !== selectedIndex)

@@ -21,6 +21,7 @@ import { addMonths, countPeriods } from '../shared/domain/periods'
 import { ProjectWorkspacePage } from './pages/ProjectWorkspacePage'
 import { MasterDataPage } from './pages/MasterDataPage'
 import { PageBreadcrumbs } from './components/PageBreadcrumbs'
+import { useAppDialog } from './ui/AppDialog'
 
 type Route =
   | { type: 'projects'; archived: boolean }
@@ -54,6 +55,7 @@ function parseRoute(): Route {
 }
 
 export default function App() {
+  const dialog = useAppDialog()
   const [api, setApi] = useState<ApiClient>()
   const [snapshot, setSnapshot] = useState<AppSnapshot>(emptySnapshot)
   const [route, setRoute] = useState<Route>(parseRoute)
@@ -86,14 +88,24 @@ export default function App() {
 
   useEffect(() => {
     const pop = () => {
-      if (dirty && !window.confirm('当前项目有未保存修改，确认离开吗？')) {
-        window.history.forward(); return
-      }
-      setDirty(false); setRoute(parseRoute())
+      if (!dirty) { setRoute(parseRoute()); return }
+      const target = `${window.location.pathname}${window.location.search}`
+      window.history.forward()
+      void dialog.confirm({
+        title: '离开当前项目？',
+        message: '当前项目有未保存修改，离开后这些修改将会丢失。',
+        tone: 'warning',
+        confirmLabel: '放弃修改并离开',
+      }).then((confirmed) => {
+        if (!confirmed) return
+        setDirty(false)
+        window.history.pushState({}, '', target)
+        setRoute(parseRoute())
+      })
     }
     window.addEventListener('popstate', pop)
     return () => window.removeEventListener('popstate', pop)
-  }, [dirty])
+  }, [dialog, dirty])
 
   useEffect(() => {
     if (route.type !== 'projects' && route.type !== 'workspace') return
@@ -102,11 +114,39 @@ export default function App() {
     window.sessionStorage.setItem('amoya-last-project-path', currentPath)
   }, [route])
 
-  function navigate(path: string) {
-    if (dirty && !window.confirm('当前项目有未保存修改，确认离开吗？')) return
+  async function navigate(path: string) {
+    if (dirty && !await dialog.confirm({
+      title: '离开当前项目？',
+      message: '当前项目有未保存修改，离开后这些修改将会丢失。',
+      tone: 'warning',
+      confirmLabel: '放弃修改并离开',
+    })) return
     setDirty(false)
     window.history.pushState({}, '', path)
     setRoute(parseRoute())
+  }
+
+  async function restoreDatabase(file?: File) {
+    if (!file) return
+    try {
+      const confirmed = await dialog.confirm({
+        title: '恢复本地数据？',
+        message: `将从“${file.name}”恢复全部项目，当前数据库内容会被替换。建议先备份现有数据。`,
+        tone: 'danger',
+        confirmLabel: '确认恢复',
+      })
+      if (!confirmed) return
+      await api?.restoreDatabase(file)
+      await refresh()
+      setNotice('项目数据恢复成功')
+    } catch (reason) {
+      await dialog.alert(reason instanceof Error ? reason.message : '项目数据恢复失败', {
+        title: '恢复失败',
+        tone: 'danger',
+      })
+    } finally {
+      if (restoreInput.current) restoreInput.current.value = ''
+    }
   }
 
   function toggleNavigation() {
@@ -137,7 +177,7 @@ export default function App() {
         <div className="sidebar-footer">
           <div className="db-box"><b><HardDrive size={14} /><span className="db-box-label">本地数据库</span><span className="db-info" tabIndex={0} aria-label="查看本地数据库说明"><Info size={13} /><span className="db-info-tooltip" role="tooltip">数据自动保存在本机<br />SQLite {snapshot.storage.sqliteVersion}<br />数据结构版本 {snapshot.storage.schemaVersion}</span></span></b><div className="db-box-details"><span>{snapshot.storage.detail.split(' · ')[0] || 'amoya_project_forecast.db'}</span><span>共 {snapshot.projects.length} 个项目</span></div><div className="sidebar-db-actions"><button type="button" title="导出完整数据备份" aria-label="导出完整数据备份" onClick={() => void api.backup()}><Download size={14} /><span>备份</span></button><button type="button" title="从备份恢复全部项目" aria-label="从备份恢复全部项目" onClick={() => restoreInput.current?.click()}><Upload size={14} /><span>恢复</span></button></div></div>
         </div>
-        <input hidden ref={restoreInput} type="file" accept=".db,application/vnd.sqlite3" onChange={(event) => { const file = event.target.files?.[0]; if (file && window.confirm('恢复备份会替换当前全部项目数据，确认继续吗？')) void api.restoreDatabase(file).then(() => refresh()).then(() => setNotice('项目数据恢复成功')) }} />
+        <input hidden ref={restoreInput} type="file" accept=".db,application/vnd.sqlite3" onChange={(event) => void restoreDatabase(event.target.files?.[0])} />
       </aside>
       {route.type === 'projects' && <ProjectList snapshot={snapshot} archived={route.archived} onNavigate={navigate} onArchive={async (id, archived) => { if (archived) await api.restore(id); else await api.archive(id); await refresh() }} onCopy={async (id) => { const copied = await api.copyProject(id); await refresh(); setNotice('项目已复制'); navigate(`/projects/${copied.project.id}/config`) }} onDelete={async (id) => { await api.deleteProject(id); await refresh(); setNotice('项目已删除') }} />}
       {route.type === 'new' && <NewProjectPage snapshot={snapshot} onCancel={() => navigate('/projects')} onCreate={async (input) => { const workspace = await api.createProject(input); await refresh(); navigate(`/projects/${workspace.project.id}/config`) }} />}
@@ -150,7 +190,7 @@ export default function App() {
         }}
       />}
       {route.type === 'metrics' && <MetricPage snapshot={snapshot} />}
-      {route.type === 'workspace' && <ProjectWorkspacePage api={api} snapshot={snapshot} projectId={route.projectId} view={route.view} onNavigate={navigate} onRefresh={refresh} onDirtyChange={setDirty} />}
+      {route.type === 'workspace' && <ProjectWorkspacePage key={`${route.projectId}:${route.view}`} api={api} snapshot={snapshot} projectId={route.projectId} view={route.view} onNavigate={navigate} onRefresh={refresh} onDirtyChange={setDirty} />}
     </div>
     {notice && <div className="toast-success">{notice}<button onClick={() => setNotice('')}>关闭</button></div>}
   </div>
@@ -164,6 +204,7 @@ function ProjectList({ snapshot, archived, onNavigate, onArchive, onCopy, onDele
   onCopy: (id: string) => Promise<void>
   onDelete: (id: string) => Promise<void>
 }) {
+  const dialog = useAppDialog()
   const projects = snapshot.projects.filter((item) => archived ? item.status === 'archived' : item.status === 'calculating')
   const activeCount = snapshot.projects.filter((item) => item.status === 'calculating').length
   const archivedCount = snapshot.projects.filter((item) => item.status === 'archived').length
@@ -173,8 +214,18 @@ function ProjectList({ snapshot, archived, onNavigate, onArchive, onCopy, onDele
     try {
       await action()
     } catch (reason) {
-      window.alert(reason instanceof Error ? reason.message : '项目操作失败')
+      await dialog.alert(reason instanceof Error ? reason.message : '项目操作失败', { tone: 'danger' })
     }
+  }
+
+  async function deleteProject(projectId: string, projectName: string) {
+    const confirmed = await dialog.confirm({
+      title: '永久删除项目？',
+      message: `“${projectName}”的项目配置、计算结果和报告将一并删除，且无法恢复。`,
+      tone: 'danger',
+      confirmLabel: '永久删除',
+    })
+    if (confirmed) await runAction(() => onDelete(projectId))
   }
 
   return <main className="page">
@@ -205,7 +256,7 @@ function ProjectList({ snapshot, archived, onNavigate, onArchive, onCopy, onDele
               <td><div className="row-actions">
                 {archived ? <>
                   <button className="action-link" onClick={(event) => { event.stopPropagation(); void runAction(() => onArchive(project.id, true)) }}>恢复</button>
-                  <button className="action-link danger-action" title="永久删除项目" onClick={(event) => { event.stopPropagation(); if (window.confirm(`确定删除“${project.name}”？\n\n项目配置、计算结果和报告将一并删除，且无法恢复。`)) void runAction(() => onDelete(project.id)) }}>删除</button>
+                  <button className="action-link danger-action" title="永久删除项目" onClick={(event) => { event.stopPropagation(); void deleteProject(project.id, project.name) }}>删除</button>
                 </> : <>
                   <button className="action-link" title="复制项目配置" onClick={(event) => { event.stopPropagation(); void runAction(() => onCopy(project.id)) }}>复制</button>
                   <button className="action-link muted-action" onClick={(event) => { event.stopPropagation(); void runAction(() => onArchive(project.id, false)) }}>归档</button>

@@ -1,6 +1,7 @@
 import Decimal from 'decimal.js'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import { useAppDialog } from '../ui/AppDialog'
 
 export interface FinancialGridRow {
   id: string
@@ -141,6 +142,7 @@ export function FinancialGrid({
   onRowActivate,
   activeRowId,
 }: Props) {
+  const dialog = useAppDialog()
   const root = useRef<HTMLDivElement>(null)
   const dragging = useRef(false)
   const [anchor, setAnchor] = useState<CellPosition>({ row: 0, column: 0 })
@@ -255,7 +257,7 @@ export function FinancialGrid({
         after: [{ rowId: row.id, period, value }],
       })
     } catch {
-      window.alert(`“${raw}”不是有效金额，未写入。`)
+      void dialog.alert(`“${raw}”不是有效金额，本次修改未写入。`, { title: '金额格式不正确', tone: 'warning' })
     }
   }
 
@@ -282,7 +284,7 @@ export function FinancialGrid({
       applyTransaction(buildPasteTransaction(text, focus, rows, periods))
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : '粘贴内容无效'
-      window.alert(message.includes('整个粘贴') ? message : `${message}，整个粘贴已取消。`)
+      void dialog.alert(message.includes('整个粘贴') ? message : `${message}，整个粘贴已取消。`, { title: '无法粘贴数据', tone: 'warning' })
       return
     }
     focusCell({
@@ -297,7 +299,7 @@ export function FinancialGrid({
     for (let rowIndex = selected.top; rowIndex <= selected.bottom; rowIndex += 1) {
       const row = rows[rowIndex]
       if (!row.editable) {
-        window.alert(`行“${row.label}”为只读，整个清空操作已取消`)
+        void dialog.alert(`行“${row.label}”为只读，整个清空操作已取消。`, { title: '无法清空选区', tone: 'warning' })
         return
       }
       for (let columnIndex = selected.left; columnIndex <= selected.right; columnIndex += 1) {
@@ -329,7 +331,7 @@ export function FinancialGrid({
     const after: FinancialGridChange[] = []
     const selectionRows = rows.slice(selected.top, selected.bottom + 1)
     if (selectionRows.some((row) => !row.editable)) {
-      window.alert('选区包含只读行，整个填充操作已取消')
+      void dialog.alert('选区包含只读行，整个填充操作已取消。', { title: '无法填充选区', tone: 'warning' })
       return
     }
     if (direction === 'down') {

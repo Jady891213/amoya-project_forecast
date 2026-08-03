@@ -676,6 +676,72 @@ code { color: #3e5aa1; font-family: ui-monospace, SFMono-Regular, Menlo, monospa
 .form-error { margin: 0 16px 10px; padding: 8px; color: #a8493d; background: #fff5f3; }
 .modal-actions { min-height: 52px; display: flex; align-items: center; justify-content: flex-end; gap: 7px; padding: 0 16px; border-top: 1px solid var(--line); }
 
+.app-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(20, 29, 47, .34);
+  backdrop-filter: blur(2px);
+  animation: app-dialog-fade-in .14s ease-out;
+}
+.app-dialog {
+  width: min(420px, calc(100vw - 32px));
+  overflow: hidden;
+  border: 1px solid var(--line-dark);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 18px 48px rgba(20, 31, 51, .22);
+  animation: app-dialog-slide-in .18s cubic-bezier(.2, .8, .2, 1);
+}
+.app-dialog-heading {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 28px;
+  gap: 10px;
+  align-items: start;
+  padding: 17px 17px 15px;
+}
+.app-dialog-icon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  color: #315fd8;
+  border-radius: 9px;
+  background: #edf3ff;
+}
+.app-dialog-warning .app-dialog-icon { color: #ad6a14; background: #fff5df; }
+.app-dialog-danger .app-dialog-icon { color: #b4483d; background: #fff0ed; }
+.app-dialog h2 { margin: 1px 0 6px; color: #253047; font-size: 15px; line-height: 1.35; }
+.app-dialog p {
+  margin: 0;
+  color: #66738a;
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.app-dialog-close { margin-top: -3px; }
+.app-dialog-actions {
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 17px;
+  border-top: 1px solid var(--line);
+  background: #fafbfe;
+}
+.danger-button { color: #fff; border-color: #b94f45; background: #b94f45; }
+.danger-button:hover { border-color: #a64138; background: #a64138; }
+@keyframes app-dialog-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes app-dialog-slide-in { from { opacity: 0; transform: translateY(8px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@media (prefers-reduced-motion: reduce) {
+  .app-dialog-backdrop, .app-dialog { animation: none; }
+}
+
 .app-loading {
   height: 100%;
   display: flex;
@@ -2619,6 +2685,29 @@ textarea:focus {
 .financial-grid thead th { color: var(--muted); background: #f8f9fc; font-weight: 700; }
 .financial-grid .grid-label-column,
 .financial-grid tbody th { background: #fff; }
+.financial-grid thead th,
+.financial-grid thead .grid-type-column,
+.financial-grid thead .grid-label-column {
+  height: 40px;
+  color: #667085;
+  background: #f6f8fc !important;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  vertical-align: middle;
+  text-align: center;
+}
+.financial-grid thead .grid-label-column { text-align: left; }
+.model-row-actions {
+  padding-left: 3px;
+  background: transparent;
+  background-image: none;
+}
+.financial-grid tr.active-grid-row .model-row-actions {
+  background: transparent;
+  background-image: none;
+}
+.grid-label-cell:hover .model-row-summary { padding-right: 76px; }
 .financial-grid .editable-row td { background: #fffdf3; }
 .financial-grid .readonly-row td { color: #475467; background: #fafbfe; }
 .financial-grid td.selected-cell { background: #e9f0ff; box-shadow: none; }

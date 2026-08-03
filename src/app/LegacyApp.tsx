@@ -31,6 +31,7 @@ import { MetricDefinitionsPage } from './legacy/pages/MetricDefinitionsPage'
 import { ProjectReportPage } from './legacy/pages/ProjectReportPage'
 import { ForecastConfigPage } from './legacy/pages/ForecastConfigPage'
 import { PageBreadcrumbs } from './components/PageBreadcrumbs'
+import { useAppDialog } from './ui/AppDialog'
 
 type AppRoute = 'projects' | 'master-data' | 'metrics'
 type WorkspaceView = 'forecast' | 'calculation' | 'report'
@@ -57,6 +58,7 @@ const emptySnapshot: AppSnapshot = {
 }
 
 export default function App() {
+  const dialog = useAppDialog()
   const [database, setDatabase] = useState<DatabaseClient>()
   const [route, setRoute] = useState<AppRoute>('projects')
   const [workspaceProjectId, setWorkspaceProjectId] = useState('')
@@ -168,8 +170,13 @@ export default function App() {
 
   async function restoreDatabase(file?: File) {
     if (!file || !backupService) return
-    if (!window.confirm('恢复数据库将替换当前 amoya_project_forecast.db。确认继续吗？')) return
     try {
+      if (!await dialog.confirm({
+        title: '恢复本地数据？',
+        message: `将从“${file.name}”恢复全部项目，当前数据库内容会被替换。建议先备份现有数据。`,
+        tone: 'danger',
+        confirmLabel: '确认恢复',
+      })) return
       await backupService.restore(file)
       await refresh()
       setWorkspaceProjectId('')

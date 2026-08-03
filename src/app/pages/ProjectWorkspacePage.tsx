@@ -34,6 +34,7 @@ import { countPeriods, generatePeriodRange, generatePeriods } from '../domain/pe
 import { FinancialGrid, type FinancialGridChange, type FinancialGridRow } from '../components/FinancialGrid'
 import { PageBreadcrumbs } from '../components/PageBreadcrumbs'
 import { formatPercent, formatWan } from '../ui/formatters'
+import { useAppDialog } from '../ui/AppDialog'
 
 const ReportCharts = lazy(async () => {
   const module = await import('../components/ReportCharts')
@@ -161,6 +162,7 @@ function lineGridValues(line: ForecastLineDraft, periods: string[]) {
 }
 
 export function ProjectWorkspacePage({ api, snapshot, projectId, view, onNavigate, onRefresh, onDirtyChange }: Props) {
+  const dialog = useAppDialog()
   const [workspace, setWorkspace] = useState<ProjectWorkspace>()
   const [projectDraft, setProjectDraft] = useState<ProjectInput>()
   const [lines, setLines] = useState<ForecastLineDraft[]>([])
@@ -358,15 +360,23 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, view, onNavigat
     markDirty()
   }
 
-  function removeParameter(parameterId = selectedParameterId) {
+  async function removeParameter(parameterId = selectedParameterId) {
     const target = parameters.find((item) => item.id === parameterId)
     if (!target) return
     const references = lines.filter((line) => line.formulaExpression?.includes(`"${target.code}"`))
     if (references.length > 0) {
-      window.alert(`参数“${target.name}”正在被 ${references.length} 个行项目引用，不能删除`)
+      await dialog.alert(`参数“${target.name}”正在被 ${references.length} 个行项目引用。请先调整相关公式，再删除该参数。`, {
+        title: '参数暂时无法删除',
+        tone: 'warning',
+      })
       return
     }
-    if (!window.confirm(`删除参数“${target.name}”？`)) return
+    if (!await dialog.confirm({
+      title: '删除业务参数？',
+      message: `确定删除“${target.name}”？保存后该参数及其逐月数据将被移除。`,
+      tone: 'danger',
+      confirmLabel: '删除参数',
+    })) return
     setParameters((current) => current.filter((item) => item.id !== target.id))
     if (selectedParameterId === target.id) setSelectedParameterId('')
     markDirty()
@@ -417,9 +427,14 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, view, onNavigat
     setSelectedLineId(id); markDirty()
   }
 
-  function removeLine(lineId = selectedLineId) {
+  async function removeLine(lineId = selectedLineId) {
     const target = lines.find((item) => item.id === lineId)
-    if (!target || !window.confirm(`删除“${target.name}”？`)) return
+    if (!target || !await dialog.confirm({
+      title: '删除预测项？',
+      message: `确定删除“${target.name}”？关联的收付款规则和人工覆盖也会一并移除。`,
+      tone: 'danger',
+      confirmLabel: '删除预测项',
+    })) return
     setLines((current) => current.filter((item) => item.id !== target.id))
     setCashRules((current) => current.filter((item) => item.sourceLineCode !== target.code))
     setOverrides((current) => current.filter((item) => item.forecastLineId !== target.id))
@@ -653,15 +668,16 @@ function LineEditor({ line, modules, periods, parameters, lines, cashRule, onPat
 }
 
 function LegacyBusinessParameterSection({ project, parameters, selectedId, periods, lines, onProjectChange, onSelect, onChange }: { project: ProjectInput; parameters: ProjectParameterDraft[]; selectedId: string; periods: string[]; lines: ForecastLineDraft[]; onProjectChange: (next: ProjectInput) => void; onSelect: (id: string) => void; onChange: (next: ProjectParameterDraft[]) => void }) {
+  const dialog = useAppDialog()
   const selected = parameters.find((item) => item.id === selectedId)
   const patch = (values: Partial<ProjectParameterDraft>) => selected && onChange(parameters.map((item) => item.id === selected.id ? { ...item, ...values } : item))
   function add() { const parameter: ProjectParameterDraft = { id: `draft-${crypto.randomUUID()}`, code: nextCode('PAR', parameters.map((item) => item.code)), name: '新增参数', parameterType: 'fixed', valueType: 'number', unit: '', fixedValue: '', description: '', sortOrder: parameters.length + 1, monthlyValues: {} }; onChange([...parameters, parameter]); onSelect(parameter.id ?? '') }
   const periodCount = countPeriods(project.startPeriod, project.endPeriod)
   const referenceCount = (parameter: ProjectParameterDraft) => lines.filter((line) => line.formulaExpression?.includes(`"${parameter.code}"`)).length
-  function remove(parameter: ProjectParameterDraft) {
+  async function remove(parameter: ProjectParameterDraft) {
     const count = referenceCount(parameter)
-    if (count > 0) { window.alert(`参数“${parameter.name}”正在被 ${count} 个行项目引用，不能删除`); return }
-    if (!window.confirm(`删除参数“${parameter.name}”？`)) return
+    if (count > 0) { await dialog.alert(`参数“${parameter.name}”正在被 ${count} 个行项目引用。请先调整相关公式。`, { title: '参数暂时无法删除', tone: 'warning' }); return }
+    if (!await dialog.confirm({ title: '删除业务参数？', message: `确定删除“${parameter.name}”？`, tone: 'danger', confirmLabel: '删除参数' })) return
     onChange(parameters.filter((item) => item.id !== parameter.id)); onSelect('')
   }
   return <section className="business-parameter-section">
@@ -676,15 +692,16 @@ function LegacyBusinessParameterSection({ project, parameters, selectedId, perio
 }
 
 function BusinessParameterSection({ project, parameters, selectedId, periods, lines, onProjectChange, onSelect, onChange }: { project: ProjectInput; parameters: ProjectParameterDraft[]; selectedId: string; periods: string[]; lines: ForecastLineDraft[]; onProjectChange: (next: ProjectInput) => void; onSelect: (id: string) => void; onChange: (next: ProjectParameterDraft[]) => void }) {
+  const dialog = useAppDialog()
   const selected = parameters.find((item) => item.id === selectedId)
   const periodCount = countPeriods(project.startPeriod, project.endPeriod)
   const referenceCount = (parameter: ProjectParameterDraft) => lines.filter((line) => line.formulaExpression?.includes(`\"${parameter.code}\"`)).length
   const patchParameter = (id: string, values: Partial<ProjectParameterDraft>) => onChange(parameters.map((item) => item.id === id ? { ...item, ...values } : item))
   function add() { const parameter: ProjectParameterDraft = { id: `draft-${crypto.randomUUID()}`, code: nextCode('PAR', parameters.map((item) => item.code)), name: '新增参数', parameterType: 'fixed', valueType: 'number', unit: '', fixedValue: '', description: '', sortOrder: parameters.length + 1, monthlyValues: {} }; onChange([...parameters, parameter]); onSelect(parameter.id ?? '') }
-  function remove(parameter: ProjectParameterDraft) {
+  async function remove(parameter: ProjectParameterDraft) {
     const count = referenceCount(parameter)
-    if (count > 0) { window.alert(`参数“${parameter.name}”正在被 ${count} 个行项目引用，不能删除`); return }
-    if (!window.confirm(`删除参数“${parameter.name}”？`)) return
+    if (count > 0) { await dialog.alert(`参数“${parameter.name}”正在被 ${count} 个行项目引用。请先调整相关公式。`, { title: '参数暂时无法删除', tone: 'warning' }); return }
+    if (!await dialog.confirm({ title: '删除业务参数？', message: `确定删除“${parameter.name}”？`, tone: 'danger', confirmLabel: '删除参数' })) return
     onChange(parameters.filter((item) => item.id !== parameter.id)); onSelect('')
   }
   const rows: FinancialGridRow[] = parameters.map((item) => ({
