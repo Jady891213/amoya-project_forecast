@@ -619,4 +619,71 @@ export interface ProjectReportDto extends ProjectReport {
   measurementSummary: string[]
   riskNotes: string[]
   isBehindDraft: boolean
+  presentation: ProjectReportPresentation
+}
+
+export interface ReportLineResult {
+  lineId: string
+  code: string
+  name: string
+  category: ForecastCategory
+  method: string
+  methodDescription: string
+  amountBasis: TaxAmountBasis
+  taxRate: string
+  priceOrRatio?: string
+  quantity?: string
+  months?: number
+  grossTotal: string
+  netTotal: string
+  monthly: Array<{ period: string; value: string }>
+}
+
+export interface ReportParameterResult {
+  code: string
+  name: string
+  unit: string
+  valueType: ParameterValueType
+  inputMode: string
+  description: string
+  monthly: Array<{ period: string; value: string | null }>
+  total: string | null
+}
+
+export interface ReportCompositionItem {
+  code: string
+  name: string
+  amount: string
+  share: string | null
+  description: string
+}
+
+export interface ReportAnnualResult {
+  year: number
+  revenue: string
+  cost: string
+  grossProfit: string
+  grossMargin: string | null
+}
+
+export interface ReportUnitEconomics {
+  basisName: string
+  basisUnit: string
+  totalBasis: string
+  revenuePerUnitPeriod: string
+  costPerUnitPeriod: string
+  profitPerUnitPeriod: string
+}
+
+export interface ProjectReportPresentation {
+  roi: string | null
+  lineResults: ReportLineResult[]
+  parameterResults: ReportParameterResult[]
+  revenueComposition: ReportCompositionItem[]
+  costComposition: ReportCompositionItem[]
+  annualResults: ReportAnnualResult[]
+  unitEconomics?: ReportUnitEconomics
+  conclusionTitle: string
+  conclusionDescription: string
+  generatedAt: string
 }

@@ -17,6 +17,7 @@ import { FactRepository } from './repositories/factRepository'
 import { MetricRepository } from './repositories/metricRepository'
 import { ProjectRepository } from './repositories/projectRepository'
 import { ForecastLineValueRepository } from './repositories/forecastLineValueRepository'
+import { ForecastLineRepository } from './repositories/forecastLineRepository'
 import { CashScheduleRepository } from './repositories/cashScheduleRepository'
 import { ParameterRepository } from './repositories/parameterRepository'
 import { FactAdjustmentRepository } from './repositories/factAdjustmentRepository'
@@ -24,6 +25,7 @@ import { CalculationService } from './services/calculationService'
 import { ProjectReportService } from './services/projectReportService'
 import { ProjectPlanRepository } from './repositories/projectPlanRepository'
 import { countPeriods, generatePeriods } from '../app/domain/periods'
+import { buildProjectReportPresentation } from './services/reportPresentationService'
 
 const reportAmountFormatter = new Intl.NumberFormat('zh-CN', {
   minimumFractionDigits: 2,
@@ -247,12 +249,14 @@ export class ProjectWorkspaceService {
     const scenario = scenarios.find((item) => item.isDefault)
     if (!scenario) throw new Error('缺少基准场景')
     const reportQuery = { projectId, scenarioId: scenario.id, planId: requestedPlan.planId }
-    const [state, report, lineBreakdown, cashSchedule, parameters, adjustments] = await Promise.all([
+    const [state, report, lines, lineBreakdown, cashSchedule, parameters, parameterValues, adjustments] = await Promise.all([
       this.calculations.getProjectState(projectId, requestedPlan.planId),
       new ProjectReportService(this.database).build(reportQuery),
+      new ForecastLineRepository(this.database).list(projectId, requestedPlan.planId),
       new ForecastLineValueRepository(this.database).listBreakdown(projectId, requestedPlan.planId),
       new CashScheduleRepository(this.database).list(projectId, requestedPlan.planId),
       new ParameterRepository(this.database).list(projectId, requestedPlan.planId),
+      new ParameterRepository(this.database).listValues(projectId, requestedPlan.planId),
       new FactAdjustmentRepository(this.database).list(projectId, requestedPlan.planId),
     ])
     const grossMargin = report.summary.grossMargin
@@ -282,6 +286,14 @@ export class ProjectWorkspaceService {
       measurementSummary,
       riskNotes,
       isBehindDraft: !state.isResultCurrent,
+      presentation: buildProjectReportPresentation({
+        report,
+        lines,
+        breakdown: lineBreakdown,
+        parameters,
+        parameterValues,
+        adjustments,
+      }),
     }
   }
 }

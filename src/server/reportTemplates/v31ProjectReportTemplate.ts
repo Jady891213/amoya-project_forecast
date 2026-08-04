@@ -1,0 +1,30 @@
+export const V31_REPORT_TEMPLATE = {
+  sheets: {
+    report: '测算报告',
+    monthly: '月度明细',
+  },
+  colors: {
+    primary: 'FF315CDA',
+    primarySoft: 'FFEEF3FF',
+    header: 'FFEEF1F5',
+    revenueTotal: 'FFEAF4FB',
+    profitTotal: 'FFEAF8F2',
+    assumption: 'FF0000FF',
+    result: 'FF000000',
+    text: 'FF25324A',
+    muted: 'FF667085',
+    border: 'FFD9E1EC',
+    note: 'FFEAF8F2',
+    noteText: 'FF23795E',
+    warning: 'FFFFF5DC',
+  },
+  numberFormats: {
+    amount: '#,##0.00;[Red](#,##0.00);-',
+    percentage: '0.00%;[Red](0.00%);-',
+    quantity: '#,##0;[Red](#,##0);-',
+    decimal: '#,##0.00;[Red](#,##0.00);-',
+  },
+  reportColumns: [15, 25, 18, 14, 14, 14, 14, 17, 20, 36],
+  monthlyLabelWidth: 28,
+  monthlyValueWidth: 13,
+} as const
