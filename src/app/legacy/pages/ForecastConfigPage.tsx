@@ -579,7 +579,7 @@ export function ForecastConfigPage({
     setMessage('')
     try {
       const selectedPosition = Math.max(selectedIndex, 0)
-      const state = await service.saveDraft(project.id, project.defaultPlanId ?? '', projectDraft())
+      const state = await service.saveDraft(project.id, projectDraft())
       hydrate(state, selectedPosition)
       setMessage('预测配置草稿已保存')
     } catch (reason) {
@@ -599,11 +599,11 @@ export function ForecastConfigPage({
       const state = await service.getProjectState(project.id)
       hydrate(state, Math.max(selectedIndex, 0))
       if (!result.success) {
-        setMessage(`计算未通过：发现 ${result.run.issueCount} 个问题`)
+        setMessage(`计算未通过：发现 ${result.issues.length} 个问题`)
         return
       }
       setMessage(
-        `计算完成：批次 RUN-${String(result.run.runNumber).padStart(4, '0')}`,
+        '计算完成，已生成最新结果',
       )
       await onCalculated()
     } catch (reason) {
@@ -778,7 +778,7 @@ export function ForecastConfigPage({
         <div className="forecast-status">
           {dirty ? (
             <span className="status-warning"><CircleAlert size={13} />配置尚未保存</span>
-          ) : resultState?.latestRun ? (
+          ) : resultState?.calculationState?.lastSuccessAt ? (
             <span className={resultState.isResultCurrent ? 'status-current' : 'status-warning'}>
               {resultState.isResultCurrent ? '结果与配置一致' : '结果需要重新计算'}
             </span>

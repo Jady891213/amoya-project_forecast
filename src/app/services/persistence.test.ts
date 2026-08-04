@@ -31,14 +31,14 @@ describe('SQLite 当前数据结构与测算闭环', () => {
       'dim_project', 'dim_department', 'dim_period', 'dim_scenario',
       'dim_plan', 'dim_metric', 'cfg_model_line', 'cfg_model_line_value',
       'fact_metric_value', 'fact_forecast_line_value',
-      'fact_cash_schedule_value', 'sys_calculation_run',
+      'fact_cash_schedule_value', 'sys_plan_calculation_state', 'fact_metric_adjustment',
     ]))
     expect(tables.map((row) => row.name)).not.toContain('dim_business_module')
     for (const table of ['cfg_model_line', 'fact_metric_value', 'fact_forecast_line_value', 'fact_cash_schedule_value']) {
       const columns = await database.query<{ name: string }>(`PRAGMA table_info(${table})`)
       expect(columns.map((item) => item.name)).not.toContain('business_module_id')
     }
-    for (const table of ['cfg_model_line', 'cfg_forecast_override', 'fact_metric_value']) {
+    for (const table of ['cfg_model_line', 'fact_metric_adjustment', 'fact_metric_value']) {
       const columns = await database.query<{ name: string }>(`PRAGMA table_info(${table})`)
       expect(columns.map((item) => item.name)).toContain('plan_id')
     }
@@ -82,7 +82,7 @@ describe('SQLite 当前数据结构与测算闭环', () => {
       code: 'REAL-001', name: '真实项目', departmentId: department.id,
       startPeriod: '2026-01', endPeriod: '2026-02',
     })
-    const plan = await new ProjectPlanRepository(database).create(project.id, { name: '默认方案', startPeriod: '2026-01', endPeriod: '2026-02' }, true)
+    const plan = await new ProjectPlanRepository(database).create(project.id, { name: '方案 1', startPeriod: '2026-01', endPeriod: '2026-02' })
     const calculation = new CalculationService(database)
     await calculation.saveDraft(project.id, plan.planId, {
       lines: [{
@@ -94,7 +94,7 @@ describe('SQLite 当前数据结构与测算闭环', () => {
         amountBasis: 'tax_exclusive', taxRate: '0', assumption: '',
         sortOrder: 1, monthlyValues: {},
       }],
-      parameters: [], cashRules: [], overrides: [],
+      parameters: [], cashRules: [],
     })
     expect(await new FactRepository(database).list(project.id)).toHaveLength(0)
     const result = await calculation.calculateSaved(project.id, plan.planId)
@@ -111,7 +111,7 @@ describe('SQLite 当前数据结构与测算闭环', () => {
       code: 'CASH-001', name: '现金一拖二项目', departmentId: department.id,
       startPeriod: '2026-01', endPeriod: '2026-02',
     })
-    const plan = await new ProjectPlanRepository(database).create(project.id, { name: '默认方案', startPeriod: '2026-01', endPeriod: '2026-02' }, true)
+    const plan = await new ProjectPlanRepository(database).create(project.id, { name: '方案 1', startPeriod: '2026-01', endPeriod: '2026-02' })
     const calculation = new CalculationService(database)
     const result = await calculation.saveAndCalculate(project.id, {
       lines: [
@@ -132,11 +132,38 @@ describe('SQLite 当前数据结构与测算闭环', () => {
         sourceLineId: 'line-revenue', sourceLineCode: 'LINE-001', method: 'manual_monthly',
         delayMonths: 0, installments: [], monthlyValues: { '2026-02': '50', '2026-03': '150' },
       }],
-      overrides: [],
     }, plan.planId)
     expect(result.success).toBe(true)
     const report = await new ProjectReportService(database).build({ projectId: project.id, scenarioId: 'baseline', planId: plan.planId })
     expect(report.summary.revenue).toBe('200')
     expect(report.summary.cashInflow).toBe('220')
+  })
+
+  it('人工调整只替换最终事实并立即更新派生指标', async () => {
+    const department = await new DepartmentRepository(database).save({ code: 'ADJ', name: '调整验证部' })
+    const project = await new ProjectRepository(database).save({ code: 'ADJ-001', name: '调整验证项目', departmentId: department.id })
+    const plan = await new ProjectPlanRepository(database).create(project.id, { name: '方案 1', startPeriod: '2026-01', endPeriod: '2026-01' })
+    const calculation = new CalculationService(database)
+    const saved = await calculation.saveDraft(project.id, plan.planId, {
+      parameters: [],
+      lines: [
+        { code: 'LINE-001', name: '收入', category: 'revenue', forecastMethod: 'fixed_monthly', fixedMonthlyValue: '100', startPeriod: '2026-01', endPeriod: '2026-01', amountBasis: 'tax_exclusive', taxRate: '0', assumption: '', sortOrder: 1, monthlyValues: {} },
+        { code: 'LINE-002', name: '收入分成', category: 'cost', forecastMethod: 'formula', formulaExpression: 'LINE("LINE-001") * 50%', startPeriod: '2026-01', endPeriod: '2026-01', amountBasis: 'tax_exclusive', taxRate: '0', assumption: '', sortOrder: 2, monthlyValues: {} },
+      ],
+      cashRules: [{ sourceLineCode: 'LINE-001', method: 'immediate', delayMonths: 0, installments: [], monthlyValues: {} }],
+    })
+    const calculated = await calculation.calculateSaved(project.id, plan.planId)
+    expect(calculated.success).toBe(true)
+    const revenueLine = saved.lines.find((line) => line.code === 'LINE-001')!
+    await calculation.saveAdjustments(project.id, plan.planId, calculated.state.resultRevision, [{
+      forecastLineId: revenueLine.id, period: '2026-01', metricCode: 'revenue', adjustedValue: '120', reason: '复核调整',
+    }])
+    const report = await new ProjectReportService(database).build({ projectId: project.id, scenarioId: 'baseline', planId: plan.planId })
+    expect(report.summary.revenue).toBe('120')
+    expect(report.summary.cost).toBe('50')
+    expect(report.summary.grossProfit).toBe('70')
+    expect(report.summary.cashInflow).toBe('100')
+    const raw = await database.query<{ value_text: string }>('SELECT value_text FROM fact_forecast_line_value WHERE forecast_line_id = ? AND period = ?', [revenueLine.id, '2026-01'])
+    expect(raw[0].value_text).toBe('100')
   })
 })

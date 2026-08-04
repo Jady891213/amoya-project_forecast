@@ -1,12 +1,12 @@
 import Decimal from 'decimal.js'
 import type {
-  ForecastLine,
   ForecastCategory,
   ForecastLineBreakdown,
-  ProjectParameter,
 } from '../../shared/domain/types'
 import type { DatabaseClient } from '../../app/storage/types'
 import { humanizeFormula, parseFormula } from '../../shared/calculation/formulaEngine'
+import { ForecastLineRepository } from './forecastLineRepository'
+import { ParameterRepository } from './parameterRepository'
 
 interface LineValueRow {
   forecast_line_id: string
@@ -20,44 +20,27 @@ interface LineValueRow {
 export class ForecastLineValueRepository {
   constructor(private readonly database: DatabaseClient) {}
 
-  async listBreakdown(runId: string): Promise<ForecastLineBreakdown[]> {
-    const rows = await this.database.query<LineValueRow>(
+  async listBreakdown(projectId: string, planId: string): Promise<ForecastLineBreakdown[]> {
+    const [rows, lines, parameters] = await Promise.all([
+      this.database.query<LineValueRow>(
       `SELECT forecast_line_id, line_code, line_name, line_category,
               period, value_text
        FROM fact_forecast_line_value
-       WHERE calculation_run_id = ?
+       WHERE project_id = ? AND plan_id = ?
        ORDER BY line_category DESC, line_code, period`,
-      [runId],
-    )
-    const runRows = await this.database.query<{
-      config_snapshot_json: string
-    }>(
-      `SELECT config_snapshot_json FROM sys_calculation_run WHERE id = ?`,
-      [runId],
-    )
-    let snapshotLines: ForecastLine[] = []
-    let snapshotParameters: ProjectParameter[] = []
-    try {
-      const snapshot = JSON.parse(
-        runRows[0]?.config_snapshot_json ?? '{}',
-      ) as {
-        lines?: ForecastLine[]
-        parameters?: ProjectParameter[]
-      }
-      snapshotLines = snapshot.lines ?? []
-      snapshotParameters = snapshot.parameters ?? []
-    } catch {
-      snapshotLines = []
-      snapshotParameters = []
-    }
+      [projectId, planId],
+      ),
+      new ForecastLineRepository(this.database).list(projectId, planId),
+      new ParameterRepository(this.database).list(projectId, planId),
+    ])
     const lineSnapshotById = new Map(
-      snapshotLines.map((line) => [line.id, line]),
+      lines.map((line) => [line.id, line]),
     )
     const lineNames = new Map(
-      snapshotLines.map((line) => [line.code, line.name]),
+      lines.map((line) => [line.code, line.name]),
     )
     const parameterNames = new Map(
-      snapshotParameters.map((parameter) => [parameter.code, parameter.name]),
+      parameters.map((parameter) => [parameter.code, parameter.name]),
     )
     const byLine = new Map<string, LineValueRow[]>()
     rows.forEach((row) => {

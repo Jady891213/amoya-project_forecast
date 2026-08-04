@@ -8,7 +8,6 @@ interface PlanRow {
   start_period: string
   end_period: string
   status: ProjectPlan['status']
-  is_default: number
   sort_order: number
   draft_revision: number
   created_at: string
@@ -23,7 +22,6 @@ function fromRow(row: PlanRow): ProjectPlan {
     startPeriod: row.start_period,
     endPeriod: row.end_period,
     status: row.status,
-    isDefault: Boolean(row.is_default),
     sortOrder: row.sort_order,
     draftRevision: row.draft_revision,
     createdAt: row.created_at,
@@ -61,7 +59,7 @@ export class ProjectPlanRepository {
     return rows[0] ? fromRow(rows[0]) : undefined
   }
 
-  async create(projectId: string, request: CreateProjectPlanRequest, makeDefault = false): Promise<ProjectPlan> {
+  async create(projectId: string, request: CreateProjectPlanRequest): Promise<ProjectPlan> {
     const input = validate(request)
     const duplicate = await this.database.query<{ id: string }>('SELECT id FROM dim_plan WHERE project_id = ? AND name = ?', [projectId, input.name])
     if (duplicate.length) throw Object.assign(new Error(`方案“${input.name}”已存在`), { code: 'INVALID_REQUEST' })
@@ -69,14 +67,14 @@ export class ProjectPlanRepository {
     const id = crypto.randomUUID()
     const now = new Date().toISOString()
     await this.database.execute(
-      `INSERT INTO dim_plan (id, project_id, name, start_period, end_period, status, is_default, sort_order, draft_revision, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'active', ?, ?, 0, ?, ?)`,
-      [id, projectId, input.name, input.startPeriod, input.endPeriod, makeDefault || existing.length === 0 ? 1 : 0, existing.length + 1, now, now],
+      `INSERT INTO dim_plan (id, project_id, name, start_period, end_period, status, sort_order, draft_revision, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'active', ?, 0, ?, ?)`,
+      [id, projectId, input.name, input.startPeriod, input.endPeriod, existing.length + 1, now, now],
     )
     return (await this.get(projectId, id))!
   }
 
-  async update(projectId: string, planId: string, input: ProjectPlanInput & { isDefault?: boolean }): Promise<ProjectPlan> {
+  async update(projectId: string, planId: string, input: ProjectPlanInput): Promise<ProjectPlan> {
     const current = await this.get(projectId, planId)
     if (!current) throw Object.assign(new Error('项目方案不存在'), { code: 'NOT_FOUND' })
     const next = validate(input)
@@ -86,15 +84,10 @@ export class ProjectPlanRepository {
       [projectId, planId, next.startPeriod, next.endPeriod],
     )
     if ((conflict[0]?.count ?? 0) > 0) throw Object.assign(new Error('新方案期间无法覆盖已有损益预测项'), { code: 'INVALID_REQUEST' })
-    const statements: SqlStatement[] = []
-    if (input.isDefault && !current.isDefault) {
-      statements.push({ sql: 'UPDATE dim_plan SET is_default = 0, updated_at = ? WHERE project_id = ?', params: [new Date().toISOString(), projectId] })
-    }
-    statements.push({
-      sql: `UPDATE dim_plan SET name = ?, start_period = ?, end_period = ?, is_default = ?, updated_at = ? WHERE project_id = ? AND id = ?`,
-      params: [next.name, next.startPeriod, next.endPeriod, input.isDefault || current.isDefault ? 1 : 0, new Date().toISOString(), projectId, planId],
-    })
-    await this.database.batch(statements)
+    await this.database.execute(
+      `UPDATE dim_plan SET name = ?, start_period = ?, end_period = ?, updated_at = ? WHERE project_id = ? AND id = ?`,
+      [next.name, next.startPeriod, next.endPeriod, new Date().toISOString(), projectId, planId],
+    )
     return (await this.get(projectId, planId))!
   }
 
@@ -103,7 +96,6 @@ export class ProjectPlanRepository {
     if (!current) throw Object.assign(new Error('项目方案不存在'), { code: 'NOT_FOUND' })
     const active = (await this.list(projectId, false))
     if (active.length <= 1) throw Object.assign(new Error('项目必须至少保留一个有效方案'), { code: 'INVALID_REQUEST' })
-    if (current.isDefault) throw Object.assign(new Error('默认方案不能归档，请先设置其他默认方案'), { code: 'INVALID_REQUEST' })
     await this.database.execute("UPDATE dim_plan SET status = 'archived', updated_at = ? WHERE project_id = ? AND id = ?", [new Date().toISOString(), projectId, planId])
     return (await this.get(projectId, planId))!
   }

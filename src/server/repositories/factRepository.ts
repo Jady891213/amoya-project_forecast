@@ -11,7 +11,6 @@ interface FactRow {
   metric_code: BaseFact['metricCode']
   value_text: string
   source_label: string
-  calculation_run_id: string | null
   origin: BaseFact['origin']
   dataset_id: string | null
   created_at: string
@@ -29,7 +28,6 @@ function fromRow(row: FactRow): BaseFact {
     metricCode: row.metric_code,
     value: row.value_text,
     sourceLabel: row.source_label,
-    calculationRunId: row.calculation_run_id ?? undefined,
     origin: row.origin,
     datasetId: row.dataset_id ?? undefined,
     createdAt: row.created_at,

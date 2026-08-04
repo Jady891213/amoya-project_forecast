@@ -2,10 +2,11 @@ export type {
   ApiError,
   AppMetadata,
   BaseFact,
-  CalculationRun,
+  PlanCalculationState,
   Department,
   DepartmentInput,
-  ForecastOverrideDraft,
+  FactAdjustment,
+  FactAdjustmentDraft,
   ForecastProjectState,
   MetricDefinition,
   PeriodDimension,
@@ -67,8 +68,18 @@ export interface CalculationRequest {
 
 export interface CalculationResponse {
   success: boolean
-  run: import('./domain/types').CalculationRun
+  state: import('./domain/types').PlanCalculationState
   issues: import('./domain/types').CalculationIssue[]
+}
+
+export interface SavePlanAdjustmentsRequest {
+  expectedResultRevision: number
+  adjustments: import('./domain/types').FactAdjustmentDraft[]
+}
+
+export interface SavePlanAdjustmentsResponse {
+  state: import('./domain/types').PlanCalculationState
+  adjustments: import('./domain/types').FactAdjustment[]
 }
 
 export interface RestoreDatabaseResponse {

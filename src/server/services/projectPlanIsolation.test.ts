@@ -11,22 +11,19 @@ beforeEach(async () => { database = await NodeSqliteClient.create(); await initi
 afterEach(async () => { await database.close() })
 
 describe('项目方案隔离与项目报表', () => {
-  it('约束默认方案、归档恢复和项目与方案的合法组合', async () => {
+  it('约束方案归档恢复和项目与方案的合法组合', async () => {
     const department = await new DepartmentRepository(database).save({ code: 'LIFE', name: '方案生命周期部' })
     const service = new ProjectWorkspaceService(database)
     const projectA = await service.createProject({ code: 'LIFE-A', name: '方案项目 A', departmentId: department.id, startPeriod: '2026-01', endPeriod: '2026-03' })
     const projectB = await service.createProject({ code: 'LIFE-B', name: '方案项目 B', departmentId: department.id, startPeriod: '2026-01', endPeriod: '2026-03' })
     const second = await service.createPlan(projectA.project.id, { name: '备选方案', startPeriod: '2026-01', endPeriod: '2026-03' })
 
-    await expect(service.archivePlan(projectA.project.id, projectA.currentPlan.planId)).rejects.toThrow('默认方案不能归档')
-    await service.updatePlan(projectA.project.id, second.currentPlan.planId, { isDefault: true })
     await service.archivePlan(projectA.project.id, projectA.currentPlan.planId)
     await expect(service.archivePlan(projectA.project.id, second.currentPlan.planId)).rejects.toThrow('至少保留一个有效方案')
     await service.restorePlan(projectA.project.id, projectA.currentPlan.planId)
 
     const activePlans = (await new ProjectPlanRepository(database).list(projectA.project.id, false))
     expect(activePlans).toHaveLength(2)
-    expect(activePlans.filter((plan) => plan.isDefault).map((plan) => plan.planId)).toEqual([second.currentPlan.planId])
 
     await expect(database.execute(
       `INSERT INTO cfg_model_line
@@ -43,15 +40,15 @@ describe('项目方案隔离与项目报表', () => {
     const baseId = created.currentPlan.planId
     const saveWithAmount = async (workspace: typeof created, amount: string) => service.saveWorkspace(created.project.id, {
       planId: workspace.currentPlan.planId, expectedRevision: workspace.draftRevision,
-      draft: { project: { ...workspace.project, startPeriod: workspace.currentPlan.startPeriod, endPeriod: workspace.currentPlan.endPeriod }, plan: { name: workspace.currentPlan.name, startPeriod: workspace.currentPlan.startPeriod, endPeriod: workspace.currentPlan.endPeriod }, forecast: { parameters: [], cashRules: [], overrides: [], lines: [{ code: 'LINE-001', name: '订阅收入', category: 'revenue', forecastMethod: 'fixed_monthly', fixedMonthlyValue: amount, startPeriod: '2026-01', endPeriod: '2026-02', amountBasis: 'tax_exclusive', taxRate: '0', assumption: '', sortOrder: 1, monthlyValues: {} }] } },
+      draft: { project: { ...workspace.project, startPeriod: workspace.currentPlan.startPeriod, endPeriod: workspace.currentPlan.endPeriod }, plan: { name: workspace.currentPlan.name, startPeriod: workspace.currentPlan.startPeriod, endPeriod: workspace.currentPlan.endPeriod }, forecast: { parameters: [], cashRules: [], lines: [{ code: 'LINE-001', name: '订阅收入', category: 'revenue', forecastMethod: 'fixed_monthly', fixedMonthlyValue: amount, startPeriod: '2026-01', endPeriod: '2026-02', amountBasis: 'tax_exclusive', taxRate: '0', assumption: '', sortOrder: 1, monthlyValues: {} }] } },
     })
     const base = await saveWithAmount(created, '100')
     expect((await service.calculate(created.project.id, baseId, base.draftRevision)).success).toBe(true)
     const copied = await service.createPlan(created.project.id, { name: '增长方案', startPeriod: '2026-01', endPeriod: '2026-02', copyFromPlanId: baseId })
     const growth = await saveWithAmount(copied, '150')
     expect((await service.calculate(created.project.id, copied.currentPlan.planId, growth.draftRevision)).success).toBe(true)
-    expect((await service.buildReport(created.project.id, undefined, baseId)).summary.revenue).toBe('200')
-    expect((await service.buildReport(created.project.id, undefined, copied.currentPlan.planId)).summary.revenue).toBe('300')
+    expect((await service.buildReport(created.project.id, baseId)).summary.revenue).toBe('200')
+    expect((await service.buildReport(created.project.id, copied.currentPlan.planId)).summary.revenue).toBe('300')
     const facts = await database.query<{ plan_id: string }>("SELECT plan_id FROM fact_metric_value WHERE project_id = ? AND metric_code = 'revenue'", [created.project.id])
     expect(new Set(facts.map((item) => item.plan_id))).toEqual(new Set([baseId, copied.currentPlan.planId]))
   })
@@ -60,7 +57,7 @@ describe('项目方案隔离与项目报表', () => {
     const department = await new DepartmentRepository(database).save({ code: 'PVT', name: '透视验证部' })
     const service = new ProjectWorkspaceService(database)
     const workspace = await service.createProject({ code: 'PVT-001', name: '透视验证项目', departmentId: department.id, startPeriod: '2026-01', endPeriod: '2026-01' })
-    const saved = await service.saveWorkspace(workspace.project.id, { planId: workspace.currentPlan.planId, expectedRevision: 0, draft: { project: { ...workspace.project, startPeriod: '2026-01', endPeriod: '2026-01' }, plan: { name: '默认方案', startPeriod: '2026-01', endPeriod: '2026-01' }, forecast: { parameters: [], cashRules: [], overrides: [], lines: [
+    const saved = await service.saveWorkspace(workspace.project.id, { planId: workspace.currentPlan.planId, expectedRevision: 0, draft: { project: { ...workspace.project, startPeriod: '2026-01', endPeriod: '2026-01' }, plan: { name: '方案 1', startPeriod: '2026-01', endPeriod: '2026-01' }, forecast: { parameters: [], cashRules: [], lines: [
       { code: 'LINE-001', name: '收入', category: 'revenue', forecastMethod: 'fixed_monthly', fixedMonthlyValue: '100', startPeriod: '2026-01', endPeriod: '2026-01', amountBasis: 'tax_exclusive', taxRate: '0', assumption: '', sortOrder: 1, monthlyValues: {} },
       { code: 'LINE-002', name: '成本', category: 'cost', forecastMethod: 'fixed_monthly', fixedMonthlyValue: '40', startPeriod: '2026-01', endPeriod: '2026-01', amountBasis: 'tax_exclusive', taxRate: '0', assumption: '', sortOrder: 2, monthlyValues: {} },
     ] } } })
@@ -82,7 +79,7 @@ describe('项目方案隔离与项目报表', () => {
         draft: {
           project: { ...workspace.project, startPeriod: '2026-01', endPeriod: '2026-01' },
           plan: { name: '推荐方案', startPeriod: '2026-01', endPeriod: '2026-01' },
-          forecast: { parameters: [], cashRules: [], overrides: [], lines: [{ code: 'LINE-001', name: '收入', category: 'revenue', forecastMethod: 'fixed_monthly', fixedMonthlyValue: amount, startPeriod: '2026-01', endPeriod: '2026-01', amountBasis: 'tax_exclusive', taxRate: '0', assumption: '', sortOrder: 1, monthlyValues: {} }] },
+          forecast: { parameters: [], cashRules: [], lines: [{ code: 'LINE-001', name: '收入', category: 'revenue', forecastMethod: 'fixed_monthly', fixedMonthlyValue: amount, startPeriod: '2026-01', endPeriod: '2026-01', amountBasis: 'tax_exclusive', taxRate: '0', assumption: '', sortOrder: 1, monthlyValues: {} }] },
         },
       })
       await service.calculate(workspace.project.id, workspace.currentPlan.planId, saved.draftRevision)

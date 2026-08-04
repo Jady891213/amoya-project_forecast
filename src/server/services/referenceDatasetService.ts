@@ -54,10 +54,10 @@ export class ReferenceDatasetService {
     )
     REFERENCE_PLANS.forEach((row) => statements.push({
       sql: `INSERT OR REPLACE INTO dim_plan (
-        id, project_id, name, start_period, end_period, status, is_default,
+        id, project_id, name, start_period, end_period, status,
         sort_order, draft_revision, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      params: [row.planId, row.projectId, row.name, row.startPeriod, row.endPeriod, row.status, row.isDefault ? 1 : 0, row.sortOrder, row.draftRevision, row.createdAt, row.updatedAt],
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      params: [row.planId, row.projectId, row.name, row.startPeriod, row.endPeriod, row.status, row.sortOrder, row.draftRevision, row.createdAt, row.updatedAt],
     }))
     await this.database.batch(statements)
     const calculation = new CalculationService(this.database)

@@ -16,7 +16,7 @@ interface ProjectRow {
   start_period: string | null
   end_period: string | null
   draft_revision: number | null
-  default_plan_id: string | null
+  plan_count: number | null
 }
 
 interface ScenarioRow {
@@ -39,7 +39,7 @@ function projectFromRow(row: ProjectRow): Project {
     startPeriod: row.start_period ?? '',
     endPeriod: row.end_period ?? '',
     draftRevision: row.draft_revision ?? 0,
-    defaultPlanId: row.default_plan_id ?? undefined,
+    planCount: row.plan_count ?? 0,
     attributesJson: row.attributes_json ?? undefined,
     origin: row.origin,
     datasetId: row.dataset_id ?? undefined,
@@ -60,14 +60,22 @@ export class ProjectRepository {
   constructor(private readonly database: DatabaseClient) {}
 
   async list(): Promise<Project[]> {
-    return (await this.database.query<ProjectRow>(`SELECT p.*, pl.id AS default_plan_id, pl.start_period, pl.end_period, pl.draft_revision
-      FROM dim_project p LEFT JOIN dim_plan pl ON pl.project_id = p.id AND pl.is_default = 1 AND pl.status = 'active'
+    return (await this.database.query<ProjectRow>(`SELECT p.*, pl.start_period, pl.end_period, pl.draft_revision,
+      (SELECT COUNT(*) FROM dim_plan pc WHERE pc.project_id = p.id AND pc.status = 'active') AS plan_count
+      FROM dim_project p LEFT JOIN dim_plan pl ON pl.id = (
+        SELECT fp.id FROM dim_plan fp WHERE fp.project_id = p.id AND fp.status = 'active'
+        ORDER BY fp.sort_order, fp.created_at, fp.id LIMIT 1
+      )
       ORDER BY p.updated_at DESC`)).map(projectFromRow)
   }
 
   async get(id: string): Promise<Project | undefined> {
-    const rows = await this.database.query<ProjectRow>(`SELECT p.*, pl.id AS default_plan_id, pl.start_period, pl.end_period, pl.draft_revision
-      FROM dim_project p LEFT JOIN dim_plan pl ON pl.project_id = p.id AND pl.is_default = 1 AND pl.status = 'active'
+    const rows = await this.database.query<ProjectRow>(`SELECT p.*, pl.start_period, pl.end_period, pl.draft_revision,
+      (SELECT COUNT(*) FROM dim_plan pc WHERE pc.project_id = p.id AND pc.status = 'active') AS plan_count
+      FROM dim_project p LEFT JOIN dim_plan pl ON pl.id = (
+        SELECT fp.id FROM dim_plan fp WHERE fp.project_id = p.id AND fp.status = 'active'
+        ORDER BY fp.sort_order, fp.created_at, fp.id LIMIT 1
+      )
       WHERE p.id = ?`, [id])
     return rows[0] ? projectFromRow(rows[0]) : undefined
   }

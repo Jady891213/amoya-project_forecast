@@ -76,17 +76,6 @@ export function previewForecastDraft(project: ProjectCalculationContext, draft: 
     values,
     parameters,
     parameterValues,
-    (draft.overrides ?? []).map((item) => ({
-      id: item.id ?? `${item.forecastLineId}:${item.period}`,
-      projectId: project.id,
-      planId,
-      forecastLineId: item.forecastLineId,
-      period: item.period,
-      originalValue: item.originalValue,
-      overrideValue: item.overrideValue,
-      reason: item.reason,
-      updatedAt: now,
-    })),
     planId,
   )
   const lineByCode = new Map(lines.map((line) => [line.code, line]))

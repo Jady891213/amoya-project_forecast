@@ -106,7 +106,7 @@ export async function initializeSqliteDatabase(
   if (!applied.has(CURRENT_SCHEMA_VERSION)) {
     await database.execute(
       `INSERT INTO sys_schema_migration (version, description, applied_at)
-       VALUES (?, '项目方案与跨项目多维报表结构', ?)`,
+       VALUES (?, '事实调整层与最新结果模式', ?)`,
       [CURRENT_SCHEMA_VERSION, now],
     )
   }

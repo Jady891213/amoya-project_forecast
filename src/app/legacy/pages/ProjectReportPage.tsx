@@ -139,7 +139,7 @@ export function ProjectReportPage({
     [database],
   )
   const scenario = snapshot.scenarios.find((item) => item.isDefault)
-  const plan = snapshot.plans.find((item) => item.projectId === requestedProjectId && item.isDefault && item.status === 'active')
+  const plan = snapshot.plans.find((item) => item.projectId === requestedProjectId && item.status === 'active')
 
   useEffect(() => {
     let cancelled = false
@@ -157,11 +157,11 @@ export function ProjectReportPage({
           planId: plan.planId,
         })
         const state = await calculation.getProjectState(requestedProjectId, plan.planId)
-        const breakdown = state.latestRun
-          ? await lineValues.listBreakdown(state.latestRun.id)
+        const breakdown = state.calculationState?.lastSuccessAt
+          ? await lineValues.listBreakdown(requestedProjectId, plan.planId)
           : []
-        const schedule = state.latestRun
-          ? await cashSchedules.listByRun(state.latestRun.id)
+        const schedule = state.calculationState?.lastSuccessAt
+          ? await cashSchedules.list(requestedProjectId, plan.planId)
           : []
         if (!cancelled) {
           setReport(result)
@@ -204,7 +204,7 @@ export function ProjectReportPage({
         <span className="spacer" />
         {view === 'calculation' && (
           <>
-            {forecastState?.latestRun && (
+            {forecastState?.calculationState?.lastSuccessAt && (
               <button
                 className="btn"
                 onClick={() => setShowSnapshot((current) => !current)}
@@ -236,20 +236,20 @@ export function ProjectReportPage({
           </div>
         )}
         <div>
-          <span>计算批次</span>
+          <span>结果修订</span>
           <strong>
-            {forecastState?.latestRun
-              ? `RUN-${String(forecastState.latestRun.runNumber).padStart(4, '0')}`
+            {forecastState?.calculationState?.lastSuccessAt
+              ? `R${forecastState.calculationState.resultRevision}`
               : '历史结果'}
           </strong>
         </div>
-        {forecastState?.latestRun && (
+        {forecastState?.calculationState?.lastSuccessAt && (
           <div>
             <span>最后计算</span>
-            <strong>{formatDateTime(forecastState.latestRun.completedAt)}</strong>
+            <strong>{formatDateTime(forecastState.calculationState.lastSuccessAt)}</strong>
           </div>
         )}
-        {forecastState?.latestRun && (
+        {forecastState?.calculationState?.lastSuccessAt && (
           <div>
             <span>结果状态</span>
             <strong className={forecastState.isResultCurrent ? 'good' : 'risk'}>
@@ -278,7 +278,7 @@ export function ProjectReportPage({
           )}
           {view === 'calculation' && (
             <>
-              {!forecastState?.isResultCurrent && forecastState?.latestRun && (
+              {!forecastState?.isResultCurrent && forecastState?.calculationState?.lastSuccessAt && (
                 <div className="calculation-note stale-note">
                   <Info size={15} />
                   预测配置已经修改，当前仍显示上一批成功结果。请返回预测配置并重新计算。
@@ -288,16 +288,16 @@ export function ProjectReportPage({
                 <Info size={15} />
                 当前表格读取 <code>fact_metric_value</code> 的基础指标，并即时计算毛利和毛利率；页面不可编辑。
               </div>
-              {showSnapshot && forecastState?.latestRun && (
+              {showSnapshot && forecastState?.calculationState?.lastSuccessAt && (
                 <section className="calculation-snapshot">
                   <div>
-                    <strong>RUN-{String(forecastState.latestRun.runNumber).padStart(4, '0')} 配置快照</strong>
-                    <span>该内容随计算批次保存，不会被后续配置修改覆盖。</span>
+                    <strong>当前方案计算状态</strong>
+                    <span>系统仅保留当前方案最近一次成功结果。</span>
                   </div>
                   <pre>
                     {JSON.stringify(
                       JSON.parse(
-                        forecastState.latestRun.configSnapshotJson || '{}',
+                        JSON.stringify(forecastState.calculationState),
                       ),
                       null,
                       2,

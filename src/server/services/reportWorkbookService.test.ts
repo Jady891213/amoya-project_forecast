@@ -26,15 +26,16 @@ describe('统一 Excel 报告', () => {
     const line = report.lineBreakdown[0]
     const period = report.monthly[0].period
     const originalValue = line.values.find((item) => item.period === period)?.value ?? '0'
-    report.overrides = [{
+    report.adjustments = [{
       id: 'override-test',
       projectId: report.project.id,
       planId: report.plan.planId,
       forecastLineId: line.lineId,
       period,
-      originalValue,
-      overrideValue: '70000',
-      reason: '测试人工覆盖',
+      metricCode: line.category,
+      adjustedValue: '70000',
+      reason: '测试人工调整',
+      createdAt: '2026-08-01T00:00:00.000Z',
       updatedAt: '2026-08-01T00:00:00.000Z',
     }]
     const bytes = await new ReportWorkbookService().build(report)
@@ -52,7 +53,7 @@ describe('统一 Excel 报告', () => {
       '指标和公式说明',
     ])
     expect(workbook.getWorksheet('项目信息')?.getCell('B2').value).toBe(
-      report.projectSnapshot.code,
+      report.project.code,
     )
     expect(workbook.getWorksheet('分月损益')?.getCell('A3').value).toBe('收入')
     expect(workbook.getWorksheet('分月现金流')?.getCell('A2').value).toContain(
@@ -60,7 +61,7 @@ describe('统一 Excel 报告', () => {
     )
     expect(workbook.getWorksheet('指标和公式说明')?.rowCount).toBeGreaterThan(4)
     const overrideRow = workbook.getWorksheet('测算假设')?.getColumn(1).values
-      .findIndex((value) => value === '人工覆盖') ?? -1
+      .findIndex((value) => value === '人工调整') ?? -1
     expect(overrideRow).toBeGreaterThan(0)
     expect(workbook.getWorksheet('测算假设')?.getCell(overrideRow, 4).fill)
       .toMatchObject({ fgColor: { argb: 'FFFFEAD0' } })

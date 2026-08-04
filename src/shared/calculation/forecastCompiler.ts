@@ -5,7 +5,6 @@ import type {
   CashRule,
   CompiledLineValue,
   ForecastLine,
-  ForecastOverride,
   ForecastMonthlyValue,
   ProjectCalculationContext,
   ProjectParameter,
@@ -56,7 +55,6 @@ export function buildForecastConfigHash(
   parameterValues: ProjectParameterValue[] = [],
   cashRules: CashRule[] = [],
   project?: ProjectCalculationContext,
-  overrides: ForecastOverride[] = [],
 ): string {
   const payload = JSON.stringify({
     coordinates: project ? {
@@ -118,18 +116,6 @@ export function buildForecastConfigHash(
           .sort((a, b) => a.sequence - b.sequence)
           .map((item) => [item.sequence, item.offsetMonths, item.ratio]),
       })),
-    overrides: [...overrides]
-      .sort((a, b) =>
-        `${a.forecastLineId}:${a.period}`.localeCompare(
-          `${b.forecastLineId}:${b.period}`,
-        ),
-      )
-      .map((item) => [
-        item.forecastLineId,
-        item.period,
-        item.overrideValue,
-        item.reason,
-      ]),
   })
   let hash = 2166136261
   for (let index = 0; index < payload.length; index += 1) {
@@ -145,7 +131,6 @@ export function compileForecast(
   monthlyValues: ForecastMonthlyValue[],
   parameters: ProjectParameter[] = [],
   parameterValues: ProjectParameterValue[] = [],
-  overrides: ForecastOverride[] = [],
   planId = 'plan-default',
 ): ForecastCompilation {
   const issues: CalculationIssue[] = []
@@ -163,12 +148,6 @@ export function compileForecast(
   const parameterValuesById = new Map<string, Map<string, string>>()
   const compiledByLine = new Map<string, Map<string, Decimal>>()
   const taxRates = new Map<string, Decimal>()
-  const overrideByCoordinate = new Map(
-    overrides.map((item) => [
-      `${item.forecastLineId}:${item.period}`,
-      item.overrideValue,
-    ]),
-  )
 
   monthlyValues.forEach((value) => {
     const lineValues = valuesByLine.get(value.lineId) ?? new Map<string, string>()
@@ -266,20 +245,9 @@ export function compileForecast(
   function appendValue(line: ForecastLine, period: string, rawAmount: Decimal) {
     const rate = taxRates.get(line.id)
     if (!rate) return
-    const overrideValue = overrideByCoordinate.get(`${line.id}:${period}`)
-    const overriddenAmount = overrideValue === undefined
-      ? undefined
-      : decimalValue(
-          overrideValue,
-          { lineId: line.id, field: 'overrideValue', period },
-          issues,
-        )
-    let netAmount = overriddenAmount ?? rawAmount
-    let grossAmount = overriddenAmount ?? rawAmount
-    if (
-      overriddenAmount === undefined &&
-      (line.category === 'revenue' || line.category === 'cost')
-    ) {
+    let netAmount = rawAmount
+    let grossAmount = rawAmount
+    if (line.category === 'revenue' || line.category === 'cost') {
       if (line.amountBasis === 'tax_inclusive') {
         netAmount = rawAmount.dividedBy(rate.plus(1))
         grossAmount = rawAmount
@@ -287,12 +255,6 @@ export function compileForecast(
         netAmount = rawAmount
         grossAmount = rawAmount.times(rate.plus(1))
       }
-    } else if (
-      overriddenAmount !== undefined &&
-      (line.category === 'revenue' || line.category === 'cost') &&
-      line.amountBasis !== 'non_taxable'
-    ) {
-      grossAmount = overriddenAmount.times(rate.plus(1))
     }
     const raw = rawAmount.toDecimalPlaces(6)
     const net = netAmount.toDecimalPlaces(6)

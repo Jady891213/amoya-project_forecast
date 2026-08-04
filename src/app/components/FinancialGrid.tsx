@@ -445,7 +445,7 @@ export function FinancialGrid({
                 tabIndex={rowIndex === selection.focus?.row && columnIndex === selection.focus?.column ? 0 : -1}
                 className={`${cellEditable ? 'editable-cell' : 'readonly-cell'} ${isSelected ? 'selected-cell grid-selected-cell' : ''} ${overridden ? 'overridden-cell' : ''}`}
                 aria-selected={isSelected}
-                title={overridden ? `原计算值：${row.originalValues?.[period] ?? '—'}；当前覆盖值：${row.values[period] ?? ''}` : cellEditable ? '双击编辑；支持从 Excel 粘贴区域' : '只读'}
+                title={overridden ? `原计算值：${row.originalValues?.[period] ?? '—'}；人工调整值：${row.values[period] ?? ''}` : cellEditable ? '双击编辑；支持从 Excel 粘贴区域' : '只读'}
                 onMouseDown={(event) => {
                   if (event.button === 0) {
                     event.preventDefault()

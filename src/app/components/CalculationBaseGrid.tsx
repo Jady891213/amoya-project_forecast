@@ -1,7 +1,7 @@
 import Decimal from 'decimal.js'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import type { ForecastOverrideDraft, MetricCode, ProjectReportDto } from '../../shared/domain/types'
+import type { FactAdjustmentDraft, MetricCode, ProjectReportDto } from '../../shared/domain/types'
 import { SYSTEM_METRICS } from '../../shared/domain/metrics'
 import { FinancialGrid, type FinancialGridChange, type FinancialGridRow } from './FinancialGrid'
 
@@ -36,12 +36,12 @@ function FormulaIcon({ metricCode }: { metricCode: MetricCode }) {
 
 export function CalculationBaseGrid({
   report,
-  overrides,
+  adjustments,
   onChange,
   onClearOverride,
 }: {
   report: ProjectReportDto
-  overrides: ForecastOverrideDraft[]
+  adjustments: FactAdjustmentDraft[]
   onChange: (changes: FinancialGridChange[]) => void
   onClearOverride: (rowId: string, period: string) => void
 }) {
@@ -49,7 +49,7 @@ export function CalculationBaseGrid({
   const [collapsedGroups, setCollapsedGroups] = useState<Set<BaseGroup>>(new Set())
   const periods = report.monthly.map((item) => item.period)
   const rows = useMemo<CalculationBaseRow[]>(() => {
-    const overrideMap = new Map(overrides.map((item) => [`${item.forecastLineId}:${item.period}`, item]))
+    const adjustmentMap = new Map(adjustments.map((item) => [`${item.forecastLineId}:${item.period}`, item]))
     const detailRows = report.lineBreakdown.flatMap((line): CalculationBaseRow[] => {
       const group: BaseGroup = line.category === 'revenue'
         ? '收入'
@@ -62,10 +62,10 @@ export function CalculationBaseGrid({
       const originalValues = { ...values }
       const overriddenPeriods = new Set<string>()
       line.values.forEach((item) => {
-        const override = overrideMap.get(`${line.lineId}:${item.period}`)
-        if (!override) return
-        values[item.period] = override.overrideValue
-        originalValues[item.period] = override.originalValue
+        const adjustment = adjustmentMap.get(`${line.lineId}:${item.period}`)
+        if (!adjustment) return
+        values[item.period] = adjustment.adjustedValue
+        originalValues[item.period] = item.value
         overriddenPeriods.add(item.period)
       })
       return [{
@@ -154,7 +154,7 @@ export function CalculationBaseGrid({
       metricRow('net_cash_flow', '项目净现金流', '现金指标', monthlyValues('netCashFlow')),
       metricRow('cumulative_cash_flow', '累计现金流', '现金指标', monthlyValues('cumulativeCashFlow')),
     ]
-  }, [overrides, periods, report])
+  }, [adjustments, periods, report])
 
   const visibleRows = rows.filter((row) => {
     if (view !== 'all' && row.section !== view) return false

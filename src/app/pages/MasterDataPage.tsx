@@ -189,7 +189,7 @@ export function MasterDataPage({
                       <td>{snapshot.projects.find((project) => project.id === plan.projectId)?.name ?? '—'}</td>
                       <td className="strong-cell">{plan.name}</td>
                       <td>{plan.startPeriod} 至 {plan.endPeriod}</td>
-                      <td>{plan.status === 'active' ? (plan.isDefault ? '有效 · 默认' : '有效') : '已归档'}</td>
+                      <td>{plan.status === 'active' ? '有效' : '已归档'}</td>
                     </tr>
                   ))}</tbody>
                 </table>

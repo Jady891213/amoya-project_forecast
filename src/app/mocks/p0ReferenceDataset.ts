@@ -104,11 +104,10 @@ const PLAN_PERIODS: Record<string, [string, string]> = {
 export const REFERENCE_PLANS: ProjectPlan[] = REFERENCE_PROJECTS.map((project) => ({
   projectId: project.id,
   planId: `plan-${project.id.replace(/^project-/, '')}-default`,
-  name: '默认方案',
+  name: '方案 1',
   startPeriod: PLAN_PERIODS[project.id][0],
   endPeriod: PLAN_PERIODS[project.id][1],
   status: 'active',
-  isDefault: true,
   sortOrder: 1,
   draftRevision: 0,
   createdAt: CREATED_AT,

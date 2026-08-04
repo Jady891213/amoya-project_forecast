@@ -40,10 +40,10 @@ export type ForecastCategory =
   | 'cost'
   | 'cash_inflow'
   | 'cash_outflow'
-export type CalculationRunStatus = 'success' | 'failed'
+export type CalculationStatus = 'success' | 'failed'
 
 export const BASELINE_SCENARIO_CODE = 'baseline'
-export const DEFAULT_PLAN_NAME = '默认方案'
+export const DEFAULT_PLAN_NAME = '方案 1'
 export const REFERENCE_DATASET_ID = 'historical-project-config-v6'
 
 export type BaseMetricCode =
@@ -80,11 +80,11 @@ export interface Project extends OriginFields {
   name: string
   departmentId: string
   status: ProjectStatus
-  /** 默认方案期间，仅用于项目列表等汇总视图；不存放在 dim_project。 */
+  /** 排序第一的有效方案期间，仅用于项目列表等汇总视图；不存放在 dim_project。 */
   startPeriod: string
   endPeriod: string
   draftRevision: number
-  defaultPlanId?: string
+  planCount?: number
   attributesJson?: string
   createdAt: string
   updatedAt: string
@@ -95,24 +95,25 @@ export interface ProjectCalculationContext extends Project {
   endPeriod: string
 }
 
-export interface ForecastOverride {
+export interface FactAdjustment {
   id: string
   projectId: string
   planId: string
   forecastLineId: string
   period: string
-  originalValue: string
-  overrideValue: string
+  metricCode: BaseMetricCode
+  adjustedValue: string
   reason: string
+  createdAt: string
   updatedAt: string
 }
 
-export interface ForecastOverrideDraft {
+export interface FactAdjustmentDraft {
   id?: string
   forecastLineId: string
   period: string
-  originalValue: string
-  overrideValue: string
+  metricCode: BaseMetricCode
+  adjustedValue: string
   reason: string
 }
 
@@ -142,7 +143,6 @@ export interface ProjectPlan {
   startPeriod: string
   endPeriod: string
   status: 'active' | 'archived'
-  isDefault: boolean
   sortOrder: number
   draftRevision: number
   createdAt: string
@@ -175,7 +175,6 @@ export interface BaseFact extends OriginFields {
   metricCode: BaseMetricCode
   value: string
   sourceLabel: string
-  calculationRunId?: string
   createdAt?: string
   updatedAt?: string
 }
@@ -265,7 +264,6 @@ export interface ForecastProjectDraft {
   lines: ForecastLineDraft[]
   parameters: ProjectParameterDraft[]
   cashRules?: CashRuleDraft[]
-  overrides?: ForecastOverrideDraft[]
 }
 
 export interface CashInstallment {
@@ -358,21 +356,16 @@ export interface CalculationIssue {
   message: string
 }
 
-export interface CalculationRun {
-  id: string
+export interface PlanCalculationState {
   projectId: string
-  scenarioId: string
   planId: string
-  runNumber: number
-  status: CalculationRunStatus
-  configHash: string
-  issueCount: number
+  lastStatus: CalculationStatus
+  lastAttemptAt: string
+  lastSuccessAt?: string
+  lastSuccessConfigHash?: string
+  calculatedDraftRevision: number
+  resultRevision: number
   issues: CalculationIssue[]
-  configSnapshotJson: string
-  draftRevision: number
-  projectSnapshotJson: string
-  startedAt: string
-  completedAt: string
 }
 
 export interface ForecastProjectState {
@@ -381,8 +374,7 @@ export interface ForecastProjectState {
   parameters: ProjectParameter[]
   parameterValues: ProjectParameterValue[]
   cashRules: CashRule[]
-  overrides: ForecastOverride[]
-  latestRun?: CalculationRun
+  calculationState?: PlanCalculationState
   isResultCurrent: boolean
   currentConfigHash: string
 }
@@ -439,7 +431,7 @@ export interface ProjectInput {
   code?: string
   name: string
   departmentId: string
-  /** 新建项目时用于创建默认方案；工作区保存时以 draft.plan 为准。 */
+  /** 新建项目时用于创建首个方案；工作区保存时以 draft.plan 为准。 */
   startPeriod: string
   endPeriod: string
 }
@@ -472,6 +464,7 @@ export interface ProjectWorkspace {
 export interface SaveProjectWorkspaceRequest {
   planId: string
   expectedRevision: number
+  clearInvalidAdjustments?: boolean
   draft: ProjectWorkspaceDraft
 }
 
@@ -618,13 +611,10 @@ export interface ProjectReport {
 }
 
 export interface ProjectReportDto extends ProjectReport {
-  calculationRun?: CalculationRun
-  availableRuns: CalculationRun[]
-  projectSnapshot: Project
-  planSnapshot: ProjectPlan
+  calculationState?: PlanCalculationState
   lineBreakdown: ForecastLineBreakdown[]
   cashSchedule: CashScheduleBreakdown[]
-  overrides: ForecastOverride[]
+  adjustments: FactAdjustment[]
   keyAssumptions: Array<{ code: string; name: string; value: string; unit: string }>
   measurementSummary: string[]
   riskNotes: string[]

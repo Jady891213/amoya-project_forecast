@@ -22,7 +22,7 @@ import type {
   CashRuleDraft,
   ForecastCategory,
   ForecastLineDraft,
-  ForecastOverrideDraft,
+  FactAdjustmentDraft,
   ProjectInput,
   ProjectParameterDraft,
   ProjectPlan,
@@ -30,7 +30,7 @@ import type {
   ProjectWorkspace,
 } from '../../shared/domain/types'
 import type { AppSnapshot } from '../state/types'
-import { ApiClient } from '../api/client'
+import { ApiClient, SemanticApiError } from '../api/client'
 import { countPeriods, generatePeriodRange, generatePeriods } from '../domain/periods'
 import { FinancialGrid, type FinancialGridChange, type FinancialGridRow } from '../components/FinancialGrid'
 import { CalculationBaseGrid } from '../components/CalculationBaseGrid'
@@ -45,6 +45,11 @@ import {
   type ForecastScheme,
 } from '../ui/ForecastSchemeFields'
 import { previewForecastDraft } from '../../shared/calculation/previewForecastDraft'
+import guideProjectConfig from '../assets/guide/01_project_config.png'
+import guideProjectInfo from '../assets/guide/02_project_info.png'
+import guideForecastRule from '../assets/guide/03_forecast_rule.png'
+import guideSaveCalculate from '../assets/guide/04_save_calculate.png'
+import guideAdjustmentReport from '../assets/guide/05_adjustment_report.png'
 
 const ReportCharts = lazy(async () => {
   const module = await import('../components/ReportCharts')
@@ -177,14 +182,15 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
   const [lines, setLines] = useState<ForecastLineDraft[]>([])
   const [parameters, setParameters] = useState<ProjectParameterDraft[]>([])
   const [cashRules, setCashRules] = useState<CashRuleDraft[]>([])
-  const [overrides, setOverrides] = useState<ForecastOverrideDraft[]>([])
+  const [adjustments, setAdjustments] = useState<FactAdjustmentDraft[]>([])
+  const [adjustmentsDirty, setAdjustmentsDirty] = useState(false)
   const [selectedLineId, setSelectedLineId] = useState('')
   const [selectedParameterId, setSelectedParameterId] = useState('')
   const [dirty, setDirty] = useState(false)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [report, setReport] = useState<ProjectReportDto>()
-  const [reportRunId, setReportRunId] = useState('')
+  const [guideOpen, setGuideOpen] = useState(false)
   const [editingProjectHeader, setEditingProjectHeader] = useState(false)
   const [createMenu, setCreateMenu] = useState<'profit' | 'cash' | ''>('')
   const [versionMenuOpen, setVersionMenuOpen] = useState(false)
@@ -215,14 +221,6 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
     setLines(nextLines)
     setParameters(nextParameters)
     setCashRules(stateToCashRules(next))
-    setOverrides(next.forecast.overrides.map((item) => ({
-      id: item.id,
-      forecastLineId: item.forecastLineId,
-      period: item.period,
-      originalValue: item.originalValue,
-      overrideValue: item.overrideValue,
-      reason: item.reason,
-    })))
     setSelectedLineId((current) => current && nextLines.some((line) => line.id === current) ? current : '')
     setSelectedParameterId((current) => current && nextParameters.some((item) => item.id === current) ? current : '')
     setDirty(false)
@@ -243,20 +241,31 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
   useEffect(() => {
     if (!workspace) return
     let cancelled = false
-    void api.report(projectId, view === 'report' && reportRunId ? reportRunId : undefined, workspace.currentPlan.planId).then((result) => {
-      if (!cancelled) setReport(result)
+    void api.report(projectId, workspace.currentPlan.planId).then((result) => {
+      if (!cancelled) {
+        setReport(result)
+        setAdjustments(result.adjustments.map((item) => ({
+          id: item.id,
+          forecastLineId: item.forecastLineId,
+          period: item.period,
+          metricCode: item.metricCode,
+          adjustedValue: item.adjustedValue,
+          reason: item.reason,
+        })))
+        setAdjustmentsDirty(false)
+      }
     }).catch((reason) => {
       if (!cancelled) setMessage(reason instanceof Error ? reason.message : '结果加载失败')
     })
     return () => { cancelled = true }
-  }, [api, projectId, reportRunId, view, workspace])
+  }, [api, projectId, view, workspace])
 
   useEffect(() => {
-    if (!dirty) return
+    if (!dirty && !adjustmentsDirty) return
     const handler = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
     window.addEventListener('beforeunload', handler)
     return () => window.removeEventListener('beforeunload', handler)
-  }, [dirty])
+  }, [adjustmentsDirty, dirty])
 
   useEffect(() => {
     if (!versionMenuOpen) return
@@ -309,7 +318,6 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
         ...rule,
         installments: rule.installments.map((item) => ({ ...item, ratio: new Decimal(item.ratio || 0).div(100).toString() })),
       })),
-      overrides,
     }
   }
 
@@ -333,9 +341,9 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
         }],
       }
     }
-  }, [cashRules, debouncedFormulaExpressions, lines, overrides, parameters, projectDraft, workspace])
+  }, [cashRules, debouncedFormulaExpressions, lines, parameters, projectDraft, workspace])
 
-  async function save(manageBusy = true) {
+  async function save(manageBusy = true, clearInvalidAdjustments = false) {
     if (!workspace || !projectDraft) throw new Error('项目尚未加载')
     const validationMessage = validateProjectDraft(projectDraft)
     if (validationMessage) {
@@ -348,6 +356,7 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
       const saved = await api.saveWorkspace(projectId, {
         planId: workspace.currentPlan.planId,
         expectedRevision: workspace.draftRevision,
+        clearInvalidAdjustments,
         draft: {
           project: projectDraft,
           plan: { name: workspace.currentPlan.name, startPeriod: projectDraft.startPeriod, endPeriod: projectDraft.endPeriod },
@@ -359,6 +368,16 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
       setMessage('整个项目草稿已保存')
       return saved
     } catch (reason) {
+      if (!clearInvalidAdjustments && reason instanceof SemanticApiError && reason.detail.code === 'ADJUSTMENTS_OUTSIDE_PERIOD') {
+        const details = reason.detail.fieldErrors?.map((item) => item.period).filter(Boolean).join('、')
+        const confirmed = await dialog.confirm({
+          title: '清理失效的人工调整？',
+          message: `${reason.detail.message}${details ? `\n涉及期间：${details}` : ''}`,
+          tone: 'warning',
+          confirmLabel: '清理并保存',
+        })
+        if (confirmed) return save(false, true)
+      }
       setMessage(reason instanceof Error ? reason.message : '保存失败')
       throw reason
     } finally { if (manageBusy) setBusy(false) }
@@ -381,8 +400,8 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
       }
       const refreshed = await api.getWorkspace(projectId, saved.currentPlan.planId)
       hydrate(refreshed)
-      setReport(await api.report(projectId, undefined, saved.currentPlan.planId))
-      setMessage(`计算完成：RUN-${String(result.run.runNumber).padStart(4, '0')}`)
+      setReport(await api.report(projectId, saved.currentPlan.planId))
+      setMessage('计算完成，已生成最新计算底稿')
       onNavigate(`/projects/${projectId}/calculation?planId=${encodeURIComponent(saved.currentPlan.planId)}`)
     } catch (reason) {
       setMessage(reason instanceof Error ? reason.message : '计算失败')
@@ -435,18 +454,6 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
       setMessage('方案名称已更新')
       setEditingPlanNameId('')
     } catch (reason) { setMessage(reason instanceof Error ? reason.message : '方案更新失败') }
-    finally { setBusy(false) }
-  }
-
-  async function setDefaultPlan(targetPlanId: string) {
-    if (!workspace) return
-    setBusy(true)
-    try {
-      if (dirty) await save(false)
-      await api.updatePlan(projectId, targetPlanId, { isDefault: true })
-      await refreshPlanManagement(workspace.currentPlan.planId)
-      setMessage('已设为默认方案')
-    } catch (reason) { setMessage(reason instanceof Error ? reason.message : '默认方案设置失败') }
     finally { setBusy(false) }
   }
 
@@ -582,13 +589,12 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
     const target = lines.find((item) => item.id === lineId)
     if (!target || !await dialog.confirm({
       title: '删除预测项？',
-      message: `确定删除“${target.name}”？关联的收付款规则和人工覆盖也会一并移除。`,
+      message: `确定删除“${target.name}”？关联的收付款规则和人工调整记录也会一并移除。`,
       tone: 'danger',
       confirmLabel: '删除预测项',
     })) return
     setLines((current) => current.filter((item) => item.id !== target.id))
     setCashRules((current) => current.filter((item) => item.sourceLineCode !== target.code))
-    setOverrides((current) => current.filter((item) => item.forecastLineId !== target.id))
     if (selectedLineId === target.id) setSelectedLineId('')
     markDirty()
   }
@@ -624,7 +630,7 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
   function editCalculation(changes: FinancialGridChange[]) {
     if (!report) return
     const breakdown = new Map(report.lineBreakdown.map((item) => [item.lineId, item]))
-    const next = [...overrides]
+    const next = [...adjustments]
     let hasChange = false
     changes.forEach((change) => {
       const index = next.findIndex((item) => item.forecastLineId === change.rowId && item.period === change.period)
@@ -632,16 +638,36 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
       if (!change.value || new Decimal(change.value || 0).equals(original)) {
         if (index >= 0) { next.splice(index, 1); hasChange = true }
       } else if (index >= 0) {
-        if (!new Decimal(next[index].overrideValue).equals(change.value)) {
-          next[index] = { ...next[index], overrideValue: change.value }
+        if (!new Decimal(next[index].adjustedValue).equals(change.value)) {
+          next[index] = { ...next[index], adjustedValue: change.value }
           hasChange = true
         }
       } else {
-        next.push({ forecastLineId: change.rowId, period: change.period, originalValue: original, overrideValue: change.value, reason: '计算底表人工调整' })
+        const line = breakdown.get(change.rowId)
+        if (!line) return
+        next.push({ forecastLineId: change.rowId, period: change.period, metricCode: line.category, adjustedValue: change.value, reason: '计算底稿人工调整' })
         hasChange = true
       }
     })
-    if (hasChange) { setOverrides(next); markDirty() }
+    if (hasChange) { setAdjustments(next); setAdjustmentsDirty(true); onDirtyChange(true) }
+  }
+
+  async function saveAdjustments() {
+    if (!workspace || !report?.calculationState) return
+    setBusy(true); setMessage('')
+    try {
+      await api.saveAdjustments(projectId, workspace.currentPlan.planId, {
+        expectedResultRevision: report.calculationState.resultRevision,
+        adjustments,
+      })
+      const nextReport = await api.report(projectId, workspace.currentPlan.planId)
+      setReport(nextReport)
+      setAdjustments(nextReport.adjustments.map((item) => ({ id: item.id, forecastLineId: item.forecastLineId, period: item.period, metricCode: item.metricCode, adjustedValue: item.adjustedValue, reason: item.reason })))
+      setAdjustmentsDirty(false)
+      onDirtyChange(dirty)
+      setMessage('底稿调整已保存，报告与项目报表已更新')
+    } catch (reason) { setMessage(reason instanceof Error ? reason.message : '底稿调整保存失败') }
+    finally { setBusy(false) }
   }
 
   if (!workspace || !projectDraft) return <section className="loading-card">正在加载项目工作区…</section>
@@ -651,7 +677,7 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
     ? '预览存在错误，上次结果仍有效'
     : dirty
       ? '实时预览，尚未保存'
-      : workspace.forecast.latestRun
+      : workspace.forecast.calculationState?.lastSuccessAt
         ? workspace.forecast.isResultCurrent ? '结果与当前配置一致' : '已保存，等待计算'
         : '已保存，等待计算'
   const departmentName = snapshot.departments.find((item) => item.id === projectDraft.departmentId)?.name ?? '未选择申报部门'
@@ -706,13 +732,14 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
       </div>
       <div className="workspace-tabs">
         <button className={view === 'config' ? 'workspace-tab active' : 'workspace-tab'} onClick={() => onNavigate(planPath('config'))}><Calculator size={14} />项目配置</button>
-        <button className={view === 'calculation' ? 'workspace-tab active' : 'workspace-tab'} onClick={() => onNavigate(planPath('calculation'))}><TableProperties size={14} />计算底表</button>
+        <button className={view === 'calculation' ? 'workspace-tab active' : 'workspace-tab'} onClick={() => onNavigate(planPath('calculation'))}><TableProperties size={14} />计算底稿</button>
         <button className={view === 'report' ? 'workspace-tab active' : 'workspace-tab'} onClick={() => onNavigate(planPath('report'))}><FileChartColumn size={14} />项目报告</button>
       </div>
       <div className="workspace-head-actions">
-        <span className={`workspace-save-state ${dirty ? 'dirty' : ''}`}>{statusText}</span>
-        <button className="btn" disabled={busy || !dirty} onClick={() => void saveFromToolbar()}><Save size={14} />保存</button>
-        <button className="btn primary" disabled={busy} onClick={() => void calculate()}><Calculator size={14} />计算</button>
+        <button className="btn" onClick={() => setGuideOpen(true)}>操作指引</button>
+        <span className={`workspace-save-state ${dirty || adjustmentsDirty ? 'dirty' : ''}`}>{view === 'calculation' && adjustmentsDirty ? '调整未保存' : statusText}</span>
+        {view === 'config' && <><button className="btn" disabled={busy || !dirty} onClick={() => void saveFromToolbar()}><Save size={14} />保存</button><button className="btn primary" disabled={busy} onClick={() => void calculate()}><Calculator size={14} />计算</button></>}
+        {view === 'calculation' && <button className="btn primary" disabled={busy || !adjustmentsDirty} onClick={() => void saveAdjustments()}><Save size={14} />保存调整</button>}
       </div>
     </div>
     <div className="project-plan-bar">
@@ -729,7 +756,7 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
           setVersionMenuOpen(false)
           onNavigate(planPath(view, targetPlanId))
         }}>
-          {workspace.projectPlans.filter((item) => item.status === 'active').map((item) => <option key={item.planId} value={item.planId}>{item.name}{item.isDefault ? '（默认）' : ''}</option>)}
+          {workspace.projectPlans.filter((item) => item.status === 'active').map((item) => <option key={item.planId} value={item.planId}>{item.name}</option>)}
           <option value="__create__">＋ 新建方案</option>
         </select>
         {versionMenuOpen && <div className="project-plan-popover">
@@ -754,15 +781,15 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
         <div className="plan-management-table-wrap"><table className="plan-management-table"><thead><tr><th>方案名称</th><th>状态</th><th>方案期间</th><th>修订</th><th>更新时间</th><th>操作</th></tr></thead><tbody>{workspace.projectPlans.map((plan) => {
           const nameDraft = planNameDrafts[plan.planId] ?? plan.name
           const activeCount = workspace.projectPlans.filter((item) => item.status === 'active').length
-          const canArchive = plan.status === 'active' && !plan.isDefault && activeCount > 1
+          const canArchive = plan.status === 'active' && activeCount > 1
           return <tr key={plan.planId} className={plan.planId === workspace.currentPlan.planId ? 'current' : ''}>
             <td><div className={`plan-name-editor ${editingPlanNameId === plan.planId ? 'editing' : ''}`}>
               {editingPlanNameId === plan.planId ? <div className="plan-name-input-wrap"><input autoFocus aria-label={`${plan.name}方案名称`} value={nameDraft} onChange={(event) => setPlanNameDrafts((current) => ({ ...current, [plan.planId]: event.target.value }))} onKeyDown={(event) => { if (event.key === 'Enter') void savePlanName(plan); if (event.key === 'Escape') { setPlanNameDrafts((current) => ({ ...current, [plan.planId]: plan.name })); setEditingPlanNameId('') } }} /><div className="plan-name-input-actions"><button aria-label="确认修改方案名称" disabled={busy || !nameDraft.trim() || nameDraft.trim() === plan.name} onClick={() => void savePlanName(plan)}><Check size={14} /></button><button aria-label="取消修改方案名称" onClick={() => { setPlanNameDrafts((current) => ({ ...current, [plan.planId]: plan.name })); setEditingPlanNameId('') }}><X size={14} /></button></div></div> : <div className="plan-name-readonly"><b>{plan.name}</b><button aria-label={`修改${plan.name}名称`} onClick={() => { setPlanNameDrafts((current) => ({ ...current, [plan.planId]: plan.name })); setEditingPlanNameId(plan.planId) }}><Pencil size={13} /></button></div>}
-              <span>{plan.planId === workspace.currentPlan.planId ? '当前使用' : plan.isDefault ? '默认方案' : ''}</span>
+              <span>{plan.planId === workspace.currentPlan.planId ? '当前使用' : ''}</span>
             </div></td>
             <td><span className={`plan-status ${plan.status}`}>{plan.status === 'active' ? '可用' : '已归档'}</span></td>
             <td>{plan.startPeriod} 至 {plan.endPeriod}</td><td>R{plan.draftRevision}</td><td>{new Date(plan.updatedAt).toLocaleDateString('zh-CN')}</td>
-            <td><div className="plan-row-actions">{plan.status === 'active' ? <><button className="action-link" disabled={busy || plan.isDefault} onClick={() => void setDefaultPlan(plan.planId)}>设为默认</button><button className="action-link danger-action" disabled={busy || !canArchive} title={!canArchive ? plan.isDefault ? '默认方案不能归档' : '至少保留一个有效方案' : ''} onClick={() => void archiveManagedPlan(plan)}>归档</button></> : <button className="action-link" disabled={busy} onClick={() => void restoreArchivedPlan(plan.planId)}>恢复</button>}</div></td>
+            <td><div className="plan-row-actions">{plan.status === 'active' ? <button className="action-link danger-action" disabled={busy || !canArchive} title={!canArchive ? '至少保留一个有效方案' : ''} onClick={() => void archiveManagedPlan(plan)}>归档</button> : <button className="action-link" disabled={busy} onClick={() => void restoreArchivedPlan(plan.planId)}>恢复</button>}</div></td>
           </tr>
         })}</tbody></table></div>
         <footer className="modal-actions"><button className="btn" onClick={() => setPlanManageOpen(false)}>关闭</button></footer>
@@ -865,18 +892,17 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
 
     {view === 'calculation' && <div className="workspace-view calculation-sheet-view">
       {!report?.hasFacts ? <div className="empty-report-card"><h2>当前项目尚无成功计算结果</h2><p>请先在项目配置中维护预测行并点击“计算”。</p></div> : <>
-        <div className="calculation-sheet-head"><div><h2>项目计算底表</h2><p>损益、收付款和派生指标使用同一份计算结果，可按视图切换查看。</p></div><span>{report.calculationRun ? `RUN-${String(report.calculationRun.runNumber).padStart(4, '0')}` : ''}</span></div>
-        {dirty && <div className="page-alert">人工覆盖尚未保存；点击顶部“保存”后仍需“计算”才会更新汇总和报告。</div>}
-        <CalculationBaseGrid report={report} overrides={overrides} onChange={editCalculation} onClearOverride={(rowId, period) => { setOverrides((current) => current.filter((item) => !(item.forecastLineId === rowId && item.period === period))); markDirty() }} />
+        <div className="calculation-sheet-head"><div><h2>项目计算底稿</h2><p>原始预测结果与人工调整分层保存；调整只影响最终事实和派生指标。</p></div></div>
+        {adjustmentsDirty && <div className="page-alert">人工调整尚未保存；保存后会立即更新汇总和报告，无需重新计算。</div>}
+        <CalculationBaseGrid report={report} adjustments={adjustments} onChange={editCalculation} onClearOverride={(rowId, period) => { setAdjustments((current) => current.filter((item) => !(item.forecastLineId === rowId && item.period === period))); setAdjustmentsDirty(true); onDirtyChange(true) }} />
       </>}
     </div>}
 
     {view === 'report' && <ProjectReportView
       report={report}
-      selectedRunId={reportRunId}
-      onSelectRun={setReportRunId}
-      onExport={() => void api.exportReport(projectId, report?.calculationRun?.id, workspace.currentPlan.planId).catch((reason) => setMessage(reason instanceof Error ? reason.message : 'Excel 导出失败'))}
+      onExport={() => void api.exportReport(projectId, workspace.currentPlan.planId).catch((reason) => setMessage(reason instanceof Error ? reason.message : 'Excel 导出失败'))}
     />}
+    {guideOpen && <ProjectGuideModal onClose={() => setGuideOpen(false)} />}
   </main>
 }
 
@@ -1016,16 +1042,35 @@ function ReadOnlySummaryGrid({ report }: { report: ProjectReportDto }) {
   return <section className="calculation-summary"><h2>系统汇总与派生指标（只读）</h2>{!report.hasCashFacts && <p className="report-data-note">源项目未提供现金计划，本报告不以 0 元代替现金流结果。</p>}<FinancialGrid ariaLabel="系统汇总指标" periods={report.monthly.map((item) => item.period)} rows={rows} /></section>
 }
 
-function ProjectReportView({ report, selectedRunId, onSelectRun, onExport }: { report?: ProjectReportDto; selectedRunId: string; onSelectRun: (runId: string) => void; onExport: () => void }) {
-  if (!report?.hasFacts) return <div className="empty-report-card"><h2>当前项目尚无报告结果</h2><p>报告只读取成功计算批次。</p></div>
+function ProjectReportView({ report, onExport }: { report?: ProjectReportDto; onExport: () => void }) {
+  if (!report?.hasFacts) return <div className="empty-report-card"><h2>当前项目尚无报告结果</h2><p>请先保存配置并完成一次计算。</p></div>
   return <div className="workspace-view formal-report">
-    <div className="formal-report-toolbar no-print"><div><b>项目测算报告</b><span>{report.calculationRun ? `RUN-${String(report.calculationRun.runNumber).padStart(4, '0')} · 修订 R${report.calculationRun.draftRevision}` : ''}</span></div><span className="spacer" /><label>成功批次<select value={selectedRunId || report.calculationRun?.id || ''} onChange={(event) => onSelectRun(event.target.value)}>{report.availableRuns.map((run) => <option key={run.id} value={run.id}>RUN-{String(run.runNumber).padStart(4, '0')} · {new Date(run.completedAt).toLocaleString('zh-CN')}</option>)}</select></label><button className="btn" onClick={onExport}><Download size={14} />导出 Excel</button><button className="btn" onClick={() => window.print()}><Printer size={14} />打印 / PDF</button></div>
-    <section className="report-cover"><div><span>项目测算报告</span><h1>{report.projectSnapshot.name}</h1><p>{report.projectSnapshot.code || '无项目编码'} · {report.department?.name || '未指定申报部门'} · {report.scenario.name} · {report.plan.name}</p></div><dl><div><dt>经营期间</dt><dd>{report.plan.startPeriod}—{report.operationEndPeriod}</dd></div><div><dt>计算批次</dt><dd>{report.calculationRun ? `RUN-${String(report.calculationRun.runNumber).padStart(4, '0')}` : '—'}</dd></div><div><dt>结果状态</dt><dd className={report.isBehindDraft ? 'risk' : 'good'}>{report.isBehindDraft ? '落后于当前配置' : '与当前配置一致'}</dd></div></dl></section>
+    <div className="formal-report-toolbar no-print"><div><b>项目测算报告</b><span>{report.calculationState?.lastSuccessAt ? `最近计算 ${new Date(report.calculationState.lastSuccessAt).toLocaleString('zh-CN')}` : ''}</span></div><span className="spacer" /><button className="btn" onClick={onExport}><Download size={14} />导出 Excel</button><button className="btn" onClick={() => window.print()}><Printer size={14} />打印 / PDF</button></div>
+    <section className="report-cover"><div><span>项目测算报告</span><h1>{report.project.name}</h1><p>{report.project.code || '无项目编码'} · {report.department?.name || '未指定申报部门'} · {report.scenario.name} · {report.plan.name}</p></div><dl><div><dt>经营期间</dt><dd>{report.plan.startPeriod}—{report.operationEndPeriod}</dd></div><div><dt>结果修订</dt><dd>R{report.calculationState?.resultRevision ?? 0}</dd></div><div><dt>结果状态</dt><dd className={report.isBehindDraft ? 'risk' : 'good'}>{report.isBehindDraft ? '落后于当前配置' : '与当前配置一致'}</dd></div></dl></section>
     <section className="metrics-strip"><article><span>收入</span><strong>{formatWan(report.summary.revenue)} 万元</strong></article><article><span>成本</span><strong>{formatWan(report.summary.cost)} 万元</strong></article><article><span>毛利</span><strong>{formatWan(report.summary.grossProfit)} 万元</strong></article><article><span>毛利率</span><strong>{formatPercent(report.summary.grossMargin)}</strong></article><article><span>最大垫资</span><strong>{report.hasCashFacts ? `${formatWan(report.summary.maximumFunding)} 万元` : '暂无现金数据'}</strong></article><article><span>现金转正</span><strong>{report.hasCashFacts ? report.summary.cashPositiveLabel : '暂无现金数据'}</strong></article></section>
     <section className="report-section report-narrative"><h2>1. 测算概况与口径</h2>{report.measurementSummary.map((item) => <p key={item}>{item}</p>)}{report.riskNotes.map((item) => <p className="risk" key={item}>风险提示：{item}</p>)}</section>
     <section className="report-section"><h2>2. 损益、构成与现金趋势</h2><Suspense fallback={<div className="report-chart-loading">正在生成图表…</div>}><ReportCharts report={report} /></Suspense></section>
     <section className="report-section"><h2>3. 分月损益与现金流</h2><ReadOnlySummaryGrid report={report} /></section>
-    <section className="report-section"><h2>4. 关键参数与人工覆盖</h2><div className="report-two-columns"><div><h3>关键参数</h3>{report.keyAssumptions.length ? report.keyAssumptions.map((item) => <p key={item.code}><b>{item.name}</b><span>{item.value} {item.unit}</span></p>) : <p>本批次无项目参数。</p>}</div><div><h3>人工覆盖</h3>{report.overrides.length ? report.overrides.map((item) => { const line = report.lineBreakdown.find((candidate) => candidate.lineId === item.forecastLineId); return <p key={`${item.forecastLineId}:${item.period}`}><b>{line?.lineName ?? item.forecastLineId} · {item.period}</b><span>{item.originalValue} → {item.overrideValue}</span></p> }) : <p>本批次无人工覆盖。</p>}</div></div></section>
+    <section className="report-section"><h2>4. 关键参数与人工调整</h2><div className="report-two-columns"><div><h3>关键参数</h3>{report.keyAssumptions.length ? report.keyAssumptions.map((item) => <p key={item.code}><b>{item.name}</b><span>{item.value} {item.unit}</span></p>) : <p>当前方案无项目参数。</p>}</div><div><h3>人工调整</h3>{report.adjustments.length ? report.adjustments.map((item) => { const line = report.lineBreakdown.find((candidate) => candidate.lineId === item.forecastLineId); const original = line?.values.find((value) => value.period === item.period)?.value ?? '—'; return <p key={`${item.forecastLineId}:${item.period}`}><b>{line?.lineName ?? item.forecastLineId} · {item.period}</b><span>{original} → {item.adjustedValue}</span></p> }) : <p>当前结果无人工调整。</p>}</div></div></section>
     <section className="report-section"><h2>5. 指标公式与数据来源</h2><table className="data-table"><thead><tr><th>指标</th><th>类型</th><th>表达式</th><th>说明</th></tr></thead><tbody>{report.metricDefinitions.map((metric) => <tr key={metric.code}><td>{metric.name}<small>{metric.code}</small></td><td>{metric.metricType === 'base' ? '基础指标' : '系统计算'}</td><td><code>{metric.expression ?? '基础事实写入'}</code></td><td>{metric.description}</td></tr>)}</tbody></table></section>
+  </div>
+}
+
+function ProjectGuideModal({ onClose }: { onClose: () => void }) {
+  const [step, setStep] = useState(0)
+  const steps = [
+    { title: '选择测算方案', copy: '在工作区上方切换方案，也可以新建空白方案或复制当前方案。', image: guideProjectConfig },
+    { title: '维护项目信息', copy: '编辑项目名称、申报部门和方案的起止期间，再维护业务参数。', image: guideProjectInfo },
+    { title: '设置测算规则', copy: '选择预测项后，在右侧配置测算方式、税口径和收付款规则，左侧会实时预览。', image: guideForecastRule },
+    { title: '保存并计算', copy: '先保存项目配置，再点击计算，生成当前方案最新的原始计算底稿。', image: guideSaveCalculate },
+    { title: '调整与查看结果', copy: '在计算底稿中调整叶子单元格并保存调整，报告和项目报表会立即更新。', image: guideAdjustmentReport },
+  ]
+  const current = steps[step]
+  return <div className="modal-backdrop guide-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
+    <section className="modal-card project-guide-modal" role="dialog" aria-modal="true" aria-label="项目操作指引">
+      <header className="modal-header"><div><h2>项目操作指引</h2><p>{step + 1} / {steps.length}</p></div><button className="icon-button" aria-label="关闭操作指引" onClick={onClose}><X size={16} /></button></header>
+      <div className="project-guide-content"><div className={`guide-illustration guide-step-${step + 1}`}><img src={current.image} alt={`${current.title}页面示例`} /><span>{step + 1}</span></div><div className="guide-copy"><span>第 {step + 1} 步</span><h3>{current.title}</h3><p>{current.copy}</p></div></div>
+      <footer className="modal-actions"><button className="btn" disabled={step === 0} onClick={() => setStep((value) => value - 1)}>上一步</button><span className="guide-progress">{steps.map((_, index) => <i key={index} className={index === step ? 'active' : ''} />)}</span>{step < steps.length - 1 ? <button className="btn primary" onClick={() => setStep((value) => value + 1)}>下一步</button> : <button className="btn primary" onClick={onClose}>完成</button>}</footer>
+    </section>
   </div>
 }

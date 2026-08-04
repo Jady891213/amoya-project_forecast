@@ -1930,6 +1930,26 @@ body.resizing-financial-column * { cursor: col-resize !important; user-select: n
 .formal-report-toolbar > div span { color: var(--muted); font-size: 12px; }
 .formal-report-toolbar label { display: flex; align-items: center; gap: 6px; color: var(--muted); }
 .formal-report-toolbar select { min-width: 210px; }
+
+.project-guide-modal { width: min(920px, calc(100vw - 48px)); max-width: none; }
+.project-guide-content { min-height: 430px; display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(260px, .75fr); gap: 24px; padding: 24px; align-items: center; }
+.guide-illustration { position: relative; min-height: 340px; border: 1px solid #d9e0ea; border-radius: 12px; background: #f7f9fc; overflow: hidden; display: grid; place-items: center; }
+.guide-illustration img { width: 100%; height: 340px; object-fit: cover; object-position: top left; display: block; }
+.guide-illustration::after { content: ''; position: absolute; border: 2px solid #e74d3c; border-radius: 6px; box-shadow: 0 0 0 4px rgb(231 77 60 / 12%); }
+.guide-step-1::after { top: 34px; left: 42px; width: 210px; height: 42px; }
+.guide-step-2::after { top: 92px; left: 48px; right: 48px; height: 72px; }
+.guide-step-3::after { top: 125px; right: 45px; width: 220px; height: 170px; }
+.guide-step-4::after { top: 35px; right: 45px; width: 150px; height: 42px; }
+.guide-step-5::after { top: 112px; left: 85px; right: 65px; height: 120px; }
+.guide-illustration > span { position: absolute; z-index: 2; top: 40px; left: 42px; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; color: #fff; background: #e74d3c; font-weight: 700; }
+.guide-copy { display: grid; gap: 12px; align-content: center; }
+.guide-copy > span { color: var(--primary); font-weight: 600; }
+.guide-copy h3 { margin: 0; font-size: 20px; }
+.guide-copy p { margin: 0; color: var(--muted); line-height: 1.8; font-size: 13px; }
+.guide-progress { flex: 1; display: flex; justify-content: center; gap: 7px; }
+.guide-progress i { width: 7px; height: 7px; border-radius: 50%; background: #cfd7e4; }
+.guide-progress i.active { width: 20px; border-radius: 5px; background: var(--primary); }
+@media (max-width: 760px) { .project-guide-content { grid-template-columns: 1fr; } .guide-illustration { min-height: 240px; } }
 .report-cover {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

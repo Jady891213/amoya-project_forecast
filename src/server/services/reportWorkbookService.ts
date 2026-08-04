@@ -59,7 +59,7 @@ function addMonthlySheet(
   rows: Array<{ name: string; values: Array<string | null>; total: string | null; percentage?: boolean }>,
 ) {
   const sheet = workbook.addWorksheet(name)
-  title(sheet, `${report.projectSnapshot.name} · ${name}`, report.monthly.length + 2)
+  title(sheet, `${report.project.name} · ${name}`, report.monthly.length + 2)
   const headerRow = sheet.addRow(['指标', ...report.monthly.map((item) => item.period), '项目合计'])
   header(headerRow)
   rows.forEach((item) => {
@@ -84,7 +84,7 @@ function addUnavailableMonthlySheet(
   message: string,
 ) {
   const sheet = workbook.addWorksheet(name)
-  title(sheet, `${report.projectSnapshot.name} · ${name}`, 4)
+  title(sheet, `${report.project.name} · ${name}`, 4)
   sheet.mergeCells('A2:D3')
   sheet.getCell('A2').value = message
   sheet.getCell('A2').alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }
@@ -137,10 +137,10 @@ export class ReportWorkbookService {
     const sheet = workbook.addWorksheet('项目信息')
     title(sheet, '项目测算报告', 4)
     const rows = [
-      ['项目编码', report.projectSnapshot.code ?? '—', '项目名称', report.projectSnapshot.name],
-      ['申报部门', report.department?.name ?? '—', '测算期间', `${report.projectSnapshot.startPeriod} 至 ${report.projectSnapshot.endPeriod}`],
+      ['项目编码', report.project.code ?? '—', '项目名称', report.project.name],
+      ['申报部门', report.department?.name ?? '—', '测算期间', `${report.plan.startPeriod} 至 ${report.plan.endPeriod}`],
       ['场景', report.scenario.name, '方案', report.plan.name],
-      ['计算批次', report.calculationRun ? `RUN-${String(report.calculationRun.runNumber).padStart(4, '0')}` : '无', '草稿修订', report.calculationRun?.draftRevision ?? '—'],
+      ['最近计算', report.calculationState?.lastSuccessAt ? new Date(report.calculationState.lastSuccessAt) : '无', '结果修订', report.calculationState?.resultRevision ?? 0],
       ['结果状态', report.isBehindDraft ? '落后于当前配置' : '与当前配置一致', '导出时间', new Date()],
       ['口径', '金额单位：元；损益为未税标准口径', '现金转正期间', report.hasCashFacts ? report.summary.cashPositiveLabel : '暂无现金数据'],
       ['最大垫资', report.hasCashFacts ? number(report.summary.maximumFunding) : '暂无现金数据', '累计现金流', report.hasCashFacts ? number(report.summary.cumulativeCashFlow) : '暂无现金数据'],
@@ -167,14 +167,15 @@ export class ReportWorkbookService {
 
   private addAssumptionSheet(workbook: ExcelJS.Workbook, report: ProjectReportDto) {
     const sheet = workbook.addWorksheet('测算假设')
-    title(sheet, `${report.projectSnapshot.name} · 测算假设与人工覆盖`, 6)
+    title(sheet, `${report.project.name} · 测算假设与人工调整`, 6)
     header(sheet.addRow(['类型', '编码/行项目', '名称/期间', '当前值', '单位/原值', '说明']))
-    report.keyAssumptions.forEach((item) => sheet.addRow(['项目参数', item.code, item.name, item.value, item.unit || '—', '计算批次配置快照']))
-    report.overrides.forEach((item) => {
+    report.keyAssumptions.forEach((item) => sheet.addRow(['项目参数', item.code, item.name, item.value, item.unit || '—', '当前方案配置']))
+    report.adjustments.forEach((item) => {
       const line = report.lineBreakdown.find((candidate) => candidate.lineId === item.forecastLineId)
-      const row = sheet.addRow(['人工覆盖', line?.lineCode ?? item.forecastLineId, item.period, number(item.overrideValue), number(item.originalValue), item.reason || '计算底表人工调整'])
+      const original = line?.values.find((value) => value.period === item.period)?.value
+      const row = sheet.addRow(['人工调整', line?.lineCode ?? item.forecastLineId, item.period, number(item.adjustedValue), number(original), item.reason || '计算底稿人工调整'])
       row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: LIGHT_ORANGE } }
-      row.getCell(4).note = `原计算值：${item.originalValue}`
+      row.getCell(4).note = `原计算值：${original ?? '—'}`
     })
     report.riskNotes.forEach((note) => sheet.addRow(['风险提示', null, null, null, null, note]))
     ;[14, 18, 18, 16, 16, 42].forEach((width, index) => { sheet.getColumn(index + 1).width = width })
@@ -185,25 +186,25 @@ export class ReportWorkbookService {
 
   private addLineDetailSheet(workbook: ExcelJS.Workbook, report: ProjectReportDto) {
     const sheet = workbook.addWorksheet('行项目计算明细')
-    title(sheet, `${report.projectSnapshot.name} · 行项目计算明细`, report.monthly.length + 4)
+    title(sheet, `${report.project.name} · 行项目计算明细`, report.monthly.length + 4)
     header(sheet.addRow(['分类', '行项目编码', '行项目名称', ...report.monthly.map((item) => item.period), '合计']))
-    const overrideByCell = new Map(report.overrides.map((item) => [`${item.forecastLineId}:${item.period}`, item]))
+    const adjustmentByCell = new Map(report.adjustments.map((item) => [`${item.forecastLineId}:${item.period}`, item]))
     report.lineBreakdown.forEach((line) => {
       const values = new Map(line.values.map((item) => [item.period, item.value]))
       const row = sheet.addRow([
         line.category === 'revenue' ? '收入' : line.category === 'cost' ? '成本' : line.category === 'cash_inflow' ? '其他收款' : '其他付款',
         line.lineCode,
         line.lineName,
-        ...report.monthly.map((item) => number(overrideByCell.get(`${line.lineId}:${item.period}`)?.overrideValue ?? values.get(item.period))),
+        ...report.monthly.map((item) => number(adjustmentByCell.get(`${line.lineId}:${item.period}`)?.adjustedValue ?? values.get(item.period))),
         number(line.total),
       ])
       report.monthly.forEach((item, index) => {
-        const override = overrideByCell.get(`${line.lineId}:${item.period}`)
+        const override = adjustmentByCell.get(`${line.lineId}:${item.period}`)
         const cell = row.getCell(4 + index)
         cell.numFmt = '#,##0.00;[Red](#,##0.00);-'
         if (override) {
           cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: LIGHT_ORANGE } }
-          cell.note = `人工覆盖；原计算值：${override.originalValue}；说明：${override.reason || '无'}`
+          cell.note = `人工调整；原计算值：${values.get(item.period) ?? '—'}；说明：${override.reason || '无'}`
         }
       })
       row.getCell(row.cellCount).numFmt = '#,##0.00;[Red](#,##0.00);-'
@@ -218,7 +219,7 @@ export class ReportWorkbookService {
 
   private addCashTraceSheet(workbook: ExcelJS.Workbook, report: ProjectReportDto) {
     const sheet = workbook.addWorksheet('收付款追溯')
-    title(sheet, `${report.projectSnapshot.name} · 收付款追溯`, 9)
+    title(sheet, `${report.project.name} · 收付款追溯`, 9)
     header(sheet.addRow(['来源行编码', '来源行名称', '业务期间', '未税金额', '税额', '含税金额', '规则', '结算期间', '实收实付']))
     report.cashSchedule.forEach((item) => sheet.addRow([
       item.sourceLineCode, item.sourceLineName, item.sourcePeriod,

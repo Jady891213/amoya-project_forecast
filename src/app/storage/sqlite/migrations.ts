@@ -1,4 +1,4 @@
-export const CURRENT_SCHEMA_VERSION = 13
+export const CURRENT_SCHEMA_VERSION = 14
 
 /** 当前开发库直接按最新结构创建，不承担旧 Schema 的升级兼容。 */
 export const CURRENT_SCHEMA = `
@@ -56,7 +56,6 @@ CREATE TABLE dim_plan (
   start_period TEXT NOT NULL REFERENCES dim_period(period),
   end_period TEXT NOT NULL REFERENCES dim_period(period),
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'archived')),
-  is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1)),
   sort_order INTEGER NOT NULL DEFAULT 1,
   draft_revision INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
@@ -65,10 +64,6 @@ CREATE TABLE dim_plan (
   UNIQUE (project_id, name),
   CHECK (end_period >= start_period)
 );
-
-CREATE UNIQUE INDEX uq_plan_default_active
-  ON dim_plan(project_id)
-  WHERE is_default = 1 AND status = 'active';
 
 CREATE TABLE dim_scenario (
   id TEXT PRIMARY KEY,
@@ -96,22 +91,17 @@ CREATE TABLE dim_metric (
   origin TEXT NOT NULL DEFAULT 'system' CHECK (origin = 'system')
 );
 
-CREATE TABLE sys_calculation_run (
-  id TEXT PRIMARY KEY,
+CREATE TABLE sys_plan_calculation_state (
   project_id TEXT NOT NULL REFERENCES dim_project(id) ON DELETE CASCADE,
   plan_id TEXT NOT NULL,
-  scenario_id TEXT NOT NULL REFERENCES dim_scenario(id),
-  run_number INTEGER NOT NULL,
-  status TEXT NOT NULL CHECK (status IN ('success', 'failed')),
-  config_hash TEXT NOT NULL,
-  issue_count INTEGER NOT NULL DEFAULT 0,
+  last_status TEXT NOT NULL CHECK (last_status IN ('success', 'failed')),
+  last_attempt_at TEXT NOT NULL,
+  last_success_at TEXT,
+  last_success_config_hash TEXT,
+  calculated_draft_revision INTEGER NOT NULL DEFAULT 0,
+  result_revision INTEGER NOT NULL DEFAULT 0,
   issues_json TEXT NOT NULL DEFAULT '[]',
-  config_snapshot_json TEXT NOT NULL DEFAULT '{}',
-  draft_revision INTEGER NOT NULL DEFAULT 0,
-  project_snapshot_json TEXT NOT NULL DEFAULT '{}',
-  started_at TEXT NOT NULL,
-  completed_at TEXT NOT NULL,
-  UNIQUE (project_id, plan_id, run_number),
+  PRIMARY KEY (project_id, plan_id),
   FOREIGN KEY (project_id, plan_id) REFERENCES dim_plan(project_id, id) ON DELETE CASCADE
 );
 
@@ -148,15 +138,16 @@ CREATE TABLE cfg_model_line_value (
   PRIMARY KEY (line_id, period)
 );
 
-CREATE TABLE cfg_forecast_override (
+CREATE TABLE fact_metric_adjustment (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL REFERENCES dim_project(id) ON DELETE CASCADE,
   plan_id TEXT NOT NULL,
   forecast_line_id TEXT NOT NULL REFERENCES cfg_model_line(id) ON DELETE CASCADE,
   period TEXT NOT NULL REFERENCES dim_period(period),
-  original_value_text TEXT NOT NULL,
-  override_value_text TEXT NOT NULL,
+  metric_code TEXT NOT NULL CHECK (metric_code IN ('revenue', 'cost', 'cash_inflow', 'cash_outflow')),
+  adjusted_value_text TEXT NOT NULL,
   reason TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   UNIQUE (project_id, plan_id, forecast_line_id, period),
   FOREIGN KEY (project_id, plan_id) REFERENCES dim_plan(project_id, id) ON DELETE CASCADE
@@ -164,7 +155,6 @@ CREATE TABLE cfg_forecast_override (
 
 CREATE TABLE fact_forecast_line_value (
   id TEXT PRIMARY KEY,
-  calculation_run_id TEXT NOT NULL REFERENCES sys_calculation_run(id) ON DELETE CASCADE,
   project_id TEXT NOT NULL REFERENCES dim_project(id) ON DELETE CASCADE,
   plan_id TEXT NOT NULL,
   forecast_line_id TEXT NOT NULL,
@@ -177,13 +167,12 @@ CREATE TABLE fact_forecast_line_value (
   metric_code TEXT NOT NULL CHECK (metric_code IN ('revenue', 'cost', 'cash_inflow', 'cash_outflow')),
   value_text TEXT NOT NULL,
   created_at TEXT NOT NULL,
-  UNIQUE (calculation_run_id, forecast_line_id, period),
+  UNIQUE (project_id, plan_id, forecast_line_id, period),
   FOREIGN KEY (project_id, plan_id) REFERENCES dim_plan(project_id, id) ON DELETE CASCADE
 );
 
 CREATE TABLE fact_cash_schedule_value (
   id TEXT PRIMARY KEY,
-  calculation_run_id TEXT NOT NULL REFERENCES sys_calculation_run(id) ON DELETE CASCADE,
   project_id TEXT NOT NULL REFERENCES dim_project(id) ON DELETE CASCADE,
   plan_id TEXT NOT NULL,
   source_line_id TEXT NOT NULL,
@@ -218,7 +207,6 @@ CREATE TABLE fact_metric_value (
   source_label TEXT NOT NULL DEFAULT '',
   origin TEXT NOT NULL CHECK (origin IN ('user', 'demo')),
   dataset_id TEXT,
-  calculation_run_id TEXT REFERENCES sys_calculation_run(id),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   UNIQUE (project_id, plan_id, department_id, period, scenario_id, metric_code),
@@ -229,12 +217,11 @@ CREATE INDEX idx_project_status ON dim_project(status);
 CREATE INDEX idx_project_department ON dim_project(department_id);
 CREATE INDEX idx_plan_project ON dim_plan(project_id, status, sort_order);
 CREATE INDEX idx_fact_project_query ON fact_metric_value(project_id, plan_id, scenario_id, period);
-CREATE INDEX idx_fact_forecast_line_run ON fact_forecast_line_value(calculation_run_id, forecast_line_id, period);
-CREATE INDEX idx_fact_cash_schedule_run ON fact_cash_schedule_value(calculation_run_id, settlement_period);
-CREATE INDEX idx_calculation_run_project ON sys_calculation_run(project_id, plan_id, run_number DESC);
+CREATE INDEX idx_fact_forecast_line_plan ON fact_forecast_line_value(project_id, plan_id, forecast_line_id, period);
+CREATE INDEX idx_fact_cash_schedule_plan ON fact_cash_schedule_value(project_id, plan_id, settlement_period);
 CREATE INDEX idx_cfg_model_line_project ON cfg_model_line(project_id, plan_id, line_type, sort_order);
 CREATE INDEX idx_cfg_model_line_value_line ON cfg_model_line_value(line_id, period);
-CREATE INDEX idx_cfg_forecast_override_project ON cfg_forecast_override(project_id, plan_id, forecast_line_id, period);
+CREATE INDEX idx_fact_adjustment_project ON fact_metric_adjustment(project_id, plan_id, forecast_line_id, period);
 CREATE INDEX idx_reference_project ON dim_project(dataset_id);
 CREATE INDEX idx_reference_fact ON fact_metric_value(dataset_id);
 `

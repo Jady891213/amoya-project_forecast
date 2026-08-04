@@ -1,6 +1,5 @@
 import type {
   ApiError,
-  CalculationRun,
   Department,
   DepartmentInput,
   CreateProjectPlanRequest,
@@ -15,6 +14,9 @@ import type {
   ProjectWorkspace,
   ProjectPlan,
   SaveProjectWorkspaceRequest,
+  SavePlanAdjustmentsRequest,
+  SavePlanAdjustmentsResponse,
+  CalculationResponse,
 } from '../../shared/api'
 import type { AppSnapshot } from '../state/types'
 
@@ -88,14 +90,16 @@ export class ApiClient {
     })
   }
 
-  calculate(projectId: string, planId: string, expectedRevision: number): Promise<{
-    success: boolean
-    run: CalculationRun
-    issues: Array<{ severity: 'error' | 'warning'; message: string }>
-  }> {
+  calculate(projectId: string, planId: string, expectedRevision: number): Promise<CalculationResponse> {
     return this.request(`/api/projects/${encodeURIComponent(projectId)}/calculations`, {
       method: 'POST',
       body: JSON.stringify({ planId, expectedRevision }),
+    })
+  }
+
+  saveAdjustments(projectId: string, planId: string, request: SavePlanAdjustmentsRequest): Promise<SavePlanAdjustmentsResponse> {
+    return this.request(`/api/projects/${encodeURIComponent(projectId)}/plans/${encodeURIComponent(planId)}/adjustments`, {
+      method: 'PUT', body: JSON.stringify(request),
     })
   }
 
@@ -121,7 +125,7 @@ export class ApiClient {
     })
   }
 
-  updatePlan(projectId: string, planId: string, input: Partial<Pick<ProjectPlan, 'name' | 'startPeriod' | 'endPeriod' | 'isDefault'>>): Promise<ProjectPlan> {
+  updatePlan(projectId: string, planId: string, input: Partial<Pick<ProjectPlan, 'name' | 'startPeriod' | 'endPeriod'>>): Promise<ProjectPlan> {
     return this.request(`/api/projects/${encodeURIComponent(projectId)}/plans/${encodeURIComponent(planId)}`, {
       method: 'PUT', body: JSON.stringify(input),
     })
@@ -166,9 +170,8 @@ export class ApiClient {
 
   pivotMetadata(): Promise<PivotMetadata> { return this.request('/api/facts/pivot/metadata') }
 
-  report(projectId: string, runId?: string, planId?: string): Promise<ProjectReportDto> {
+  report(projectId: string, planId?: string): Promise<ProjectReportDto> {
     const query = new URLSearchParams()
-    if (runId) query.set('runId', runId)
     if (planId) query.set('planId', planId)
     const suffix = query.size ? `?${query}` : ''
     return this.request(`/api/projects/${encodeURIComponent(projectId)}/report${suffix}`)
@@ -187,9 +190,8 @@ export class ApiClient {
     URL.revokeObjectURL(link.href)
   }
 
-  async exportReport(projectId: string, runId?: string, planId?: string): Promise<void> {
+  async exportReport(projectId: string, planId?: string): Promise<void> {
     const params = new URLSearchParams()
-    if (runId) params.set('runId', runId)
     if (planId) params.set('planId', planId)
     const query = params.size ? `?${params}` : ''
     const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/export.xlsx${query}`, {

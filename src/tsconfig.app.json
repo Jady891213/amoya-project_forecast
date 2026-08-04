@@ -17,5 +17,6 @@
     "noEmit": true,
     "jsx": "react-jsx"
   },
-  "include": ["app"]
+  "include": ["app"],
+  "exclude": ["app/**/*.test.ts", "app/**/*.test.tsx"]
 }

@@ -17,5 +17,6 @@
     "vite.singlefile.config.ts",
     "vitest.config.ts",
     "server/**/*.ts"
-  ]
+  ],
+  "exclude": ["server/**/*.test.ts"]
 }
