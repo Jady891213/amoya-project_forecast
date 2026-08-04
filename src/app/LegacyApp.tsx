@@ -33,6 +33,7 @@ import { ProjectReportPage } from './legacy/pages/ProjectReportPage'
 import { ForecastConfigPage } from './legacy/pages/ForecastConfigPage'
 import { PageBreadcrumbs } from './components/PageBreadcrumbs'
 import { useAppDialog } from './ui/AppDialog'
+import { APP_VERSION } from './version'
 
 type AppRoute = 'projects' | 'master-data' | 'metrics'
 type WorkspaceView = 'forecast' | 'calculation' | 'report'
@@ -225,7 +226,7 @@ export default function App() {
     <div className={`app ${navCollapsed ? 'nav-collapsed' : ''}`}>
       <div className="shell">
         <aside className="global-nav">
-            <div className="sidebar-header"><div className="sidebar-brand"><div className="brand-mark"><BarChart3 size={17} /></div><div className="sidebar-brand-copy"><b>项目测算分析工具</b><span>本地财务与 EPM 工作台</span></div></div><button type="button" className="sidebar-collapse" aria-label={navCollapsed ? '展开侧边栏' : '收起侧边栏'} title={navCollapsed ? '展开侧边栏' : '收起侧边栏'} onClick={toggleNavigation}>{navCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}</button></div>
+            <div className="sidebar-header"><div className="sidebar-brand"><div className="brand-mark"><BarChart3 size={17} /></div><div className="sidebar-brand-copy"><b>项目测算分析工具</b><span title={`软件版本 v${APP_VERSION}`}>本地财务工作台 · v{APP_VERSION}</span></div></div><button type="button" className="sidebar-collapse" aria-label={navCollapsed ? '展开侧边栏' : '收起侧边栏'} title={navCollapsed ? '展开侧边栏' : '收起侧边栏'} onClick={toggleNavigation}>{navCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}</button></div>
             <div className="nav-section">
               <div className="nav-title">项目数据</div>
               <button title="项目列表" className={`nav-item ${route === 'projects' || workspaceProject ? 'active' : ''}`} onClick={openProjectArea}><BriefcaseBusiness size={16} /><span className="nav-label">项目列表</span></button>

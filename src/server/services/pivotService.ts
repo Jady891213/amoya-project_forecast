@@ -44,7 +44,7 @@ export class PivotService {
          ORDER BY project.name, plan.sort_order, plan.name`,
       ),
       this.database.query<{ id: string; name: string; status: string }>('SELECT id, name, status FROM dim_department ORDER BY name'),
-      this.database.query<{ period: string; sort_key: number }>(`SELECT period, sort_key FROM dim_period WHERE period BETWEEN COALESCE((SELECT MIN(period) FROM fact_metric_value), '2020-01') AND COALESCE((SELECT MAX(period) FROM fact_metric_value), '2035-12') ORDER BY sort_key`),
+      this.database.query<{ period: string; sort_key: number }>("SELECT period, sort_key FROM dim_period WHERE period BETWEEN '2024-01' AND '2030-12' ORDER BY sort_key"),
       this.database.query<{ code: string; name: string; sort_order: number }>('SELECT code, name, sort_order FROM dim_metric ORDER BY sort_order'),
     ])
     return {

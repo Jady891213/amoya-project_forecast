@@ -6,6 +6,7 @@ import {
   isFinancialCellEditable,
   parseFinancialValue,
 } from './FinancialGrid'
+import { gridSelectionText } from './useGridSelection'
 
 describe('FinancialGrid 数值解析', () => {
   it('支持千分位、括号负数和空值', () => {
@@ -38,6 +39,18 @@ describe('FinancialGrid 数值解析', () => {
       { row: 3, column: 4 },
       { row: 1, column: 2 },
     )).toEqual({ top: 1, bottom: 3, left: 2, right: 4 })
+  })
+
+  it('区域复制只输出选中的数据，不附带行列标题', () => {
+    const matrix = [
+      ['收入', '100', '200'],
+      ['成本', '40', '60'],
+      ['毛利', '60', '140'],
+    ]
+    expect(gridSelectionText(
+      { top: 0, bottom: 1, left: 1, right: 2 },
+      (row, column) => matrix[row][column],
+    )).toBe('100\t200\n40\t60')
   })
 
   it('批量粘贴先完整校验，只读行或非法值会取消整个区域', () => {

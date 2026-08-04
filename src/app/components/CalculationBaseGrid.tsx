@@ -178,7 +178,7 @@ export function CalculationBaseGrid({
       labelColumnWidth={315}
       renderRowLabel={(row) => {
         const item = row as CalculationBaseRow
-        if (item.rowKind === 'section') return <div className="calculation-section-label"><ChevronDown size={14} />{item.label}</div>
+        if (item.rowKind === 'section') return <div className="calculation-section-label">{item.label}</div>
         const collapsible = item.rowKind === 'summary' && ['收入', '成本', '项目收款', '项目付款'].includes(item.group)
         return <div className="calculation-base-label">
           <div>
@@ -191,7 +191,6 @@ export function CalculationBaseGrid({
       }}
       onChange={onChange}
       onClearOverride={onClearOverride}
-      includeHeadersOnCopy
       toolbarPlacement="bottom"
     />
   </section>

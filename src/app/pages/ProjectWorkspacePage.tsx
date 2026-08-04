@@ -1,5 +1,5 @@
 import Decimal from 'decimal.js'
-import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Archive,
   Calculator,
@@ -8,7 +8,6 @@ import {
   Copy,
   Download,
   FileChartColumn,
-  MoreHorizontal,
   Pencil,
   Plus,
   Printer,
@@ -25,6 +24,7 @@ import type {
   ForecastOverrideDraft,
   ProjectInput,
   ProjectParameterDraft,
+  ProjectPlan,
   ProjectReportDto,
   ProjectWorkspace,
 } from '../../shared/domain/types'
@@ -189,8 +189,9 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
   const [versionMenuOpen, setVersionMenuOpen] = useState(false)
   const [versionMemberId, setVersionMemberId] = useState('')
   const [planManageOpen, setPlanManageOpen] = useState(false)
-  const [planNameDraft, setPlanNameDraft] = useState('')
+  const [planNameDrafts, setPlanNameDrafts] = useState<Record<string, string>>({})
   const [debouncedFormulaExpressions, setDebouncedFormulaExpressions] = useState<Record<string, string>>({})
+  const createPlanMenuRef = useRef<HTMLDivElement>(null)
 
   const markDirty = useCallback(() => {
     setDirty(true)
@@ -254,6 +255,26 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
     window.addEventListener('beforeunload', handler)
     return () => window.removeEventListener('beforeunload', handler)
   }, [dirty])
+
+  useEffect(() => {
+    if (!versionMenuOpen) return
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      const target = event.target
+      if (!(target instanceof Node)) return
+      if (versionMenuOpen && !createPlanMenuRef.current?.contains(target)) setVersionMenuOpen(false)
+    }
+    document.addEventListener('pointerdown', closeOnOutsideClick)
+    return () => document.removeEventListener('pointerdown', closeOnOutsideClick)
+  }, [versionMenuOpen])
+
+  useEffect(() => {
+    if (!planManageOpen) return
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setPlanManageOpen(false)
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [planManageOpen])
 
   const projectPeriods = useMemo(() => projectDraft ? generatePeriodRange(projectDraft.startPeriod, projectDraft.endPeriod) : [], [projectDraft])
   const cashPeriods = useMemo(() => projectDraft ? generatePeriods(projectDraft.startPeriod, countPeriods(projectDraft.startPeriod, projectDraft.endPeriod) + 36) : [], [projectDraft])
@@ -387,47 +408,65 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
     } finally { setBusy(false) }
   }
 
-  async function savePlanSettings() {
-    if (!workspace || !planNameDraft.trim()) return
+  function resetPlanNameDrafts(plans: ProjectPlan[]) {
+    setPlanNameDrafts(Object.fromEntries(plans.map((plan) => [plan.planId, plan.name])))
+  }
+
+  async function refreshPlanManagement(preferredPlanId?: string | null) {
+    const resolvedPlanId = preferredPlanId === null ? undefined : preferredPlanId ?? workspace?.currentPlan.planId
+    const refreshed = await api.getWorkspace(projectId, resolvedPlanId)
+    hydrate(refreshed)
+    resetPlanNameDrafts(refreshed.projectPlans)
+    await onRefresh()
+    return refreshed
+  }
+
+  async function savePlanName(plan: ProjectPlan) {
+    if (!workspace) return
+    const name = planNameDrafts[plan.planId]?.trim()
+    if (!name || name === plan.name) return
     setBusy(true)
     try {
-      await api.updatePlan(projectId, workspace.currentPlan.planId, {
-        name: planNameDraft.trim(),
-        startPeriod: projectDraft?.startPeriod,
-        endPeriod: projectDraft?.endPeriod,
-      })
-      setPlanManageOpen(false)
-      await onRefresh()
-      hydrate(await api.getWorkspace(projectId, workspace.currentPlan.planId))
-      setMessage('方案信息已更新')
+      if (dirty) await save(false)
+      await api.updatePlan(projectId, plan.planId, { name })
+      await refreshPlanManagement(workspace.currentPlan.planId)
+      setMessage('方案名称已更新')
     } catch (reason) { setMessage(reason instanceof Error ? reason.message : '方案更新失败') }
     finally { setBusy(false) }
   }
 
-  async function setDefaultPlan() {
+  async function setDefaultPlan(targetPlanId: string) {
     if (!workspace) return
     setBusy(true)
     try {
-      await api.updatePlan(projectId, workspace.currentPlan.planId, { isDefault: true })
-      hydrate(await api.getWorkspace(projectId, workspace.currentPlan.planId)); await onRefresh(); setMessage('已设为默认方案')
+      if (dirty) await save(false)
+      await api.updatePlan(projectId, targetPlanId, { isDefault: true })
+      await refreshPlanManagement(workspace.currentPlan.planId)
+      setMessage('已设为默认方案')
     } catch (reason) { setMessage(reason instanceof Error ? reason.message : '默认方案设置失败') }
     finally { setBusy(false) }
   }
 
-  async function archiveCurrentPlan() {
-    if (!workspace || !await dialog.confirm({ title: '归档当前方案？', message: '方案配置和历史结果会保留，可在方案管理中恢复。', tone: 'warning', confirmLabel: '归档方案' })) return
+  async function archiveManagedPlan(plan: ProjectPlan) {
+    if (!workspace || !await dialog.confirm({ title: `归档“${plan.name}”？`, message: '方案配置和历史结果会保留，之后可以恢复。', tone: 'warning', confirmLabel: '归档' })) return
     setBusy(true)
     try {
-      await api.archivePlan(projectId, workspace.currentPlan.planId)
-      const next = (await api.getWorkspace(projectId)).currentPlan
-      await onRefresh(); onNavigate(planPath(view, next.planId))
+      if (dirty) await save(false)
+      await api.archivePlan(projectId, plan.planId)
+      const next = await refreshPlanManagement(plan.planId === workspace.currentPlan.planId ? null : workspace.currentPlan.planId)
+      if (plan.planId === workspace.currentPlan.planId) onNavigate(planPath(view, next.currentPlan.planId))
     } catch (reason) { setMessage(reason instanceof Error ? reason.message : '方案归档失败') }
     finally { setBusy(false) }
   }
 
   async function restoreArchivedPlan(targetPlanId: string) {
     setBusy(true)
-    try { await api.restorePlan(projectId, targetPlanId); await onRefresh(); onNavigate(planPath(view, targetPlanId)) }
+    try {
+      if (dirty) await save(false)
+      await api.restorePlan(projectId, targetPlanId)
+      await refreshPlanManagement(workspace?.currentPlan.planId)
+      setMessage('方案已恢复')
+    }
     catch (reason) { setMessage(reason instanceof Error ? reason.message : '方案恢复失败') }
     finally { setBusy(false) }
   }
@@ -671,37 +710,57 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
         <span className={`workspace-save-state ${dirty ? 'dirty' : ''}`}>{statusText}</span>
         <button className="btn" disabled={busy || !dirty} onClick={() => void saveFromToolbar()}><Save size={14} />保存</button>
         <button className="btn primary" disabled={busy} onClick={() => void calculate()}><Calculator size={14} />计算</button>
-        <button className="btn icon-only" aria-label="更多项目操作" title="归档项目" onClick={() => void api.archive(projectId).then(() => onNavigate('/projects'))}><MoreHorizontal size={15} /></button>
       </div>
     </div>
-    <div className="project-version-bar">
-      <span className="project-version-label">测算方案</span>
-      <div className="project-version-tabs">
-        {workspace.projectPlans.filter((item) => item.status === 'active').map((item) => <button
-          key={item.planId}
-          className={item.planId === currentPlanId ? 'active' : ''}
-          onClick={() => onNavigate(planPath(view, item.planId))}
-        >{item.name}{item.isDefault && <small>默认</small>}</button>)}
-      </div>
-      <div className="project-version-create">
-        <button className="btn" onClick={() => { setVersionMenuOpen(true); setVersionMemberId(`方案 ${workspace.projectPlans.length + 1}`) }}><Plus size={14} />新增方案</button>
-        {versionMenuOpen && <div className="project-version-popover">
+    <div className="project-plan-bar">
+      <span className="project-plan-label">测算方案</span>
+      <div className="project-plan-select-wrap" ref={createPlanMenuRef}>
+        <select aria-label="切换测算方案" value={currentPlanId} onChange={(event) => {
+          const targetPlanId = event.target.value
+          if (targetPlanId === '__create__') {
+            setVersionMemberId(`方案 ${workspace.projectPlans.length + 1}`)
+            setVersionMenuOpen(true)
+            return
+          }
+          if (targetPlanId === currentPlanId) return
+          setVersionMenuOpen(false)
+          onNavigate(planPath(view, targetPlanId))
+        }}>
+          {workspace.projectPlans.filter((item) => item.status === 'active').map((item) => <option key={item.planId} value={item.planId}>{item.name}{item.isDefault ? '（默认）' : ''}</option>)}
+          <option value="__create__">＋ 新建方案</option>
+        </select>
+        {versionMenuOpen && <div className="project-plan-popover">
           <label>方案名称<input autoFocus value={versionMemberId} onChange={(event) => setVersionMemberId(event.target.value)} /></label>
-          <p>可空白新建，也可复制当前方案的参数与预测项。</p>
-          <div><button className="btn" onClick={() => setVersionMenuOpen(false)}>取消</button><button className="btn" disabled={busy || !versionMemberId.trim()} onClick={() => void createVersion(false)}>空白新建</button><button className="btn primary" disabled={busy || !versionMemberId.trim()} onClick={() => void createVersion(true)}><Copy size={13} />复制当前方案</button></div>
+          <p>选择创建方式</p>
+          <div><button className="btn" onClick={() => setVersionMenuOpen(false)}>取消</button><button className="btn" disabled={busy || !versionMemberId.trim()} onClick={() => void createVersion(false)}>空白方案</button><button className="btn primary" disabled={busy || !versionMemberId.trim()} onClick={() => void createVersion(true)}><Copy size={13} />复制当前</button></div>
         </div>}
       </div>
-      <div className="project-version-create">
-        <button className="btn" onClick={() => { setPlanManageOpen((current) => !current); setPlanNameDraft(workspace.currentPlan.name) }}><Settings size={14} />方案管理</button>
-        {planManageOpen && <div className="project-version-popover plan-manage-popover">
-          <label>方案名称<input value={planNameDraft} onChange={(event) => setPlanNameDraft(event.target.value)} /></label>
-          <div className="plan-manage-summary"><span>期间</span><b>{workspace.currentPlan.startPeriod} 至 {workspace.currentPlan.endPeriod}</b></div>
-          {workspace.projectPlans.some((item) => item.status === 'archived') && <div className="archived-plan-list"><span>已归档方案</span>{workspace.projectPlans.filter((item) => item.status === 'archived').map((item) => <button key={item.planId} onClick={() => void restoreArchivedPlan(item.planId)}>{item.name} · 恢复</button>)}</div>}
-          <div><button className="btn" disabled={workspace.currentPlan.isDefault || busy} onClick={() => void setDefaultPlan()}>设为默认</button><button className="btn danger-action" disabled={workspace.currentPlan.isDefault || busy} onClick={() => void archiveCurrentPlan()}>归档</button><button className="btn primary" disabled={!planNameDraft.trim() || busy} onClick={() => void savePlanSettings()}>保存</button></div>
-        </div>}
+      <div className="project-plan-create">
+        <button className="btn" onClick={() => {
+          setVersionMenuOpen(false)
+          resetPlanNameDrafts(workspace.projectPlans)
+          setPlanManageOpen(true)
+        }}><Settings size={14} />方案管理</button>
       </div>
-      <span className="project-version-context">场景固定：基准场景</span>
+      <span className="project-plan-context">场景：基准场景</span>
     </div>
+    {planManageOpen && <div className="modal-backdrop plan-management-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setPlanManageOpen(false) }}>
+      <section className="modal-card plan-management-modal" role="dialog" aria-modal="true" aria-labelledby="plan-management-title" onMouseDown={(event) => event.stopPropagation()}>
+        <header className="modal-header"><div><h2 id="plan-management-title">方案管理</h2><p>{workspace.projectPlans.length} 个方案，当前使用“{workspace.currentPlan.name}”</p></div><button className="icon-button" aria-label="关闭方案管理" onClick={() => setPlanManageOpen(false)}><X size={16} /></button></header>
+        <div className="plan-management-table-wrap"><table className="plan-management-table"><thead><tr><th>方案名称</th><th>状态</th><th>方案期间</th><th>修订</th><th>更新时间</th><th>操作</th></tr></thead><tbody>{workspace.projectPlans.map((plan) => {
+          const nameDraft = planNameDrafts[plan.planId] ?? plan.name
+          const activeCount = workspace.projectPlans.filter((item) => item.status === 'active').length
+          const canArchive = plan.status === 'active' && !plan.isDefault && activeCount > 1
+          return <tr key={plan.planId} className={plan.planId === workspace.currentPlan.planId ? 'current' : ''}>
+            <td><div className="plan-name-editor"><input aria-label={`${plan.name}方案名称`} value={nameDraft} onChange={(event) => setPlanNameDrafts((current) => ({ ...current, [plan.planId]: event.target.value }))} /><span>{plan.planId === workspace.currentPlan.planId ? '当前使用' : plan.isDefault ? '默认方案' : ''}</span></div></td>
+            <td><span className={`plan-status ${plan.status}`}>{plan.status === 'active' ? '可用' : '已归档'}</span></td>
+            <td>{plan.startPeriod} 至 {plan.endPeriod}</td><td>R{plan.draftRevision}</td><td>{new Date(plan.updatedAt).toLocaleDateString('zh-CN')}</td>
+            <td><div className="plan-row-actions"><button className="action-link" disabled={busy || !nameDraft.trim() || nameDraft.trim() === plan.name} onClick={() => void savePlanName(plan)}>保存名称</button>{plan.status === 'active' ? <><button className="action-link" disabled={busy || plan.isDefault} onClick={() => void setDefaultPlan(plan.planId)}>设为默认</button><button className="action-link danger-action" disabled={busy || !canArchive} title={!canArchive ? plan.isDefault ? '默认方案不能归档' : '至少保留一个有效方案' : ''} onClick={() => void archiveManagedPlan(plan)}>归档</button></> : <button className="action-link" disabled={busy} onClick={() => void restoreArchivedPlan(plan.planId)}>恢复</button>}</div></td>
+          </tr>
+        })}</tbody></table></div>
+        <footer className="modal-actions"><button className="btn" onClick={() => setPlanManageOpen(false)}>关闭</button></footer>
+      </section>
+    </div>}
     {message && <div className="workspace-message">{message}</div>}
 
     {view === 'config' && <div className={`project-config-shell ${(selectedLine || selectedParameter) ? 'drawer-open' : ''}`}>
@@ -951,7 +1010,7 @@ function ReadOnlySummaryGrid({ report }: { report: ProjectReportDto }) {
     { id: 'gross', label: '毛利', editable: false, values: Object.fromEntries(report.monthly.map((item) => [item.period, item.grossProfit])) },
     ...(report.hasCashFacts ? [{ id: 'cash', label: '净现金流', editable: false, values: Object.fromEntries(report.monthly.map((item) => [item.period, item.netCashFlow])) }] : []),
   ]
-  return <section className="calculation-summary"><h2>系统汇总与派生指标（只读）</h2>{!report.hasCashFacts && <p className="report-data-note">源项目未提供现金计划，本报告不以 0 元代替现金流结果。</p>}<FinancialGrid ariaLabel="系统汇总指标" periods={report.monthly.map((item) => item.period)} rows={rows} includeHeadersOnCopy /></section>
+  return <section className="calculation-summary"><h2>系统汇总与派生指标（只读）</h2>{!report.hasCashFacts && <p className="report-data-note">源项目未提供现金计划，本报告不以 0 元代替现金流结果。</p>}<FinancialGrid ariaLabel="系统汇总指标" periods={report.monthly.map((item) => item.period)} rows={rows} /></section>
 }
 
 function ProjectReportView({ report, selectedRunId, onSelectRun, onExport }: { report?: ProjectReportDto; selectedRunId: string; onSelectRun: (runId: string) => void; onExport: () => void }) {

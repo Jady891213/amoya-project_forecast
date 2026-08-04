@@ -22,10 +22,10 @@ export type MasterDataTab =
 
 export const MASTER_DATA_TABS = [
   { key: 'projects' as const, label: '项目', note: '项目唯一主表，只读查看', icon: PackageOpen },
-  { key: 'departments' as const, label: '部门', note: '可新增、编辑与停用', icon: Building2 },
-  { key: 'periods' as const, label: '期间', note: '平台内置时间维度', icon: CalendarRange },
-  { key: 'scenarios' as const, label: '场景', note: '平台级场景维度', icon: GitBranch },
   { key: 'plans' as const, label: '方案', note: '项目下属方案，只读查看', icon: Milestone },
+  { key: 'departments' as const, label: '部门', note: '可新增、编辑与停用', icon: Building2 },
+  { key: 'periods' as const, label: '期间', note: '2024年至2030年', icon: CalendarRange, dividerBefore: true },
+  { key: 'scenarios' as const, label: '场景', note: '平台级场景维度', icon: GitBranch },
 ]
 
 interface MasterDataPageProps {
@@ -43,11 +43,15 @@ export function MasterDataPage({
   const [editingDepartment, setEditingDepartment] = useState<Department>()
   const [departmentDialogOpen, setDepartmentDialogOpen] = useState(false)
   const [selectedYear, setSelectedYear] = useState(2026)
-  const availableYears = useMemo(
-    () => [...new Set(snapshot.periods.map((period) => period.year))].sort((left, right) => left - right),
+  const visiblePeriods = useMemo(
+    () => snapshot.periods.filter((period) => period.year >= 2024 && period.year <= 2030),
     [snapshot.periods],
   )
-  const periods = snapshot.periods.filter((period) => period.year === selectedYear)
+  const availableYears = useMemo(
+    () => [...new Set(visiblePeriods.map((period) => period.year))].sort((left, right) => left - right),
+    [visiblePeriods],
+  )
+  const periods = visiblePeriods.filter((period) => period.year === selectedYear)
   const activeDefinition = MASTER_DATA_TABS.find((tab) => tab.key === activeTab)
   const departmentName = (id: string) =>
     snapshot.departments.find((department) => department.id === id)?.name ?? '未知部门'
@@ -63,23 +67,24 @@ export function MasterDataPage({
         <div className="page-head-main">
           <PageBreadcrumbs items={[{ label: '平台配置' }, { label: '主数据管理' }]} />
           <h1>主数据管理</h1>
-          <p>统一查看项目、部门、期间、场景和方案；事实与计算结果回到具体项目中查看。</p>
+          <p>统一查看项目、方案、部门、期间和场景；事实与计算结果回到具体项目中查看。</p>
         </div>
       </div>
       <div className="page-body">
         <div className="master-summary">
           <div className="master-summary-item"><span>项目</span><b>{snapshot.projects.length}</b><small>dim_project</small></div>
+          <div className="master-summary-item"><span>方案</span><b>{snapshot.plans.length}</b><small>dim_plan</small></div>
           <div className="master-summary-item"><span>部门</span><b>{snapshot.departments.length}</b><small>dim_department</small></div>
-          <div className="master-summary-item"><span>期间</span><b>{snapshot.periods.length}</b><small>dim_period</small></div>
-          <div className="master-summary-item"><span>场景 / 方案</span><b>{snapshot.scenarios.length} / {snapshot.plans.length}</b><small>场景全局 · 方案从属项目</small></div>
+          <div className="master-summary-item"><span>期间</span><b>{visiblePeriods.length}</b><small>dim_period</small></div>
+          <div className="master-summary-item"><span>场景</span><b>{snapshot.scenarios.length}</b><small>dim_scenario</small></div>
         </div>
 
         <section className="master-layout">
           <nav className="master-groups" aria-label="主数据类型">
-            {MASTER_DATA_TABS.map(({ key, label, note, icon: Icon }) => (
+            {MASTER_DATA_TABS.map(({ key, label, note, icon: Icon, dividerBefore }) => (
               <button
                 key={key}
-                className={`master-group ${activeTab === key ? 'active' : ''}`}
+                className={`master-group ${dividerBefore ? 'divider-before' : ''} ${activeTab === key ? 'active' : ''}`}
                 onClick={() => setActiveTab(key)}
               >
                 <Icon size={16} />

@@ -20,7 +20,7 @@ export class DimensionRepository {
 
   async listPeriods(): Promise<PeriodDimension[]> {
     const rows = await this.database.query<PeriodRow>(
-      'SELECT * FROM dim_period ORDER BY sort_key',
+      "SELECT * FROM dim_period WHERE period BETWEEN '2024-01' AND '2030-12' ORDER BY sort_key",
     )
     return rows.map((row) => ({
       period: row.period,

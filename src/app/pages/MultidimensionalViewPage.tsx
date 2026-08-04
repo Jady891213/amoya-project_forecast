@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeftRight, BarChart3, ChevronLeft, ChevronRight, Copy, Search } from 'lucide-react'
+import { ArrowLeftRight, BarChart3, ChevronLeft, ChevronRight, PanelRightClose, PanelRightOpen, Search } from 'lucide-react'
 import type { PivotAxisDimension, PivotDimension, PivotMetadata, PivotRequest, PivotResponse, PivotTuple } from '../../shared/domain/types'
 import type { ApiClient } from '../api/client'
+import { gridSelectionText, useGridSelection, type GridCellPosition } from '../components/useGridSelection'
 import type { AppSnapshot } from '../state/types'
 
 const LABELS: Record<PivotDimension, string> = { project: '项目', plan: '方案', department: '申报部门', period: '期间', metric: '指标' }
 const ALL_PROJECTS = '__all_projects__'
 const ALL_DEPARTMENTS = '__all_departments__'
+const PIVOT_PAGE_CACHE_KEY = 'amoya-project-report-pivot-v1'
 
 interface Props { api: ApiClient; snapshot: AppSnapshot }
 type Placement = 'rows' | 'columns' | 'pov'
-type CellPoint = { row: number; column: number }
 
 function memberIds(metadata: PivotMetadata, dimension: PivotDimension, excludeVirtual = false) {
   return metadata.dimensions.find((item) => item.dimension === dimension)?.members
@@ -49,6 +50,25 @@ function defaultRequest(metadata: PivotMetadata): PivotRequest {
   }
 }
 
+function cachedRequest(metadata: PivotMetadata): PivotRequest {
+  const fallback = defaultRequest(metadata)
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(PIVOT_PAGE_CACHE_KEY) ?? '') as PivotRequest
+    if (!Array.isArray(parsed.rows) || !Array.isArray(parsed.columns) || !Array.isArray(parsed.pov)) return fallback
+    const dimensions = [...parsed.rows, ...parsed.columns, ...parsed.pov].map((item) => item.dimension)
+    if (!parsed.rows.length || !parsed.columns.length || dimensions.length !== 5 || new Set(dimensions).size !== 5 || dimensions.some((item) => !(item in LABELS))) return fallback
+    if ([...parsed.rows, ...parsed.columns].some((item) => !Array.isArray(item.memberIds) || !item.memberIds.length)) return fallback
+    if (parsed.pov.some((item) => typeof item.memberId !== 'string' || !item.memberId)) return fallback
+    return { ...parsed, scenarioId: 'baseline' }
+  } catch {
+    return fallback
+  }
+}
+
+function savePageCache(request: PivotRequest) {
+  window.localStorage.setItem(PIVOT_PAGE_CACHE_KEY, JSON.stringify(request))
+}
+
 function formatValue(value: string | null, valueType: 'currency' | 'percentage', unit = 10_000, decimals = 2, grouping = true, negativeStyle: 'minus' | 'parentheses' = 'minus') {
   if (value === null) return '—'
   const number = Number(value)
@@ -63,18 +83,22 @@ export function MultidimensionalViewPage({ api }: Props) {
   const [metadata, setMetadata] = useState<PivotMetadata>()
   const [draft, setDraft] = useState<PivotRequest>()
   const [executed, setExecuted] = useState<PivotRequest>()
+  const [backgroundPov, setBackgroundPov] = useState<PivotRequest['pov']>([])
   const [result, setResult] = useState<PivotResponse>()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [configurationOpen, setConfigurationOpen] = useState(true)
+  const [hideNoDataRows, setHideNoDataRows] = useState(false)
 
   useEffect(() => {
     let active = true
     void api.pivotMetadata().then((next) => {
       if (!active) return
       setMetadata(next)
-      const initial = defaultRequest(next)
+      const initial = cachedRequest(next)
       setDraft(initial)
       setExecuted(initial)
+      setBackgroundPov(initial.pov)
     }).catch((reason) => setError(reason instanceof Error ? reason.message : '项目报表元数据加载失败'))
     return () => { active = false }
   }, [api])
@@ -90,6 +114,7 @@ export function MultidimensionalViewPage({ api }: Props) {
   }, [api, executed])
 
   const changed = Boolean(draft && executed && JSON.stringify(draft) !== JSON.stringify(executed))
+  const backgroundChanged = Boolean(executed && JSON.stringify(backgroundPov) !== JSON.stringify(executed.pov))
   const selectionComplete = Boolean(draft && [...draft.rows, ...draft.columns].every((item) => item.memberIds.length > 0))
   const placement = (dimension: PivotDimension): Placement => draft?.rows.some((item) => item.dimension === dimension) ? 'rows' : draft?.columns.some((item) => item.dimension === dimension) ? 'columns' : 'pov'
 
@@ -125,19 +150,45 @@ export function MultidimensionalViewPage({ api }: Props) {
     setDraft({ ...draft, rows, columns })
   }
 
-  function updatePov(dimension: PivotDimension, memberId: string) {
-    if (!draft) return
-    let next = { ...draft, pov: draft.pov.map((item) => item.dimension === dimension ? { ...item, memberId } : item) }
+  function updateBackground(dimension: PivotDimension, memberId: string) {
+    if (!metadata) return
+    let next = backgroundPov.map((item) => item.dimension === dimension ? { ...item, memberId } : item)
     if (dimension === 'project') {
-      const planIds = plansForProject(metadata!, memberId).map((item) => item.id)
-      next = {
-        ...next,
-        rows: next.rows.map((item) => item.dimension === 'plan' ? { ...item, memberIds: planIds } : item),
-        columns: next.columns.map((item) => item.dimension === 'plan' ? { ...item, memberIds: planIds } : item),
-        pov: next.pov.map((item) => item.dimension === 'plan' && !planIds.includes(item.memberId) ? { ...item, memberId: planIds[0] ?? '' } : item),
-      }
+      const planIds = plansForProject(metadata, memberId).map((item) => item.id)
+      next = next.map((item) => item.dimension === 'plan' && !planIds.includes(item.memberId) ? { ...item, memberId: planIds[0] ?? '' } : item)
     }
+    setBackgroundPov(next)
+  }
+
+  function requestWithBackground(request: PivotRequest) {
+    if (!metadata) return request
+    const projectMember = request.pov.find((item) => item.dimension === 'project')?.memberId ?? ALL_PROJECTS
+    const planIds = plansForProject(metadata, projectMember).map((item) => item.id)
+    return {
+      ...request,
+      rows: request.rows.map((item) => item.dimension === 'plan' ? { ...item, memberIds: planIds } : item),
+      columns: request.columns.map((item) => item.dimension === 'plan' ? { ...item, memberIds: planIds } : item),
+      pov: request.pov.map((item) => item.dimension === 'plan' && !planIds.includes(item.memberId) ? { ...item, memberId: planIds[0] ?? '' } : item),
+    }
+  }
+
+  function queryBackground() {
+    if (!executed) return
+    const next = requestWithBackground({ ...executed, pov: backgroundPov })
+    setExecuted(next)
+    setDraft((current) => current ? { ...current, rows: next.rows, columns: next.columns, pov: next.pov } : current)
+    setBackgroundPov(next.pov)
+    savePageCache(next)
+  }
+
+  function confirmConfiguration() {
+    if (!draft || !selectionComplete) return
+    const next = requestWithBackground({ ...draft, pov: draft.pov.map((item) => backgroundPov.find((candidate) => candidate.dimension === item.dimension) ?? item) })
     setDraft(next)
+    setExecuted(structuredClone(next))
+    setBackgroundPov(next.pov)
+    savePageCache(next)
+    setConfigurationOpen(false)
   }
 
   function reorderAxis(dimension: PivotDimension, direction: -1 | 1) {
@@ -155,26 +206,31 @@ export function MultidimensionalViewPage({ api }: Props) {
 
   return <main className="page multidimensional-page">
     <div className="page-head"><div className="page-head-main"><h1>项目报表</h1><p>按方案、项目、部门、期间和指标自由组织只读事实视图。</p></div><div className="page-head-actions"><span className="pivot-context"><BarChart3 size={14} />场景：基准场景</span></div></div>
-    <div className="page-body multidimensional-body">
-      {draft && metadata && <section className="pivot-control-panel">
-        <div className="pivot-axis-editor">
-          <AxisArea title="行轴" placement="rows" dimensions={draft.rows.map((item) => item.dimension)} metadata={metadata} request={draft} onMove={move} onMembers={updateAxis} onReorder={reorderAxis} />
-          <button className="pivot-swap" title="交换行列" onClick={() => setDraft({ ...draft, rows: draft.columns, columns: draft.rows })}><ArrowLeftRight size={16} /></button>
-          <AxisArea title="列轴" placement="columns" dimensions={draft.columns.map((item) => item.dimension)} metadata={metadata} request={draft} onMove={move} onMembers={updateAxis} onReorder={reorderAxis} />
+    <div className={`page-body multidimensional-body pivot-report-workbench ${configurationOpen ? 'configuration-open' : 'configuration-closed'}`}>
+      <section className="pivot-table-panel"><div className="pivot-table-head"><div className="pivot-background-controls">{executed && metadata && backgroundPov.length ? backgroundPov.map((item) => {
+        const projectMember = backgroundPov.find((candidate) => candidate.dimension === 'project')?.memberId ?? ALL_PROJECTS
+        const members = item.dimension === 'plan' ? plansForProject(metadata, projectMember) : metadata.dimensions.find((dimension) => dimension.dimension === item.dimension)?.members ?? []
+        return <label key={item.dimension}><span>{LABELS[item.dimension]}</span><select value={item.memberId} onChange={(event) => updateBackground(item.dimension, event.target.value)}>{members.map((member) => <option key={member.id} value={member.id}>{member.label}</option>)}</select></label>
+      }) : <span className="pivot-no-background">无背景筛选</span>}</div><div className="pivot-table-head-actions">{executed && <><label className="pivot-display-toggle"><input type="checkbox" checked={hideNoDataRows} onChange={(event) => setHideNoDataRows(event.target.checked)} />隐藏无数据行</label><span className="pivot-query-status">{backgroundChanged ? '条件已调整' : ''}</span><button className="btn primary" disabled={loading || !backgroundChanged} onClick={queryBackground}><Search size={14} />{loading ? '查询中' : '查询'}</button><button className="btn pivot-drawer-toggle" onClick={() => setConfigurationOpen((current) => !current)}>{configurationOpen ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}{configurationOpen ? '收起配置' : '展开配置'}</button></>}</div></div>{error && <div className="page-alert error">{error}</div>}{!error && executed && <PivotGrid request={executed} result={result} hideNoDataRows={hideNoDataRows} />}</section>
+      {draft && metadata && <aside className="pivot-config-drawer" aria-hidden={!configurationOpen}>
+        <div className="pivot-config-drawer-head"><div><b>报表配置</b><span>设置背景、行轴和列轴</span></div><button type="button" aria-label="收起报表配置" onClick={() => setConfigurationOpen(false)}><PanelRightClose size={15} /></button></div>
+        <div className="pivot-config-drawer-body">
+          <section className="pivot-config-section"><div className="pivot-config-section-head"><b>1. 背景</b><span>成员在表格顶部选择</span></div><div className="pivot-config-list">{draft.pov.map((item) => <div className="pivot-background-config-row" key={item.dimension}><b>{LABELS[item.dimension]}</b><select className="pivot-placement-select" value="pov" onChange={(event) => move(item.dimension, event.target.value as Placement)}><option value="pov">背景</option><option value="rows">行轴</option><option value="columns">列轴</option></select></div>)}</div></section>
+          <AxisArea title="2. 行轴" placement="rows" dimensions={draft.rows.map((item) => item.dimension)} metadata={metadata} request={draft} onMove={move} onMembers={updateAxis} onReorder={reorderAxis} />
+          <div className="pivot-axis-swap-row"><button className="btn" title="交换行列" onClick={() => setDraft({ ...draft, rows: draft.columns, columns: draft.rows })}><ArrowLeftRight size={14} />交换行列</button></div>
+          <AxisArea title="3. 列轴" placement="columns" dimensions={draft.columns.map((item) => item.dimension)} metadata={metadata} request={draft} onMove={move} onMembers={updateAxis} onReorder={reorderAxis} />
         </div>
-        <div className="pivot-pov-row"><b>POV</b>{draft.pov.map((item) => <label key={item.dimension}>{LABELS[item.dimension]}<select value={item.memberId} onChange={(event) => updatePov(item.dimension, event.target.value)}>{metadata.dimensions.find((d) => d.dimension === item.dimension)?.members.map((member) => <option key={member.id} value={member.id}>{member.label}</option>)}</select><select className="pivot-placement-select" value="pov" onChange={(event) => move(item.dimension, event.target.value as Placement)}><option value="pov">POV</option><option value="rows">行轴</option><option value="columns">列轴</option></select></label>)}</div>
-        <div className="pivot-query-actions">{!selectionComplete ? <span>请至少选择一个成员</span> : changed && <span>条件已调整</span>}<button className="btn primary" disabled={loading || !selectionComplete || !changed && Boolean(result)} onClick={() => setExecuted(structuredClone(draft))}><Search size={14} />{loading ? '查询中' : '查询'}</button></div>
-      </section>}
-      <section className="pivot-table-panel"><div className="pivot-table-head"><div><b>事实数据透视表</b><span>金额单位：万元 · 比例：%</span></div><span>{loading ? '正在查询…' : `读取 ${result?.sourceFactCount ?? 0} 条基础事实`}</span></div>{error && <div className="page-alert error">{error}</div>}{!error && executed && <PivotGrid request={executed} result={result} />}</section>
+        <div className="pivot-config-drawer-footer"><span>{!selectionComplete ? '请至少选择一个成员' : changed ? '配置已修改' : '配置未修改'}</span><button className="btn primary" disabled={!selectionComplete || loading} onClick={confirmConfiguration}>确认</button></div>
+      </aside>}
     </div>
   </main>
 }
 
 function AxisArea({ title, placement, dimensions, metadata, request, onMove, onMembers, onReorder }: { title: string; placement: Placement; dimensions: PivotDimension[]; metadata: PivotMetadata; request: PivotRequest; onMove: (dimension: PivotDimension, target: Placement) => void; onMembers: (dimension: PivotDimension, ids: string[]) => void; onReorder: (dimension: PivotDimension, direction: -1 | 1) => void }) {
-  return <div className="pivot-axis-field"><b>{title}</b><div>{dimensions.map((dimension) => {
+  return <section className="pivot-config-section"><div className="pivot-config-section-head"><b>{title}</b><span>{dimensions.length} 个维度，顺序决定表头层级</span></div><div className="pivot-config-list">{dimensions.map((dimension) => {
     const axis = [...request.rows, ...request.columns].find((item) => item.dimension === dimension)!
-    return <AxisDimensionChip key={dimension} dimension={dimension} axis={axis} axisIndex={dimensions.indexOf(dimension)} axisCount={dimensions.length} metadata={metadata} onMembers={onMembers} onReorder={onReorder} />
-  })}<select value="" onChange={(event) => event.target.value && onMove(event.target.value as PivotDimension, placement)}><option value="">＋ 添加维度</option>{(['project', 'plan', 'department', 'period', 'metric'] as PivotDimension[]).filter((item) => !dimensions.includes(item)).map((item) => <option key={item} value={item}>{LABELS[item]}</option>)}</select>{dimensions.map((dimension) => <select key={`${dimension}:move`} className="pivot-placement-select" aria-label={`移动${LABELS[dimension]}`} value={placement} onChange={(event) => onMove(dimension, event.target.value as Placement)}><option value="rows">{LABELS[dimension]} → 行轴</option><option value="columns">{LABELS[dimension]} → 列轴</option><option value="pov">{LABELS[dimension]} → POV</option></select>)}</div></div>
+    return <div className="pivot-axis-config-row" key={dimension}><AxisDimensionChip dimension={dimension} axis={axis} axisIndex={dimensions.indexOf(dimension)} axisCount={dimensions.length} metadata={metadata} onMembers={onMembers} onReorder={onReorder} /><select className="pivot-placement-select" aria-label={`移动${LABELS[dimension]}`} value={placement} onChange={(event) => onMove(dimension, event.target.value as Placement)}><option value="rows">行轴</option><option value="columns">列轴</option><option value="pov">背景</option></select></div>
+  })}<select className="pivot-add-dimension" value="" onChange={(event) => event.target.value && onMove(event.target.value as PivotDimension, placement)}><option value="">＋ 添加维度</option>{(['project', 'plan', 'department', 'period', 'metric'] as PivotDimension[]).filter((item) => !dimensions.includes(item)).map((item) => <option key={item} value={item}>{LABELS[item]}</option>)}</select></div></section>
 }
 
 function AxisDimensionChip({ dimension, axis, axisIndex, axisCount, metadata, onMembers, onReorder }: { dimension: PivotDimension; axis: PivotAxisDimension; axisIndex: number; axisCount: number; metadata: PivotMetadata; onMembers: (dimension: PivotDimension, ids: string[]) => void; onReorder: (dimension: PivotDimension, direction: -1 | 1) => void }) {
@@ -211,45 +267,107 @@ function isRepeated(tuples: PivotTuple[], tupleIndex: number, level: number) {
   return tuples[tupleIndex].members.slice(0, level + 1).every((member, i) => member.memberId === tuples[tupleIndex - 1].members[i]?.memberId)
 }
 
-function PivotGrid({ request, result }: { request: PivotRequest; result?: PivotResponse }) {
-  const [anchor, setAnchor] = useState<CellPoint>()
-  const [focus, setFocus] = useState<CellPoint>()
-  const dragging = useRef(false)
+function PivotGrid({ request, result, hideNoDataRows }: { request: PivotRequest; result?: PivotResponse; hideNoDataRows: boolean }) {
   const [unit, setUnit] = useState(10_000)
   const [decimals, setDecimals] = useState(2)
   const [grouping, setGrouping] = useState(true)
   const [negativeStyle, setNegativeStyle] = useState<'minus' | 'parentheses'>('minus')
-  const rows = result?.rowTuples ?? []
+  const allRows = result?.rowTuples ?? []
   const columns = result?.columnTuples ?? []
+  const root = useRef<HTMLDivElement>(null)
   const cells = useMemo(() => new Map(result?.cells.map((cell) => [`${cell.rowKey}\u001e${cell.columnKey}`, cell]) ?? []), [result])
-  const selected = (row: number, column: number) => anchor && focus && row >= Math.min(anchor.row, focus.row) && row <= Math.max(anchor.row, focus.row) && column >= Math.min(anchor.column, focus.column) && column <= Math.max(anchor.column, focus.column)
+  const rows = useMemo(
+    () => hideNoDataRows
+      ? allRows.filter((row) => columns.some((column) => {
+        const cell = cells.get(`${row.key}\u001e${column.key}`)
+        return cell?.value !== null && cell?.value !== '' && cell?.value !== undefined
+      }))
+      : allRows,
+    [allRows, cells, columns, hideNoDataRows],
+  )
+  const selection = useGridSelection(rows.length, columns.length, { initialSelection: false })
 
-  useEffect(() => {
-    const up = () => { dragging.current = false }
-    window.addEventListener('mouseup', up); return () => window.removeEventListener('mouseup', up)
-  }, [])
-  useEffect(() => {
-    const copy = (event: ClipboardEvent) => {
-      if (!anchor || !focus || !result) return
-      const r0 = Math.min(anchor.row, focus.row), r1 = Math.max(anchor.row, focus.row), c0 = Math.min(anchor.column, focus.column), c1 = Math.max(anchor.column, focus.column)
-      const columnHeaders = request.columns.map((_, level) => [
-        ...request.rows.map((axis, index) => level === request.columns.length - 1 ? LABELS[axis.dimension] : ''),
-        ...columns.slice(c0, c1 + 1).map((column) => column.members[level]?.label ?? ''),
-      ].join('\t'))
-      const lines = [...columnHeaders, ...rows.slice(r0, r1 + 1).map((row) => [...row.members.map((member) => member.label), ...columns.slice(c0, c1 + 1).map((column) => { const cell = cells.get(`${row.key}\u001e${column.key}`); return cell?.value ?? '' })].join('\t'))]
-      event.clipboardData?.setData('text/plain', lines.join('\n')); event.preventDefault()
+  function focusCell(position: GridCellPosition, extend = false) {
+    selection.selectCell(position, extend)
+    const next = {
+      row: Math.max(0, Math.min(rows.length - 1, position.row)),
+      column: Math.max(0, Math.min(columns.length - 1, position.column)),
     }
-    document.addEventListener('copy', copy); return () => document.removeEventListener('copy', copy)
-  }, [anchor, focus, result, rows, columns, cells])
+    requestAnimationFrame(() => {
+      root.current?.querySelector<HTMLElement>(`[data-cell="${next.row}:${next.column}"]`)?.focus()
+    })
+  }
 
-  if (!result || !rows.length || !columns.length) return <div className="pivot-empty">当前条件下没有已计算事实。</div>
-  return <><div className="pivot-format-toolbar"><label>单位<select value={unit} onChange={(event) => setUnit(Number(event.target.value))}><option value={1}>元</option><option value={1000}>千元</option><option value={10000}>万元</option></select></label><label>小数<select value={decimals} onChange={(event) => setDecimals(Number(event.target.value))}><option value={0}>0 位</option><option value={1}>1 位</option><option value={2}>2 位</option><option value={4}>4 位</option></select></label><label><input type="checkbox" checked={grouping} onChange={(event) => setGrouping(event.target.checked)} />千分位</label><label>负数<select value={negativeStyle} onChange={(event) => setNegativeStyle(event.target.value as 'minus' | 'parentheses')}><option value="minus">-1,234.56</option><option value="parentheses">(1,234.56)</option></select></label></div><div className="pivot-table-scroll"><table className="pivot-table pivot-grid"><thead>{request.columns.map((axis, level) => <tr key={axis.dimension}>{level === 0 && request.rows.map((rowAxis) => <th key={rowAxis.dimension} rowSpan={request.columns.length} className="pivot-corner" onMouseDown={() => { setAnchor({ row: 0, column: 0 }); setFocus({ row: rows.length - 1, column: columns.length - 1 }) }}>{LABELS[rowAxis.dimension]}</th>)}{columns.map((tuple, index) => {
+  function selectionText() {
+    if (!selection.bounds) return ''
+    return gridSelectionText(
+      selection.bounds,
+      (rowIndex, columnIndex) => cells.get(`${rows[rowIndex]?.key}\u001e${columns[columnIndex]?.key}`)?.value ?? '',
+    )
+  }
+
+  function onKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (!selection.focus) return
+    const deltas: Record<string, [number, number]> = {
+      ArrowUp: [-1, 0],
+      ArrowDown: [1, 0],
+      ArrowLeft: [0, -1],
+      ArrowRight: [0, 1],
+      Tab: [0, event.shiftKey ? -1 : 1],
+      Enter: [event.shiftKey ? -1 : 1, 0],
+    }
+    const delta = deltas[event.key]
+    if (!delta) return
+    event.preventDefault()
+    focusCell(
+      { row: selection.focus.row + delta[0], column: selection.focus.column + delta[1] },
+      event.shiftKey && event.key.startsWith('Arrow'),
+    )
+  }
+
+  if (!result || !allRows.length || !columns.length) return <div className="pivot-empty">当前条件下没有已计算事实。</div>
+  return <><div className="pivot-format-toolbar"><label>单位<select value={unit} onChange={(event) => setUnit(Number(event.target.value))}><option value={1}>元</option><option value={1000}>千元</option><option value={10000}>万元</option></select></label><label>小数<select value={decimals} onChange={(event) => setDecimals(Number(event.target.value))}><option value={0}>0 位</option><option value={1}>1 位</option><option value={2}>2 位</option><option value={4}>4 位</option></select></label><label><input type="checkbox" checked={grouping} onChange={(event) => setGrouping(event.target.checked)} />千分位</label><label>负数<select value={negativeStyle} onChange={(event) => setNegativeStyle(event.target.value as 'minus' | 'parentheses')}><option value="minus">-1,234.56</option><option value="parentheses">(1,234.56)</option></select></label><span>{hideNoDataRows ? `显示 ${rows.length} 行 · ` : ''}{result.sourceFactCount} 条数据</span></div>{rows.length ? <div
+    className="pivot-table-scroll unified-grid-selection"
+    ref={root}
+    role="grid"
+    aria-label="项目报表数据表格"
+    tabIndex={-1}
+    onKeyDown={onKeyDown}
+    onMouseUp={selection.endDrag}
+    onCopy={(event) => {
+      if (!selection.bounds) return
+      event.preventDefault()
+      event.clipboardData.setData('text/plain', selectionText())
+    }}
+  ><table className="pivot-table pivot-grid"><thead>{request.columns.map((axis, level) => <tr key={axis.dimension}>{level === 0 && request.rows.map((rowAxis) => <th key={rowAxis.dimension} rowSpan={request.columns.length} className="pivot-corner" onMouseDown={() => { selection.selectAll(); root.current?.focus() }}>{LABELS[rowAxis.dimension]}</th>)}{columns.map((tuple, index) => {
     if (isRepeated(columns, index, level)) return null
     const span = spanLength(columns, index, level)
-    return <th key={`${tuple.key}:${level}`} colSpan={span} onMouseDown={() => { setAnchor({ row: 0, column: index }); setFocus({ row: rows.length - 1, column: index + span - 1 }) }}>{tuple.members[level]?.label}</th>
+    return <th key={`${tuple.key}:${level}`} colSpan={span} onMouseDown={() => { selection.selectColumns(index, index + span - 1); root.current?.focus() }}>{tuple.members[level]?.label}</th>
   })}</tr>)}</thead><tbody>{rows.map((row, rowIndex) => <tr key={row.key}>{request.rows.map((axis, level) => {
     if (isRepeated(rows, rowIndex, level)) return null
     const span = spanLength(rows, rowIndex, level)
-    return <th key={axis.dimension} rowSpan={span} onMouseDown={() => { setAnchor({ row: rowIndex, column: 0 }); setFocus({ row: rowIndex + span - 1, column: columns.length - 1 }) }}>{row.members[level]?.label}</th>
-  })}{columns.map((column, columnIndex) => { const cell = cells.get(`${row.key}\u001e${column.key}`); return <td key={column.key} className={selected(rowIndex, columnIndex) ? 'selected' : ''} onMouseDown={(event) => { event.preventDefault(); dragging.current = true; if (event.shiftKey && anchor) setFocus({ row: rowIndex, column: columnIndex }); else { setAnchor({ row: rowIndex, column: columnIndex }); setFocus({ row: rowIndex, column: columnIndex }) } }} onMouseEnter={() => { if (dragging.current) setFocus({ row: rowIndex, column: columnIndex }) }}>{cell ? formatValue(cell.value, cell.valueType, unit, decimals, grouping, negativeStyle) : '—'}</td>})}</tr>)}</tbody></table><div className="pivot-copy-hint"><Copy size={13} />拖拽或 Shift 选择单元格，按 Ctrl/Cmd+C 复制到 Excel</div></div></>
+    return <th key={axis.dimension} rowSpan={span} onMouseDown={() => { selection.selectRows(rowIndex, rowIndex + span - 1); root.current?.focus() }}>{row.members[level]?.label}</th>
+  })}{columns.map((column, columnIndex) => {
+    const cell = cells.get(`${row.key}\u001e${column.key}`)
+    const isSelected = selection.isSelected(rowIndex, columnIndex)
+    return <td
+      key={column.key}
+      data-cell={`${rowIndex}:${columnIndex}`}
+      tabIndex={rowIndex === selection.focus?.row && columnIndex === selection.focus?.column ? 0 : -1}
+      className={isSelected ? 'selected grid-selected-cell' : ''}
+      aria-selected={isSelected}
+      onMouseDown={(event) => {
+        if (event.button !== 0) return
+        event.preventDefault()
+        selection.startDrag({ row: rowIndex, column: columnIndex }, event.shiftKey)
+        requestAnimationFrame(() => {
+          root.current?.querySelector<HTMLElement>(`[data-cell="${rowIndex}:${columnIndex}"]`)?.focus()
+        })
+      }}
+      onMouseEnter={() => {
+        if (selection.dragging.current) selection.extendSelection({ row: rowIndex, column: columnIndex })
+      }}
+      onMouseUp={selection.endDrag}
+    >{cell ? formatValue(cell.value, cell.valueType, unit, decimals, grouping, negativeStyle) : '—'}</td>
+  })}</tr>)}</tbody></table></div> : <div className="pivot-empty">没有包含数据的行。</div>}</>
 }

@@ -24,6 +24,7 @@ import { MasterDataPage } from './pages/MasterDataPage'
 import { PageBreadcrumbs } from './components/PageBreadcrumbs'
 import { useAppDialog } from './ui/AppDialog'
 import { MultidimensionalViewPage } from './pages/MultidimensionalViewPage'
+import { APP_VERSION } from './version'
 
 type Route =
   | { type: 'projects'; archived: boolean }
@@ -176,7 +177,7 @@ export default function App() {
   return <div className={`app semantic-app ${navCollapsed ? 'nav-collapsed' : ''}`}>
     <div className="shell">
       <aside className="global-nav">
-        <div className="sidebar-header"><div className="sidebar-brand"><div className="brand-mark"><BarChart3 size={17} /></div><div className="sidebar-brand-copy"><b>项目测算分析工具</b><span>本地财务与 EPM 工作台</span></div></div><button type="button" className="sidebar-collapse" aria-label={navCollapsed ? '展开侧边栏' : '收起侧边栏'} title={navCollapsed ? '展开侧边栏' : '收起侧边栏'} onClick={toggleNavigation}>{navCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}</button></div>
+        <div className="sidebar-header"><div className="sidebar-brand"><div className="brand-mark"><BarChart3 size={17} /></div><div className="sidebar-brand-copy"><b>项目测算分析工具</b><span title={`软件版本 v${APP_VERSION}`}>本地财务工作台 · v{APP_VERSION}</span></div></div><button type="button" className="sidebar-collapse" aria-label={navCollapsed ? '展开侧边栏' : '收起侧边栏'} title={navCollapsed ? '展开侧边栏' : '收起侧边栏'} onClick={toggleNavigation}>{navCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}</button></div>
         <div className="nav-section"><div className="nav-title">项目数据</div><button title="项目列表" className={`nav-item ${route.type === 'projects' || route.type === 'new' || route.type === 'workspace' ? 'active' : ''}`} onClick={openProjectArea}><BriefcaseBusiness size={16} /><span className="nav-label">项目列表</span></button><button title="项目报表" className={`nav-item ${route.type === 'multidimensional' ? 'active' : ''}`} onClick={() => navigate('/multidimensional')}><Table2 size={16} /><span className="nav-label">项目报表</span></button></div>
         <div className="nav-section"><div className="nav-title">平台配置</div><button title="主数据管理" className={`nav-item ${route.type === 'master-data' ? 'active' : ''}`} onClick={() => navigate('/master-data')}><Database size={16} /><span className="nav-label">主数据管理</span></button><button title="指标管理" className={`nav-item ${route.type === 'metrics' ? 'active' : ''}`} onClick={() => navigate('/metrics')}><Sigma size={16} /><span className="nav-label">指标管理</span></button></div>
         <div className="sidebar-footer">

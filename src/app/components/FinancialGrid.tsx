@@ -2,6 +2,12 @@ import Decimal from 'decimal.js'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useAppDialog } from '../ui/AppDialog'
+import {
+  gridSelectionBounds,
+  gridSelectionText,
+  useGridSelection,
+  type GridCellPosition,
+} from './useGridSelection'
 
 export interface FinancialGridRow {
   id: string
@@ -26,7 +32,6 @@ export interface FinancialGridChange {
   value: string
 }
 
-interface CellPosition { row: number; column: number }
 interface EditTransaction { before: FinancialGridChange[]; after: FinancialGridChange[] }
 export type FinancialDisplayUnit = 'yuan' | 'thousand' | 'ten_thousand'
 export type FinancialNegativeStyle = 'minus' | 'parentheses'
@@ -43,7 +48,6 @@ interface Props {
   rows: FinancialGridRow[]
   onChange?: (changes: FinancialGridChange[]) => void
   onClearOverride?: (rowId: string, period: string) => void
-  includeHeadersOnCopy?: boolean
   ariaLabel: string
   labelColumnTitle?: string
   labelColumnWidth?: number
@@ -133,13 +137,8 @@ export function buildPasteTransaction(
   return { before, after }
 }
 
-export function financialSelectionBounds(anchor: CellPosition, focus: CellPosition) {
-  return {
-    top: Math.min(anchor.row, focus.row),
-    bottom: Math.max(anchor.row, focus.row),
-    left: Math.min(anchor.column, focus.column),
-    right: Math.max(anchor.column, focus.column),
-  }
+export function financialSelectionBounds(anchor: GridCellPosition, focus: GridCellPosition) {
+  return gridSelectionBounds(anchor, focus)
 }
 
 export function FinancialGrid({
@@ -147,7 +146,6 @@ export function FinancialGrid({
   rows,
   onChange,
   onClearOverride,
-  includeHeadersOnCopy = false,
   ariaLabel,
   labelColumnTitle = '行项目',
   labelColumnWidth = 190,
@@ -162,10 +160,8 @@ export function FinancialGrid({
 }: Props) {
   const dialog = useAppDialog()
   const root = useRef<HTMLDivElement>(null)
-  const dragging = useRef(false)
-  const [anchor, setAnchor] = useState<CellPosition>({ row: 0, column: 0 })
-  const [focus, setFocus] = useState<CellPosition>({ row: 0, column: 0 })
-  const [editing, setEditing] = useState<(CellPosition & { value: string }) | null>(null)
+  const selection = useGridSelection(rows.length, periods.length)
+  const [editing, setEditing] = useState<(GridCellPosition & { value: string }) | null>(null)
   const [displayUnit, setDisplayUnit] = useState<FinancialDisplayUnit>('yuan')
   const [decimalPlaces, setDecimalPlaces] = useState<0 | 2 | 4>(2)
   const [thousandSeparator, setThousandSeparator] = useState(true)
@@ -176,10 +172,6 @@ export function FinancialGrid({
   const resizeCleanup = useRef<(() => void) | null>(null)
   const undoStack = useRef<EditTransaction[]>([])
   const redoStack = useRef<EditTransaction[]>([])
-  const selected = useMemo(
-    () => financialSelectionBounds(anchor, focus),
-    [anchor, focus],
-  )
   const displayOptions = useMemo<FinancialDisplayOptions>(() => ({
     decimalPlaces,
     negativeStyle,
@@ -188,10 +180,7 @@ export function FinancialGrid({
   }), [decimalPlaces, displayUnit, negativeStyle, thousandSeparator])
 
   useEffect(() => {
-    const finishDrag = () => { dragging.current = false }
-    window.addEventListener('mouseup', finishDrag)
     return () => {
-      window.removeEventListener('mouseup', finishDrag)
       resizeCleanup.current?.()
     }
   }, [])
@@ -222,36 +211,16 @@ export function FinancialGrid({
     window.addEventListener('mouseup', finish)
   }
 
-  useEffect(() => {
-    if (rows.length === 0 || periods.length === 0) return
-    setAnchor((current) => ({
-      row: Math.min(current.row, rows.length - 1),
-      column: Math.min(current.column, periods.length - 1),
-    }))
-    setFocus((current) => ({
-      row: Math.min(current.row, rows.length - 1),
-      column: Math.min(current.column, periods.length - 1),
-    }))
-  }, [periods.length, rows.length])
-
-  function focusCell(position: CellPosition, extend = false) {
+  function focusCell(position: GridCellPosition, extend = false) {
+    selection.selectCell(position, extend)
     const next = {
       row: Math.max(0, Math.min(rows.length - 1, position.row)),
       column: Math.max(0, Math.min(periods.length - 1, position.column)),
     }
-    if (!extend) setAnchor(next)
-    setFocus(next)
     requestAnimationFrame(() => {
       root.current
         ?.querySelector<HTMLElement>(`[data-cell="${next.row}:${next.column}"]`)
         ?.focus()
-    })
-  }
-
-  function extendSelection(position: CellPosition) {
-    setFocus({
-      row: Math.max(0, Math.min(rows.length - 1, position.row)),
-      column: Math.max(0, Math.min(periods.length - 1, position.column)),
     })
   }
 
@@ -280,18 +249,11 @@ export function FinancialGrid({
   }
 
   function selectionText() {
-    const lines: string[] = []
-    if (includeHeadersOnCopy) {
-      lines.push(['行项目', ...periods.slice(selected.left, selected.right + 1)].join('\t'))
-    }
-    for (let rowIndex = selected.top; rowIndex <= selected.bottom; rowIndex += 1) {
-      const row = rows[rowIndex]
-      const values = periods
-        .slice(selected.left, selected.right + 1)
-        .map((period) => row.values[period] ?? '')
-      lines.push(includeHeadersOnCopy ? [row.label, ...values].join('\t') : values.join('\t'))
-    }
-    return lines.join('\n')
+    if (!selection.bounds) return ''
+    return gridSelectionText(
+      selection.bounds,
+      (rowIndex, columnIndex) => rows[rowIndex]?.values[periods[columnIndex]] ?? '',
+    )
   }
 
   function pasteText(text: string) {
@@ -299,24 +261,26 @@ export function FinancialGrid({
     const matrix = text.replace(/\r/g, '').split('\n').filter((line) => line.length > 0).map((line) => line.split('\t'))
     if (matrix.length === 0) return
     try {
-      applyTransaction(buildPasteTransaction(text, focus, rows, periods))
+      if (!selection.focus) return
+      applyTransaction(buildPasteTransaction(text, selection.focus, rows, periods))
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : '粘贴内容无效'
       void dialog.alert(message.includes('整个粘贴') ? message : `${message}，整个粘贴已取消。`, { title: '无法粘贴数据', tone: 'warning' })
       return
     }
     focusCell({
-      row: focus.row + matrix.length - 1,
-      column: focus.column + Math.max(...matrix.map((line) => line.length)) - 1,
+      row: selection.focus.row + matrix.length - 1,
+      column: selection.focus.column + Math.max(...matrix.map((line) => line.length)) - 1,
     }, true)
   }
 
   function clearSelection() {
+    if (!selection.bounds) return
     const before: FinancialGridChange[] = []
     const after: FinancialGridChange[] = []
-    for (let rowIndex = selected.top; rowIndex <= selected.bottom; rowIndex += 1) {
+    for (let rowIndex = selection.bounds.top; rowIndex <= selection.bounds.bottom; rowIndex += 1) {
       const row = rows[rowIndex]
-      for (let columnIndex = selected.left; columnIndex <= selected.right; columnIndex += 1) {
+      for (let columnIndex = selection.bounds.left; columnIndex <= selection.bounds.right; columnIndex += 1) {
         const period = periods[columnIndex]
         if (!isFinancialCellEditable(row, period)) {
           void dialog.alert(`“${row.label}”在 ${period} 为只读，整个清空操作已取消。`, { title: '无法清空选区', tone: 'warning' })
@@ -344,7 +308,8 @@ export function FinancialGrid({
   }
 
   function fillSelection(direction: 'down' | 'right') {
-    if (!onChange) return
+    if (!onChange || !selection.bounds) return
+    const selected = selection.bounds
     const before: FinancialGridChange[] = []
     const after: FinancialGridChange[] = []
     for (let rowIndex = selected.top; rowIndex <= selected.bottom; rowIndex += 1) {
@@ -379,6 +344,7 @@ export function FinancialGrid({
   }
 
   function onKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (!selection.focus) return
     const command = event.ctrlKey || event.metaKey
     if (command && event.key.toLowerCase() === 'c') {
       return
@@ -398,13 +364,13 @@ export function FinancialGrid({
     if (command && event.key.toLowerCase() === 'r') {
       event.preventDefault(); fillSelection('right'); return
     }
-    const activeRow = rows[focus.row]
-    const activePeriod = periods[focus.column]
+    const activeRow = rows[selection.focus.row]
+    const activePeriod = periods[selection.focus.column]
     if (!command && activeRow && activePeriod && isFinancialCellEditable(activeRow, activePeriod) && (event.key === 'F2' || (event.key.length === 1 && !event.altKey))) {
       event.preventDefault()
       setEditing({
-        ...focus,
-        value: event.key === 'F2' ? activeRow.values[periods[focus.column]] ?? '' : event.key,
+        ...selection.focus,
+        value: event.key === 'F2' ? activeRow.values[periods[selection.focus.column]] ?? '' : event.key,
       })
       return
     }
@@ -418,7 +384,7 @@ export function FinancialGrid({
     const delta = deltas[event.key]
     if (delta) {
       event.preventDefault()
-      focusCell({ row: focus.row + delta[0], column: focus.column + delta[1] }, event.shiftKey && event.key.startsWith('Arrow'))
+      focusCell({ row: selection.focus.row + delta[0], column: selection.focus.column + delta[1] }, event.shiftKey && event.key.startsWith('Arrow'))
     }
   }
 
@@ -440,14 +406,14 @@ export function FinancialGrid({
         ref={root}
         onKeyDown={onKeyDown}
         onMouseMove={(event) => {
-          if (!dragging.current || !(event.target instanceof HTMLElement)) return
+          if (!selection.dragging.current || !(event.target instanceof HTMLElement)) return
           const cell = event.target.closest<HTMLElement>('[data-cell]')
           const position = cell?.dataset.cell?.split(':').map(Number)
           if (position?.length === 2) {
-            extendSelection({ row: position[0], column: position[1] })
+            selection.extendSelection({ row: position[0], column: position[1] })
           }
         }}
-        onMouseUp={() => { dragging.current = false }}
+        onMouseUp={selection.endDrag}
         onCopy={(event) => { event.preventDefault(); event.clipboardData.setData('text/plain', selectionText()) }}
         onPaste={(event) => { event.preventDefault(); pasteText(event.clipboardData.getData('text/plain')) }}
         aria-label={ariaLabel}
@@ -456,37 +422,39 @@ export function FinancialGrid({
       >
       <table>
         <colgroup>{renderRowType && <col style={{ width: currentTypeWidth }} />}<col style={{ width: currentLabelWidth }} />{periods.map((period) => <col key={period} style={{ width: periodWidths[period] ?? 92 }} />)}</colgroup>
-        <thead><tr>{renderRowType && <th className="grid-type-column" style={{ minWidth: currentTypeWidth, maxWidth: currentTypeWidth, width: currentTypeWidth }}>{typeColumnTitle}<span className="financial-column-resizer" title="拖拽调整列宽" onMouseDown={(event) => startColumnResize(event, currentTypeWidth, 72, 160, setCurrentTypeWidth)} /></th>}<th className="grid-label-column" style={{ left: renderRowType ? currentTypeWidth : 0, minWidth: currentLabelWidth, maxWidth: currentLabelWidth, width: currentLabelWidth }} onMouseDown={() => { setAnchor({ row: 0, column: 0 }); setFocus({ row: rows.length - 1, column: periods.length - 1 }); root.current?.focus() }}>{labelColumnTitle}<span className="financial-column-resizer" title="拖拽调整列宽" onMouseDown={(event) => startColumnResize(event, currentLabelWidth, 220, 560, setCurrentLabelWidth)} /></th>{periods.map((period, columnIndex) => { const periodWidth = periodWidths[period] ?? 92; return <th key={period} style={{ minWidth: periodWidth, maxWidth: periodWidth, width: periodWidth }} onMouseDown={() => { setAnchor({ row: 0, column: columnIndex }); setFocus({ row: rows.length - 1, column: columnIndex }); root.current?.focus() }}>{period}<span className="financial-column-resizer" title="拖拽调整列宽" onMouseDown={(event) => startColumnResize(event, periodWidth, 72, 180, (width) => setPeriodWidths((current) => ({ ...current, [period]: width })))} /></th> })}</tr></thead>
+        <thead><tr>{renderRowType && <th className="grid-type-column" style={{ minWidth: currentTypeWidth, maxWidth: currentTypeWidth, width: currentTypeWidth }} onMouseDown={() => { selection.selectAll(); root.current?.focus() }}>{typeColumnTitle}<span className="financial-column-resizer" title="拖拽调整列宽" onMouseDown={(event) => startColumnResize(event, currentTypeWidth, 72, 160, setCurrentTypeWidth)} /></th>}<th className="grid-label-column" style={{ left: renderRowType ? currentTypeWidth : 0, minWidth: currentLabelWidth, maxWidth: currentLabelWidth, width: currentLabelWidth }} onMouseDown={() => { selection.selectAll(); root.current?.focus() }}>{labelColumnTitle}<span className="financial-column-resizer" title="拖拽调整列宽" onMouseDown={(event) => startColumnResize(event, currentLabelWidth, 220, 560, setCurrentLabelWidth)} /></th>{periods.map((period, columnIndex) => { const periodWidth = periodWidths[period] ?? 92; return <th key={period} style={{ minWidth: periodWidth, maxWidth: periodWidth, width: periodWidth }} onMouseDown={() => { selection.selectColumns(columnIndex); root.current?.focus() }}>{period}<span className="financial-column-resizer" title="拖拽调整列宽" onMouseDown={(event) => startColumnResize(event, periodWidth, 72, 180, (width) => setPeriodWidths((current) => ({ ...current, [period]: width })))} /></th> })}</tr></thead>
         <tbody>{rows.map((row, rowIndex) => (
           <tr key={row.id} className={`${row.editable ? 'editable-row' : 'readonly-row'} ${row.rowClassName ?? ''} ${activeRowId === row.id ? 'active-grid-row' : ''}`}>
-            {renderRowType && <th className="grid-type-cell" style={{ minWidth: currentTypeWidth, maxWidth: currentTypeWidth, width: currentTypeWidth }} onMouseDown={() => onRowActivate?.(row.id)}>{renderRowType(row)}</th>}
-            <th className="grid-label-cell" style={{ left: renderRowType ? currentTypeWidth : 0, minWidth: currentLabelWidth, maxWidth: currentLabelWidth, width: currentLabelWidth }} onMouseDown={() => { setAnchor({ row: rowIndex, column: 0 }); setFocus({ row: rowIndex, column: periods.length - 1 }); root.current?.focus(); onRowActivate?.(row.id) }}>{renderRowLabel ? renderRowLabel(row) : <><span>{row.label}</span>{row.secondary && <small>{row.secondary}</small>}</>}</th>
+            {renderRowType && <th className="grid-type-cell" style={{ minWidth: currentTypeWidth, maxWidth: currentTypeWidth, width: currentTypeWidth }} onMouseDown={() => { selection.selectRows(rowIndex); root.current?.focus(); onRowActivate?.(row.id) }}>{renderRowType(row)}</th>}
+            <th className="grid-label-cell" style={{ left: renderRowType ? currentTypeWidth : 0, minWidth: currentLabelWidth, maxWidth: currentLabelWidth, width: currentLabelWidth }} onMouseDown={() => { selection.selectRows(rowIndex); root.current?.focus(); onRowActivate?.(row.id) }}>{renderRowLabel ? renderRowLabel(row) : <><span>{row.label}</span>{row.secondary && <small>{row.secondary}</small>}</>}</th>
             {periods.map((period, columnIndex) => {
-              const isSelected = rowIndex >= selected.top && rowIndex <= selected.bottom && columnIndex >= selected.left && columnIndex <= selected.right
+              const isSelected = selection.isSelected(rowIndex, columnIndex)
               const overridden = row.overriddenPeriods?.has(period)
               const cellEditable = isFinancialCellEditable(row, period)
               return <td
                 key={period}
                 style={{ minWidth: periodWidths[period] ?? 92, maxWidth: periodWidths[period] ?? 92, width: periodWidths[period] ?? 92 }}
                 data-cell={`${rowIndex}:${columnIndex}`}
-                tabIndex={rowIndex === focus.row && columnIndex === focus.column ? 0 : -1}
-                className={`${cellEditable ? 'editable-cell' : 'readonly-cell'} ${isSelected ? 'selected-cell' : ''} ${overridden ? 'overridden-cell' : ''}`}
+                tabIndex={rowIndex === selection.focus?.row && columnIndex === selection.focus?.column ? 0 : -1}
+                className={`${cellEditable ? 'editable-cell' : 'readonly-cell'} ${isSelected ? 'selected-cell grid-selected-cell' : ''} ${overridden ? 'overridden-cell' : ''}`}
                 aria-selected={isSelected}
                 title={overridden ? `原计算值：${row.originalValues?.[period] ?? '—'}；当前覆盖值：${row.values[period] ?? ''}` : cellEditable ? '双击编辑；支持从 Excel 粘贴区域' : '只读'}
                 onMouseDown={(event) => {
                   if (event.button === 0) {
                     event.preventDefault()
-                    dragging.current = true
-                    focusCell({ row: rowIndex, column: columnIndex }, event.shiftKey)
+                    selection.startDrag({ row: rowIndex, column: columnIndex }, event.shiftKey)
+                    requestAnimationFrame(() => {
+                      root.current?.querySelector<HTMLElement>(`[data-cell="${rowIndex}:${columnIndex}"]`)?.focus()
+                    })
                     onRowActivate?.(row.id)
                   }
                 }}
                 onMouseEnter={() => {
-                  if (dragging.current) {
-                    extendSelection({ row: rowIndex, column: columnIndex })
+                  if (selection.dragging.current) {
+                    selection.extendSelection({ row: rowIndex, column: columnIndex })
                   }
                 }}
-                onMouseUp={() => { dragging.current = false }}
+                onMouseUp={selection.endDrag}
                 onDoubleClick={() => cellEditable && setEditing({ row: rowIndex, column: columnIndex, value: row.values[period] ?? '' })}
               >
                 {editing?.row === rowIndex && editing.column === columnIndex ? (
