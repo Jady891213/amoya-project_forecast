@@ -3,10 +3,13 @@ import {
   Archive,
   BarChart3,
   BriefcaseBusiness,
+  Building2,
+  Calculator,
   Database,
   Download,
   HardDrive,
   Info,
+  Layers3,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
@@ -216,6 +219,10 @@ function ProjectList({ snapshot, archived, onNavigate, onArchive, onCopy, onDele
   const projects = snapshot.projects.filter((item) => archived ? item.status === 'archived' : item.status === 'calculating')
   const activeCount = snapshot.projects.filter((item) => item.status === 'calculating').length
   const archivedCount = snapshot.projects.filter((item) => item.status === 'archived').length
+  const activeProjectIds = new Set(snapshot.projects.filter((item) => item.status === 'calculating').map((item) => item.id))
+  const calculatedProjectCount = new Set(snapshot.facts.filter((item) => activeProjectIds.has(item.projectId)).map((item) => item.projectId)).size
+  const activePlanCount = snapshot.plans.filter((item) => item.status === 'active').length
+  const activeDepartmentCount = snapshot.departments.filter((item) => item.status === 'active').length
   const department = (id: string) => snapshot.departments.find((item) => item.id === id)?.name ?? '—'
   const openProject = (projectId: string) => onNavigate(`/projects/${projectId}/${archived ? 'report' : 'config'}`)
   const runAction = async (action: () => Promise<void>) => {
@@ -249,6 +256,12 @@ function ProjectList({ snapshot, archived, onNavigate, onArchive, onCopy, onDele
       </div>
     </div>
     <div className="page-body">
+      <section className="project-kpi-grid" aria-label="项目概览">
+        <article className="project-kpi-card"><span className="project-kpi-icon"><BriefcaseBusiness size={18} /></span><div><span>测算中项目</span><b>{activeCount}</b><small>另有 {archivedCount} 个归档项目</small></div></article>
+        <article className="project-kpi-card"><span className="project-kpi-icon green"><Calculator size={18} /></span><div><span>已有测算结果</span><b>{calculatedProjectCount}</b><small>{Math.max(0, activeCount - calculatedProjectCount)} 个项目待计算</small></div></article>
+        <article className="project-kpi-card"><span className="project-kpi-icon purple"><Layers3 size={18} /></span><div><span>有效测算方案</span><b>{activePlanCount}</b><small>支持同项目多方案</small></div></article>
+        <article className="project-kpi-card"><span className="project-kpi-icon amber"><Building2 size={18} /></span><div><span>启用申报部门</span><b>{activeDepartmentCount}</b><small>随主数据同步更新</small></div></article>
+      </section>
       <div className="project-list-context"><b>{archived ? '已归档项目' : '测算中项目'}</b><span>共 {archived ? archivedCount : activeCount} 个</span></div>
       <div className="data-panel">
         <table className="data-table project-list-table">

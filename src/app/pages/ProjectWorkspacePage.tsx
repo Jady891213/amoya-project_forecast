@@ -706,7 +706,7 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
     }),
   ]
   const typeLabels: Record<ModelRowItem['kind'], string> = {
-    parameter: '业务参数', revenue: '收入', cost: '成本', cash_inflow: '其他收款', cash_outflow: '其他付款', cash_plan_inflow: '收款计划', cash_plan_outflow: '付款计划',
+    parameter: '参数', revenue: '收入', cost: '成本', cash_inflow: '其他收入', cash_outflow: '其他付款', cash_plan_inflow: '收款', cash_plan_outflow: '付款',
   }
   const previewValuesByLine = new Map<string, Record<string, string>>()
   livePreview.values.forEach((item) => {
