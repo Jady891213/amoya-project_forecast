@@ -19,7 +19,7 @@ import { ProjectRepository } from '../repositories/projectRepository'
 import { ParameterRepository } from '../repositories/parameterRepository'
 import { CashRuleRepository } from '../repositories/cashRuleRepository'
 import { ForecastOverrideRepository } from '../repositories/forecastOverrideRepository'
-import { ProjectVersionRepository } from '../repositories/projectVersionRepository'
+import { ProjectPlanRepository } from '../repositories/projectPlanRepository'
 import { countPeriods, generatePeriodRange, generatePeriods } from '../../app/domain/periods'
 import {
   buildForecastConfigHash,
@@ -68,7 +68,7 @@ export class CalculationService {
   private readonly parameters: ParameterRepository
   private readonly cashRules: CashRuleRepository
   private readonly overrides: ForecastOverrideRepository
-  private readonly projectVersions: ProjectVersionRepository
+  private readonly projectPlans: ProjectPlanRepository
 
   constructor(private readonly database: DatabaseClient) {
     this.projects = new ProjectRepository(database)
@@ -78,28 +78,39 @@ export class CalculationService {
     this.parameters = new ParameterRepository(database)
     this.cashRules = new CashRuleRepository(database)
     this.overrides = new ForecastOverrideRepository(database)
-    this.projectVersions = new ProjectVersionRepository(database)
+    this.projectPlans = new ProjectPlanRepository(database)
   }
 
-  async getProjectState(projectId: string, versionId = 'working'): Promise<ForecastProjectState> {
-    const [project, lines, values, parameters, parameterValues, cashRules, overrides, latestRun] =
+  private async resolvePlanId(projectId: string, planId?: string): Promise<string> {
+    if (planId) return planId
+    const plans = await this.projectPlans.list(projectId, false)
+    const selected = plans.find((item) => item.isDefault) ?? plans[0]
+    if (!selected) throw Object.assign(new Error('项目没有可用方案'), { code: 'NOT_FOUND' })
+    return selected.planId
+  }
+
+  async getProjectState(projectId: string, requestedPlanId?: string): Promise<ForecastProjectState> {
+    const planId = await this.resolvePlanId(projectId, requestedPlanId)
+    const [project, plan, lines, values, parameters, parameterValues, cashRules, overrides, latestRun] =
       await Promise.all([
       this.projects.get(projectId),
-      this.lines.list(projectId, versionId),
-      this.values.listForProject(projectId, versionId),
-      this.parameters.list(projectId, versionId),
-      this.parameters.listValues(projectId, versionId),
-      this.cashRules.list(projectId, versionId),
-      this.overrides.list(projectId, versionId),
-      this.runs.latestSuccess(projectId, versionId),
+      this.projectPlans.get(projectId, planId),
+      this.lines.list(projectId, planId),
+      this.values.listForProject(projectId, planId),
+      this.parameters.list(projectId, planId),
+      this.parameters.listValues(projectId, planId),
+      this.cashRules.list(projectId, planId),
+      this.overrides.list(projectId, planId),
+      this.runs.latestSuccess(projectId, planId),
     ])
+    if (!project || !plan) throw Object.assign(new Error('项目或方案不存在'), { code: 'NOT_FOUND' })
     const currentHash = buildForecastConfigHash(
       lines,
       values,
       parameters,
       parameterValues,
       cashRules,
-      project,
+      { ...project, startPeriod: plan.startPeriod, endPeriod: plan.endPeriod },
       overrides,
     )
     return {
@@ -117,7 +128,7 @@ export class CalculationService {
 
   async saveDraft(
     projectId: string,
-    versionId: string,
+    planId: string,
     draft: ForecastProjectDraft | ForecastLineDraft[],
   ): Promise<ForecastProjectState> {
     const project = await this.projects.get(projectId)
@@ -125,14 +136,12 @@ export class CalculationService {
     if (project.status !== 'calculating') {
       throw new Error('已归档项目不能修改预测配置')
     }
-    if (!await this.projectVersions.get(projectId, versionId)) {
-      if (versionId !== 'working') throw new Error('项目版本不存在')
-      await this.projectVersions.ensureDefault(projectId)
-    }
-    const projectPeriods = generatePeriodRange(project.startPeriod, project.endPeriod)
+    const plan = await this.projectPlans.get(projectId, planId)
+    if (!plan) throw Object.assign(new Error('项目方案不存在'), { code: 'NOT_FOUND' })
+    const projectPeriods = generatePeriodRange(plan.startPeriod, plan.endPeriod)
     const cashPeriods = generatePeriods(
-      project.startPeriod,
-      countPeriods(project.startPeriod, project.endPeriod) + 36,
+      plan.startPeriod,
+      countPeriods(plan.startPeriod, plan.endPeriod) + 36,
     )
     const lineDrafts = Array.isArray(draft) ? draft : draft.lines
     validateDraftCoordinates(
@@ -140,42 +149,44 @@ export class CalculationService {
       cashPeriods,
       lineDrafts,
     )
-    const savedLines = await this.lines.saveProjectDraft(projectId, versionId, lineDrafts)
+    const savedLines = await this.lines.saveProjectDraft(projectId, planId, lineDrafts)
     if (!Array.isArray(draft)) {
-      await this.parameters.saveProjectDraft(projectId, versionId, draft.parameters)
+      await this.parameters.saveProjectDraft(projectId, planId, draft.parameters)
       await this.cashRules.saveProjectDraft(
         projectId,
-        versionId,
+        planId,
         savedLines,
         draft.cashRules ?? [],
       )
-      await this.overrides.saveProjectDraft(projectId, versionId, draft.overrides ?? [])
+      await this.overrides.saveProjectDraft(projectId, planId, draft.overrides ?? [])
     }
-    const revisionStatement = this.projectVersions.incrementRevisionStatement(projectId, versionId)
+    const revisionStatement = this.projectPlans.incrementRevisionStatement(projectId, planId)
     await this.database.execute(revisionStatement.sql, revisionStatement.params)
-    return this.getProjectState(projectId, versionId)
+    return this.getProjectState(projectId, planId)
   }
 
   async saveAndCalculate(
     projectId: string,
     draft: ForecastProjectDraft | ForecastLineDraft[],
-    versionId = 'working',
+    requestedPlanId?: string,
   ): Promise<SaveAndCalculateResult> {
-    await this.saveDraft(projectId, versionId, draft)
-    return this.calculateSaved(projectId, versionId)
+    const planId = await this.resolvePlanId(projectId, requestedPlanId)
+    await this.saveDraft(projectId, planId, draft)
+    return this.calculateSaved(projectId, planId)
   }
 
   async calculateSaved(
     projectId: string,
-    versionId = 'working',
+    requestedPlanId?: string,
     expectedRevision?: number,
   ): Promise<SaveAndCalculateResult> {
+    const planId = await this.resolvePlanId(projectId, requestedPlanId)
     const project = await this.projects.get(projectId)
     if (!project) throw new Error('项目不存在')
-    const projectVersion = await this.projectVersions.get(projectId, versionId)
-    if (!projectVersion) throw Object.assign(new Error('项目版本不存在'), { code: 'NOT_FOUND' })
+    const projectPlan = await this.projectPlans.get(projectId, planId)
+    if (!projectPlan) throw Object.assign(new Error('项目方案不存在'), { code: 'NOT_FOUND' })
     if (expectedRevision !== undefined) {
-      await this.projectVersions.assertRevision(projectId, versionId, expectedRevision)
+      await this.projectPlans.assertRevision(projectId, planId, expectedRevision)
     }
     const [
       lines,
@@ -187,21 +198,26 @@ export class CalculationService {
       runNumber,
     ] =
       await Promise.all([
-      this.lines.list(projectId, versionId),
-      this.values.listForProject(projectId, versionId),
-      this.parameters.list(projectId, versionId),
-      this.parameters.listValues(projectId, versionId),
-      this.cashRules.list(projectId, versionId),
-      this.overrides.list(projectId, versionId),
-      this.runs.nextRunNumber(projectId, versionId),
+      this.lines.list(projectId, planId),
+      this.values.listForProject(projectId, planId),
+      this.parameters.list(projectId, planId),
+      this.parameters.listValues(projectId, planId),
+      this.cashRules.list(projectId, planId),
+      this.overrides.list(projectId, planId),
+      this.runs.nextRunNumber(projectId, planId),
     ])
+    const calculationProject = {
+      ...project,
+      startPeriod: projectPlan.startPeriod,
+      endPeriod: projectPlan.endPeriod,
+    }
     const configHash = buildForecastConfigHash(
       lines,
       values,
       parameters,
       parameterValues,
       cashRules,
-      project,
+      calculationProject,
       overrides,
     )
     const configSnapshotJson = JSON.stringify({
@@ -214,13 +230,13 @@ export class CalculationService {
       overrides,
     })
     const compilation = compileForecast(
-      project,
+      calculationProject,
       lines,
       values,
       parameters,
       parameterValues,
       overrides,
-      versionId,
+      planId,
     )
     const cashCompilation = compileCashSchedule(
       lines,
@@ -234,21 +250,23 @@ export class CalculationService {
       id: crypto.randomUUID(),
       projectId,
       scenarioId: 'baseline',
-      versionId,
+      planId,
       runNumber,
       status: errors.length > 0 ? 'failed' : 'success',
       configHash,
       issueCount: allIssues.length,
       issues: allIssues,
       configSnapshotJson,
-      draftRevision: projectVersion.draftRevision,
+      draftRevision: projectPlan.draftRevision,
       projectSnapshotJson: JSON.stringify({
         id: project.id,
         code: project.code,
         name: project.name,
         departmentId: project.departmentId,
-        startPeriod: project.startPeriod,
-        endPeriod: project.endPeriod,
+        planId: projectPlan.planId,
+        planName: projectPlan.name,
+        startPeriod: projectPlan.startPeriod,
+        endPeriod: projectPlan.endPeriod,
         status: project.status,
       }),
       startedAt: now,
@@ -264,8 +282,8 @@ export class CalculationService {
       {
         sql: `DELETE FROM fact_metric_value
               WHERE project_id = ? AND scenario_id = 'baseline'
-                AND version_id = ?`,
-        params: [projectId, versionId],
+                AND plan_id = ?`,
+        params: [projectId, planId],
       },
     ]
     const lineById = new Map(lines.map((line) => [line.id, line]))
@@ -277,7 +295,7 @@ export class CalculationService {
           id, calculation_run_id, project_id, forecast_line_id,
           line_code, line_name, line_category,
           department_id, period, scenario_id,
-          version_id, metric_code, value_text, created_at
+          plan_id, metric_code, value_text, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         params: [
           crypto.randomUUID(),
@@ -290,7 +308,7 @@ export class CalculationService {
           compiled.departmentId,
           compiled.period,
           compiled.scenarioId,
-          compiled.versionId,
+          compiled.planId,
           compiled.metricCode,
           compiled.value,
           now,
@@ -303,7 +321,7 @@ export class CalculationService {
           id, calculation_run_id, project_id, source_line_id,
           source_line_code, source_line_name, department_id,
           source_period, settlement_period,
-          scenario_id, version_id, metric_code, amount_basis,
+          scenario_id, plan_id, metric_code, amount_basis,
           tax_rate_text, net_value_text, tax_value_text, gross_value_text,
           settlement_ratio_text, value_text, rule_method, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -318,7 +336,7 @@ export class CalculationService {
           compiled.sourcePeriod,
           compiled.settlementPeriod,
           compiled.scenarioId,
-          compiled.versionId,
+          compiled.planId,
           compiled.metricCode,
           compiled.amountBasis,
           compiled.taxRate,
@@ -365,7 +383,7 @@ export class CalculationService {
       statements.push({
         sql: `INSERT INTO fact_metric_value (
           id, project_id, department_id, period,
-          scenario_id, version_id, metric_code, value_text, source_label,
+          scenario_id, plan_id, metric_code, value_text, source_label,
           origin, dataset_id, created_at, updated_at, calculation_run_id
         ) VALUES (?, ?, ?, ?, 'baseline', ?, ?, ?,
           '预测配置计算', 'user', NULL, ?, ?, ?)`,
@@ -374,7 +392,7 @@ export class CalculationService {
           project.id,
           project.departmentId,
           aggregate.period,
-          versionId,
+          planId,
           aggregate.metricCode,
           aggregate.value.toDecimalPlaces(6).toString(),
           now,

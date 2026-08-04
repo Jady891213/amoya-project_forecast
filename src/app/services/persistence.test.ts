@@ -7,6 +7,8 @@ import { NodeSqliteClient } from '../test/nodeSqliteClient'
 import { CalculationService } from './calculationService'
 import { ProjectReportService } from './projectReportService'
 import { ReferenceDatasetService } from './referenceDatasetService'
+import { ProjectPlanRepository } from '../../server/repositories/projectPlanRepository'
+import { REFERENCE_PLANS } from '../mocks/p0ReferenceDataset'
 
 let database: NodeSqliteClient
 
@@ -27,8 +29,7 @@ describe('SQLite 当前数据结构与测算闭环', () => {
     )
     expect(tables.map((row) => row.name)).toEqual(expect.arrayContaining([
       'dim_project', 'dim_department', 'dim_period', 'dim_scenario',
-      'dim_version', 'dim_metric', 'cfg_model_line', 'cfg_model_line_value',
-      'rel_project_version',
+      'dim_plan', 'dim_metric', 'cfg_model_line', 'cfg_model_line_value',
       'fact_metric_value', 'fact_forecast_line_value',
       'fact_cash_schedule_value', 'sys_calculation_run',
     ]))
@@ -39,16 +40,11 @@ describe('SQLite 当前数据结构与测算闭环', () => {
     }
     for (const table of ['cfg_model_line', 'cfg_forecast_override', 'fact_metric_value']) {
       const columns = await database.query<{ name: string }>(`PRAGMA table_info(${table})`)
-      expect(columns.map((item) => item.name)).toContain('version_id')
+      expect(columns.map((item) => item.name)).toContain('plan_id')
     }
-    const versions = await database.query<{ id: string; name: string }>('SELECT id, name FROM dim_version ORDER BY id')
-    expect(versions).toEqual(expect.arrayContaining([
-      { id: 'working', name: '基准方案' },
-      { id: 'version_1', name: '版本 1' },
-      { id: 'version_2', name: '版本 2' },
-      { id: 'version_3', name: '版本 3' },
-    ]))
-    expect(versions).toHaveLength(4)
+    expect(tables.map((row) => row.name)).not.toContain('dim_version')
+    expect(tables.map((row) => row.name)).not.toContain('rel_project_version')
+    expect(await database.query('SELECT * FROM dim_plan')).toHaveLength(0)
     expect(await database.query('SELECT * FROM sys_schema_migration')).toHaveLength(1)
   })
 
@@ -69,7 +65,8 @@ describe('SQLite 当前数据结构与测算闭环', () => {
       ['project-hebei-cloud-game-report', 80.625212890299, 57.352178812533, 0, 0],
     ] as const
     for (const [projectId, revenue, cost, cashInflow, cashOutflow] of expectations) {
-      const report = await reports.build({ projectId, scenarioId: 'baseline', versionId: 'working' })
+      const planId = REFERENCE_PLANS.find((item) => item.projectId === projectId)!.planId
+      const report = await reports.build({ projectId, scenarioId: 'baseline', planId })
       expect(Number(report.summary.revenue) / 10_000).toBeCloseTo(revenue, 2)
       expect(Number(report.summary.cost) / 10_000).toBeCloseTo(cost, 2)
       expect(Number(report.summary.cashInflow) / 10_000).toBeCloseTo(cashInflow, 2)
@@ -85,8 +82,9 @@ describe('SQLite 当前数据结构与测算闭环', () => {
       code: 'REAL-001', name: '真实项目', departmentId: department.id,
       startPeriod: '2026-01', endPeriod: '2026-02',
     })
+    const plan = await new ProjectPlanRepository(database).create(project.id, { name: '默认方案', startPeriod: '2026-01', endPeriod: '2026-02' }, true)
     const calculation = new CalculationService(database)
-    await calculation.saveDraft(project.id, 'working', {
+    await calculation.saveDraft(project.id, plan.planId, {
       lines: [{
         id: 'line-revenue', code: 'LINE-001', name: '会员收入',
         category: 'revenue', forecastMethod: 'formula',
@@ -99,10 +97,10 @@ describe('SQLite 当前数据结构与测算闭环', () => {
       parameters: [], cashRules: [], overrides: [],
     })
     expect(await new FactRepository(database).list(project.id)).toHaveLength(0)
-    const result = await calculation.calculateSaved(project.id)
+    const result = await calculation.calculateSaved(project.id, plan.planId)
     expect(result.success).toBe(true)
     const report = await new ProjectReportService(database).build({
-      projectId: project.id, scenarioId: 'baseline', versionId: 'working',
+      projectId: project.id, scenarioId: 'baseline', planId: plan.planId,
     })
     expect(report.summary.revenue).toBe('4800')
   })
@@ -113,6 +111,7 @@ describe('SQLite 当前数据结构与测算闭环', () => {
       code: 'CASH-001', name: '现金一拖二项目', departmentId: department.id,
       startPeriod: '2026-01', endPeriod: '2026-02',
     })
+    const plan = await new ProjectPlanRepository(database).create(project.id, { name: '默认方案', startPeriod: '2026-01', endPeriod: '2026-02' }, true)
     const calculation = new CalculationService(database)
     const result = await calculation.saveAndCalculate(project.id, {
       lines: [
@@ -134,9 +133,9 @@ describe('SQLite 当前数据结构与测算闭环', () => {
         delayMonths: 0, installments: [], monthlyValues: { '2026-02': '50', '2026-03': '150' },
       }],
       overrides: [],
-    })
+    }, plan.planId)
     expect(result.success).toBe(true)
-    const report = await new ProjectReportService(database).build({ projectId: project.id, scenarioId: 'baseline', versionId: 'working' })
+    const report = await new ProjectReportService(database).build({ projectId: project.id, scenarioId: 'baseline', planId: plan.planId })
     expect(report.summary.revenue).toBe('200')
     expect(report.summary.cashInflow).toBe('220')
   })

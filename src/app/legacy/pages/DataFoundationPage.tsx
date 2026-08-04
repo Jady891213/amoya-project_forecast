@@ -15,14 +15,14 @@ import { DepartmentDialog } from '../../ui/DepartmentDialog'
 import { formatDateTime } from '../../ui/formatters'
 import { PageBreadcrumbs } from '../../components/PageBreadcrumbs'
 
-type DataTab = 'projects' | 'departments' | 'periods' | 'scenarios' | 'versions'
+type DataTab = 'projects' | 'departments' | 'periods' | 'scenarios' | 'plans'
 
 const tabs = [
   { key: 'projects' as const, label: '项目', note: '项目唯一主表，只读查看', icon: PackageOpen },
   { key: 'departments' as const, label: '部门', note: '可新增、编辑与停用', icon: Building2 },
   { key: 'periods' as const, label: '期间', note: '2020-01 至 2035-12', icon: CalendarRange },
   { key: 'scenarios' as const, label: '场景', note: '平台级场景维度', icon: GitBranch },
-  { key: 'versions' as const, label: '版本', note: '平台级版本维度', icon: Milestone },
+  { key: 'plans' as const, label: '方案', note: '平台级方案维度', icon: Milestone },
 ]
 
 interface Props {
@@ -60,7 +60,7 @@ export function DataFoundationPage({ database, snapshot, onRefresh, onOpenReport
         <div className="page-head-main">
           <PageBreadcrumbs items={[{ label: '平台配置' }, { label: '主数据管理' }]} />
           <h1>主数据管理</h1>
-          <p>只维护项目、部门、期间、场景和版本；事实与计算结果回到具体项目中查看。</p>
+          <p>只维护项目、部门、期间、场景和方案；事实与计算结果回到具体项目中查看。</p>
         </div>
       </header>
       <div className="page-body">
@@ -68,7 +68,7 @@ export function DataFoundationPage({ database, snapshot, onRefresh, onOpenReport
           <div className="master-summary-item"><span>项目</span><b>{snapshot.projects.length}</b><small>dim_project</small></div>
           <div className="master-summary-item"><span>部门</span><b>{snapshot.departments.length}</b><small>dim_department</small></div>
           <div className="master-summary-item"><span>期间</span><b>{snapshot.periods.length}</b><small>dim_period</small></div>
-          <div className="master-summary-item"><span>场景 / 版本</span><b>{snapshot.scenarios.length} / {snapshot.versions.length}</b><small>平台级分析维度</small></div>
+          <div className="master-summary-item"><span>场景 / 方案</span><b>{snapshot.scenarios.length} / {snapshot.plans.length}</b><small>平台级分析维度</small></div>
         </div>
         {pageError && <div className="page-alert">{pageError}</div>}
         <section className="master-layout">
@@ -154,11 +154,11 @@ export function DataFoundationPage({ database, snapshot, onRefresh, onOpenReport
                   ))}</tbody>
                 </table>
               )}
-              {activeTab === 'versions' && (
+              {activeTab === 'plans' && (
                 <table>
-                  <thead><tr><th>版本编码</th><th>版本名称</th><th>类型</th><th>可修改</th><th>维护方式</th></tr></thead>
-                  <tbody>{snapshot.versions.map((version) => (
-                    <tr key={version.id}><td>{version.code}</td><td className="strong-cell">{version.name}</td><td>{version.status === 'working' ? '工作版本' : '只读快照'}</td><td>{version.isMutable ? '是' : '否'}</td><td>系统内置</td></tr>
+                  <thead><tr><th>方案ID</th><th>方案名称</th><th>期间</th><th>状态</th></tr></thead>
+                  <tbody>{snapshot.plans.map((plan) => (
+                    <tr key={plan.planId}><td>{plan.planId}</td><td className="strong-cell">{plan.name}</td><td>{plan.startPeriod} 至 {plan.endPeriod}</td><td>{plan.status === 'active' ? '有效' : '已归档'}</td></tr>
                   ))}</tbody>
                 </table>
               )}

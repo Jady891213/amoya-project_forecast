@@ -29,7 +29,7 @@ describe('统一 Excel 报告', () => {
     report.overrides = [{
       id: 'override-test',
       projectId: report.project.id,
-      versionId: report.version.id,
+      planId: report.plan.planId,
       forecastLineId: line.lineId,
       period,
       originalValue,

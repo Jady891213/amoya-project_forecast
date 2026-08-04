@@ -3,15 +3,17 @@ import type {
   CalculationRun,
   Department,
   DepartmentInput,
-  CreateProjectVersionRequest,
+  CreateProjectPlanRequest,
   MetricDefinition,
   Project,
   ProjectInput,
   ProjectReportDto,
   PivotRequest,
   PivotResponse,
+  PivotMetadata,
+  CreateProjectInput,
   ProjectWorkspace,
-  ProjectVersion,
+  ProjectPlan,
   SaveProjectWorkspaceRequest,
 } from '../../shared/api'
 import type { AppSnapshot } from '../state/types'
@@ -67,15 +69,15 @@ export class ApiClient {
     return this.request('/api/bootstrap')
   }
 
-  createProject(input: ProjectInput): Promise<ProjectWorkspace> {
+  createProject(input: CreateProjectInput): Promise<ProjectWorkspace> {
     return this.request('/api/projects', {
       method: 'POST',
       body: JSON.stringify(input),
     })
   }
 
-  getWorkspace(projectId: string, versionId?: string): Promise<ProjectWorkspace> {
-    const query = versionId ? `?versionId=${encodeURIComponent(versionId)}` : ''
+  getWorkspace(projectId: string, planId?: string): Promise<ProjectWorkspace> {
+    const query = planId ? `?planId=${encodeURIComponent(planId)}` : ''
     return this.request(`/api/projects/${encodeURIComponent(projectId)}/workspace${query}`)
   }
 
@@ -86,14 +88,14 @@ export class ApiClient {
     })
   }
 
-  calculate(projectId: string, versionId: string, expectedRevision: number): Promise<{
+  calculate(projectId: string, planId: string, expectedRevision: number): Promise<{
     success: boolean
     run: CalculationRun
     issues: Array<{ severity: 'error' | 'warning'; message: string }>
   }> {
     return this.request(`/api/projects/${encodeURIComponent(projectId)}/calculations`, {
       method: 'POST',
-      body: JSON.stringify({ versionId, expectedRevision }),
+      body: JSON.stringify({ planId, expectedRevision }),
     })
   }
 
@@ -109,16 +111,28 @@ export class ApiClient {
     return this.request(`/api/projects/${encodeURIComponent(projectId)}/copy`, { method: 'POST' })
   }
 
-  createVersion(projectId: string, request: CreateProjectVersionRequest): Promise<ProjectWorkspace> {
-    return this.request(`/api/projects/${encodeURIComponent(projectId)}/versions`, {
+  listPlans(projectId: string): Promise<ProjectPlan[]> {
+    return this.request(`/api/projects/${encodeURIComponent(projectId)}/plans`)
+  }
+
+  createPlan(projectId: string, request: CreateProjectPlanRequest): Promise<ProjectWorkspace> {
+    return this.request(`/api/projects/${encodeURIComponent(projectId)}/plans`, {
       method: 'POST', body: JSON.stringify(request),
     })
   }
 
-  updateVersion(projectId: string, versionId: string, input: { status: ProjectVersion['status'] }): Promise<ProjectVersion> {
-    return this.request(`/api/projects/${encodeURIComponent(projectId)}/versions/${encodeURIComponent(versionId)}`, {
+  updatePlan(projectId: string, planId: string, input: Partial<Pick<ProjectPlan, 'name' | 'startPeriod' | 'endPeriod' | 'isDefault'>>): Promise<ProjectPlan> {
+    return this.request(`/api/projects/${encodeURIComponent(projectId)}/plans/${encodeURIComponent(planId)}`, {
       method: 'PUT', body: JSON.stringify(input),
     })
+  }
+
+  archivePlan(projectId: string, planId: string): Promise<ProjectPlan> {
+    return this.request(`/api/projects/${encodeURIComponent(projectId)}/plans/${encodeURIComponent(planId)}/archive`, { method: 'POST' })
+  }
+
+  restorePlan(projectId: string, planId: string): Promise<ProjectPlan> {
+    return this.request(`/api/projects/${encodeURIComponent(projectId)}/plans/${encodeURIComponent(planId)}/restore`, { method: 'POST' })
   }
 
   deleteProject(projectId: string): Promise<void> {
@@ -150,10 +164,12 @@ export class ApiClient {
     })
   }
 
-  report(projectId: string, runId?: string, versionId?: string): Promise<ProjectReportDto> {
+  pivotMetadata(): Promise<PivotMetadata> { return this.request('/api/facts/pivot/metadata') }
+
+  report(projectId: string, runId?: string, planId?: string): Promise<ProjectReportDto> {
     const query = new URLSearchParams()
     if (runId) query.set('runId', runId)
-    if (versionId) query.set('versionId', versionId)
+    if (planId) query.set('planId', planId)
     const suffix = query.size ? `?${query}` : ''
     return this.request(`/api/projects/${encodeURIComponent(projectId)}/report${suffix}`)
   }
@@ -171,10 +187,10 @@ export class ApiClient {
     URL.revokeObjectURL(link.href)
   }
 
-  async exportReport(projectId: string, runId?: string, versionId?: string): Promise<void> {
+  async exportReport(projectId: string, runId?: string, planId?: string): Promise<void> {
     const params = new URLSearchParams()
     if (runId) params.set('runId', runId)
-    if (versionId) params.set('versionId', versionId)
+    if (planId) params.set('planId', planId)
     const query = params.size ? `?${params}` : ''
     const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/export.xlsx${query}`, {
       headers: { 'x-amoya-token': this.token },

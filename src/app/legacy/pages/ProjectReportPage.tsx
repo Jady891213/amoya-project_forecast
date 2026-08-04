@@ -139,12 +139,12 @@ export function ProjectReportPage({
     [database],
   )
   const scenario = snapshot.scenarios.find((item) => item.isDefault)
-  const version = snapshot.versions.find((item) => item.status === 'working')
+  const plan = snapshot.plans.find((item) => item.projectId === requestedProjectId && item.isDefault && item.status === 'active')
 
   useEffect(() => {
     let cancelled = false
     async function load() {
-      if (!scenario || !version) {
+      if (!scenario || !plan) {
         setError('当前项目缺少基准场景或工作版')
         return
       }
@@ -154,9 +154,9 @@ export function ProjectReportPage({
         const result = await service.build({
           projectId: requestedProjectId,
           scenarioId: scenario.id,
-          versionId: version.id,
+          planId: plan.planId,
         })
-        const state = await calculation.getProjectState(requestedProjectId)
+        const state = await calculation.getProjectState(requestedProjectId, plan.planId)
         const breakdown = state.latestRun
           ? await lineValues.listBreakdown(state.latestRun.id)
           : []
@@ -184,7 +184,7 @@ export function ProjectReportPage({
     requestedProjectId,
     scenario,
     service,
-    version,
+    plan,
   ])
 
   if (error) return <div className="page-alert workspace-alert">{error}</div>
@@ -218,12 +218,12 @@ export function ProjectReportPage({
           </>
         )}
         <span className="readonly-mark">{report.scenario.name}</span>
-        <span className="readonly-mark">{report.version.name}</span>
+        <span className="readonly-mark">{report.plan.name}</span>
       </div>
       <div className="project-facts">
         <div><span>部门</span><strong>{report.department?.name ?? '未找到部门'}</strong></div>
         <div><span>场景</span><strong>{report.scenario.name}</strong></div>
-        <div><span>版本</span><strong>{report.version.name}</strong></div>
+        <div><span>方案</span><strong>{report.plan.name}</strong></div>
         <div><span>基础事实</span><strong>{report.factCount} 条</strong></div>
         <div>
           <span>经营期</span>

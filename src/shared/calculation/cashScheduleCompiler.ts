@@ -178,7 +178,7 @@ export function compileCashSchedule(
           sourcePeriod: period,
           settlementPeriod: period,
           scenarioId: coordinates.scenarioId,
-          versionId: coordinates.versionId,
+          planId: coordinates.planId,
           metricCode: line.category === 'revenue' ? 'cash_inflow' : 'cash_outflow',
           amountBasis: line.amountBasis,
           taxRate: line.taxRate,
@@ -225,7 +225,7 @@ export function compileCashSchedule(
           sourcePeriod: source.period,
           settlementPeriod: addMonths(source.period, item.offsetMonths),
           scenarioId: source.scenarioId,
-          versionId: source.versionId,
+          planId: source.planId,
           metricCode:
             line.category === 'revenue' ? 'cash_inflow' : 'cash_outflow',
           amountBasis: line.amountBasis,

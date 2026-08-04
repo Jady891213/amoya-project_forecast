@@ -55,7 +55,7 @@ interface Props {
   api: ApiClient
   snapshot: AppSnapshot
   projectId: string
-  versionId?: string
+  planId?: string
   view: WorkspaceView
   onNavigate: (path: string) => void
   onRefresh: () => Promise<void>
@@ -169,7 +169,7 @@ function lineGridValues(line: ForecastLineDraft, periods: string[]) {
   return {}
 }
 
-export function ProjectWorkspacePage({ api, snapshot, projectId, versionId, view, onNavigate, onRefresh, onDirtyChange }: Props) {
+export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, onNavigate, onRefresh, onDirtyChange }: Props) {
   const dialog = useAppDialog()
   const [workspace, setWorkspace] = useState<ProjectWorkspace>()
   const [projectDraft, setProjectDraft] = useState<ProjectInput>()
@@ -188,6 +188,8 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, versionId, view
   const [createMenu, setCreateMenu] = useState<'profit' | 'cash' | ''>('')
   const [versionMenuOpen, setVersionMenuOpen] = useState(false)
   const [versionMemberId, setVersionMemberId] = useState('')
+  const [planManageOpen, setPlanManageOpen] = useState(false)
+  const [planNameDraft, setPlanNameDraft] = useState('')
   const [debouncedFormulaExpressions, setDebouncedFormulaExpressions] = useState<Record<string, string>>({})
 
   const markDirty = useCallback(() => {
@@ -202,8 +204,8 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, versionId, view
       code: next.project.code,
       name: next.project.name,
       departmentId: next.project.departmentId,
-      startPeriod: next.project.startPeriod,
-      endPeriod: next.project.endPeriod,
+      startPeriod: next.currentPlan.startPeriod,
+      endPeriod: next.currentPlan.endPeriod,
     })
     const nextLines = stateToLineDrafts(next)
     const nextParameters = stateToParameterDrafts(next)
@@ -227,18 +229,18 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, versionId, view
   useEffect(() => {
     let cancelled = false
     setWorkspace(undefined)
-    void api.getWorkspace(projectId, versionId).then((result) => {
+    void api.getWorkspace(projectId, planId).then((result) => {
       if (!cancelled) hydrate(result)
     }).catch((reason) => {
       if (!cancelled) setMessage(reason instanceof Error ? reason.message : '项目加载失败')
     })
     return () => { cancelled = true }
-  }, [api, hydrate, projectId, versionId])
+  }, [api, hydrate, projectId, planId])
 
   useEffect(() => {
     if (!workspace) return
     let cancelled = false
-    void api.report(projectId, view === 'report' && reportRunId ? reportRunId : undefined, workspace.currentVersion.versionId).then((result) => {
+    void api.report(projectId, view === 'report' && reportRunId ? reportRunId : undefined, workspace.currentPlan.planId).then((result) => {
       if (!cancelled) setReport(result)
     }).catch((reason) => {
       if (!cancelled) setMessage(reason instanceof Error ? reason.message : '结果加载失败')
@@ -292,11 +294,11 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, versionId, view
     if (!workspace || !projectDraft) return { values: [], cashValues: [], issues: [] }
     try {
       return previewForecastDraft(
-        { ...workspace.project, ...projectDraft },
+        { ...workspace.project, ...projectDraft, startPeriod: projectDraft.startPeriod, endPeriod: projectDraft.endPeriod },
         normalizedForecast(lines.map((line) => line.forecastMethod === 'formula'
           ? { ...line, formulaExpression: debouncedFormulaExpressions[line.id ?? line.code ?? line.name] ?? line.formulaExpression }
           : line)),
-        workspace.currentVersion.versionId,
+        workspace.currentPlan.planId,
       )
     } catch (reason) {
       return {
@@ -321,9 +323,13 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, versionId, view
     setMessage('')
     try {
       const saved = await api.saveWorkspace(projectId, {
-        versionId: workspace.currentVersion.versionId,
+        planId: workspace.currentPlan.planId,
         expectedRevision: workspace.draftRevision,
-        draft: { project: projectDraft, forecast: normalizedForecast() },
+        draft: {
+          project: projectDraft,
+          plan: { name: workspace.currentPlan.name, startPeriod: projectDraft.startPeriod, endPeriod: projectDraft.endPeriod },
+          forecast: normalizedForecast(),
+        },
       })
       hydrate(saved)
       await onRefresh()
@@ -345,16 +351,16 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, versionId, view
     setBusy(true); setMessage('')
     try {
       const saved = dirty ? await save(false) : workspace
-      const result = await api.calculate(projectId, saved.currentVersion.versionId, saved.draftRevision)
+      const result = await api.calculate(projectId, saved.currentPlan.planId, saved.draftRevision)
       if (!result.success) {
         setMessage(`计算失败：${result.issues.map((item) => item.message).slice(0, 3).join('；')}`)
         return
       }
-      const refreshed = await api.getWorkspace(projectId, saved.currentVersion.versionId)
+      const refreshed = await api.getWorkspace(projectId, saved.currentPlan.planId)
       hydrate(refreshed)
-      setReport(await api.report(projectId, undefined, saved.currentVersion.versionId))
+      setReport(await api.report(projectId, undefined, saved.currentPlan.planId))
       setMessage(`计算完成：RUN-${String(result.run.runNumber).padStart(4, '0')}`)
-      onNavigate(`/projects/${projectId}/calculation?versionId=${encodeURIComponent(saved.currentVersion.versionId)}`)
+      onNavigate(`/projects/${projectId}/calculation?planId=${encodeURIComponent(saved.currentPlan.planId)}`)
     } catch (reason) {
       setMessage(reason instanceof Error ? reason.message : '计算失败')
     } finally { setBusy(false) }
@@ -362,21 +368,68 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, versionId, view
 
   async function createVersion(copyCurrent: boolean) {
     if (!workspace) return
-    if (!versionMemberId) { setMessage('请选择要启用的版本'); return }
+    if (!versionMemberId.trim()) { setMessage('请输入方案名称'); return }
     setBusy(true)
     try {
       const source = dirty ? await save(false) : workspace
-      const created = await api.createVersion(projectId, {
-        versionId: versionMemberId,
-        copyFromVersionId: copyCurrent ? source.currentVersion.versionId : undefined,
+      const created = await api.createPlan(projectId, {
+        name: versionMemberId.trim(),
+        startPeriod: source.currentPlan.startPeriod,
+        endPeriod: source.currentPlan.endPeriod,
+        copyFromPlanId: copyCurrent ? source.currentPlan.planId : undefined,
       })
       await onRefresh()
       setVersionMenuOpen(false)
       setVersionMemberId('')
-      onNavigate(`/projects/${projectId}/${view}?versionId=${encodeURIComponent(created.currentVersion.versionId)}`)
+      onNavigate(`/projects/${projectId}/${view}?planId=${encodeURIComponent(created.currentPlan.planId)}`)
     } catch (reason) {
-      setMessage(reason instanceof Error ? reason.message : '启用版本失败')
+      setMessage(reason instanceof Error ? reason.message : '新建方案失败')
     } finally { setBusy(false) }
+  }
+
+  async function savePlanSettings() {
+    if (!workspace || !planNameDraft.trim()) return
+    setBusy(true)
+    try {
+      await api.updatePlan(projectId, workspace.currentPlan.planId, {
+        name: planNameDraft.trim(),
+        startPeriod: projectDraft?.startPeriod,
+        endPeriod: projectDraft?.endPeriod,
+      })
+      setPlanManageOpen(false)
+      await onRefresh()
+      hydrate(await api.getWorkspace(projectId, workspace.currentPlan.planId))
+      setMessage('方案信息已更新')
+    } catch (reason) { setMessage(reason instanceof Error ? reason.message : '方案更新失败') }
+    finally { setBusy(false) }
+  }
+
+  async function setDefaultPlan() {
+    if (!workspace) return
+    setBusy(true)
+    try {
+      await api.updatePlan(projectId, workspace.currentPlan.planId, { isDefault: true })
+      hydrate(await api.getWorkspace(projectId, workspace.currentPlan.planId)); await onRefresh(); setMessage('已设为默认方案')
+    } catch (reason) { setMessage(reason instanceof Error ? reason.message : '默认方案设置失败') }
+    finally { setBusy(false) }
+  }
+
+  async function archiveCurrentPlan() {
+    if (!workspace || !await dialog.confirm({ title: '归档当前方案？', message: '方案配置和历史结果会保留，可在方案管理中恢复。', tone: 'warning', confirmLabel: '归档方案' })) return
+    setBusy(true)
+    try {
+      await api.archivePlan(projectId, workspace.currentPlan.planId)
+      const next = (await api.getWorkspace(projectId)).currentPlan
+      await onRefresh(); onNavigate(planPath(view, next.planId))
+    } catch (reason) { setMessage(reason instanceof Error ? reason.message : '方案归档失败') }
+    finally { setBusy(false) }
+  }
+
+  async function restoreArchivedPlan(targetPlanId: string) {
+    setBusy(true)
+    try { await api.restorePlan(projectId, targetPlanId); await onRefresh(); onNavigate(planPath(view, targetPlanId)) }
+    catch (reason) { setMessage(reason instanceof Error ? reason.message : '方案恢复失败') }
+    finally { setBusy(false) }
   }
 
   function patchLine(id: string, patch: Partial<ForecastLineDraft>) {
@@ -560,12 +613,9 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, versionId, view
         ? workspace.forecast.isResultCurrent ? '结果与当前配置一致' : '已保存，等待计算'
         : '已保存，等待计算'
   const departmentName = snapshot.departments.find((item) => item.id === projectDraft.departmentId)?.name ?? '未选择申报部门'
-  const currentVersionId = workspace.currentVersion.versionId
-  const availableVersionMembers = snapshot.versions.filter((member) =>
-    member.id !== 'working' && !workspace.projectVersions.some((item) => item.versionId === member.id),
-  )
-  const versionPath = (targetView: WorkspaceView, targetVersionId = currentVersionId) =>
-    `/projects/${projectId}/${targetView}?versionId=${encodeURIComponent(targetVersionId)}`
+  const currentPlanId = workspace.currentPlan.planId
+  const planPath = (targetView: WorkspaceView, targetVersionId = currentPlanId) =>
+    `/projects/${projectId}/${targetView}?planId=${encodeURIComponent(targetVersionId)}`
   const categoryOrder: ForecastCategory[] = ['revenue', 'cost', 'cash_inflow', 'cash_outflow']
   const orderedLines = [...lines].sort((left, right) => {
     const categoryDifference = categoryOrder.indexOf(left.category) - categoryOrder.indexOf(right.category)
@@ -613,9 +663,9 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, versionId, view
         <PageBreadcrumbs back={{ label: '返回', onClick: () => onNavigate('/projects') }} items={[{ label: projectDraft.name }]} />
       </div>
       <div className="workspace-tabs">
-        <button className={view === 'config' ? 'workspace-tab active' : 'workspace-tab'} onClick={() => onNavigate(versionPath('config'))}><Calculator size={14} />项目配置</button>
-        <button className={view === 'calculation' ? 'workspace-tab active' : 'workspace-tab'} onClick={() => onNavigate(versionPath('calculation'))}><TableProperties size={14} />计算底表</button>
-        <button className={view === 'report' ? 'workspace-tab active' : 'workspace-tab'} onClick={() => onNavigate(versionPath('report'))}><FileChartColumn size={14} />项目报告</button>
+        <button className={view === 'config' ? 'workspace-tab active' : 'workspace-tab'} onClick={() => onNavigate(planPath('config'))}><Calculator size={14} />项目配置</button>
+        <button className={view === 'calculation' ? 'workspace-tab active' : 'workspace-tab'} onClick={() => onNavigate(planPath('calculation'))}><TableProperties size={14} />计算底表</button>
+        <button className={view === 'report' ? 'workspace-tab active' : 'workspace-tab'} onClick={() => onNavigate(planPath('report'))}><FileChartColumn size={14} />项目报告</button>
       </div>
       <div className="workspace-head-actions">
         <span className={`workspace-save-state ${dirty ? 'dirty' : ''}`}>{statusText}</span>
@@ -625,20 +675,29 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, versionId, view
       </div>
     </div>
     <div className="project-version-bar">
-      <span className="project-version-label">测算版本</span>
+      <span className="project-version-label">测算方案</span>
       <div className="project-version-tabs">
-        {workspace.projectVersions.filter((item) => item.status === 'active').map((item) => <button
-          key={item.versionId}
-          className={item.versionId === currentVersionId ? 'active' : ''}
-          onClick={() => onNavigate(versionPath(view, item.versionId))}
+        {workspace.projectPlans.filter((item) => item.status === 'active').map((item) => <button
+          key={item.planId}
+          className={item.planId === currentPlanId ? 'active' : ''}
+          onClick={() => onNavigate(planPath(view, item.planId))}
         >{item.name}{item.isDefault && <small>默认</small>}</button>)}
       </div>
       <div className="project-version-create">
-        <button className="btn" disabled={!availableVersionMembers.length} onClick={() => { setVersionMenuOpen(true); setVersionMemberId(availableVersionMembers[0]?.id ?? '') }}><Plus size={14} />{availableVersionMembers.length ? '添加版本' : '版本已全部启用'}</button>
+        <button className="btn" onClick={() => { setVersionMenuOpen(true); setVersionMemberId(`方案 ${workspace.projectPlans.length + 1}`) }}><Plus size={14} />新增方案</button>
         {versionMenuOpen && <div className="project-version-popover">
-          <label>选择预置版本<select autoFocus value={versionMemberId} onChange={(event) => setVersionMemberId(event.target.value)}>{availableVersionMembers.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label>
-          <p>版本成员由平台统一维护，当前项目只选择是否启用。</p>
-          <div><button className="btn" onClick={() => setVersionMenuOpen(false)}>取消</button><button className="btn" disabled={busy || !versionMemberId} onClick={() => void createVersion(false)}>空白启用</button><button className="btn primary" disabled={busy || !versionMemberId} onClick={() => void createVersion(true)}><Copy size={13} />复制当前配置</button></div>
+          <label>方案名称<input autoFocus value={versionMemberId} onChange={(event) => setVersionMemberId(event.target.value)} /></label>
+          <p>可空白新建，也可复制当前方案的参数与预测项。</p>
+          <div><button className="btn" onClick={() => setVersionMenuOpen(false)}>取消</button><button className="btn" disabled={busy || !versionMemberId.trim()} onClick={() => void createVersion(false)}>空白新建</button><button className="btn primary" disabled={busy || !versionMemberId.trim()} onClick={() => void createVersion(true)}><Copy size={13} />复制当前方案</button></div>
+        </div>}
+      </div>
+      <div className="project-version-create">
+        <button className="btn" onClick={() => { setPlanManageOpen((current) => !current); setPlanNameDraft(workspace.currentPlan.name) }}><Settings size={14} />方案管理</button>
+        {planManageOpen && <div className="project-version-popover plan-manage-popover">
+          <label>方案名称<input value={planNameDraft} onChange={(event) => setPlanNameDraft(event.target.value)} /></label>
+          <div className="plan-manage-summary"><span>期间</span><b>{workspace.currentPlan.startPeriod} 至 {workspace.currentPlan.endPeriod}</b></div>
+          {workspace.projectPlans.some((item) => item.status === 'archived') && <div className="archived-plan-list"><span>已归档方案</span>{workspace.projectPlans.filter((item) => item.status === 'archived').map((item) => <button key={item.planId} onClick={() => void restoreArchivedPlan(item.planId)}>{item.name} · 恢复</button>)}</div>}
+          <div><button className="btn" disabled={workspace.currentPlan.isDefault || busy} onClick={() => void setDefaultPlan()}>设为默认</button><button className="btn danger-action" disabled={workspace.currentPlan.isDefault || busy} onClick={() => void archiveCurrentPlan()}>归档</button><button className="btn primary" disabled={!planNameDraft.trim() || busy} onClick={() => void savePlanSettings()}>保存</button></div>
         </div>}
       </div>
       <span className="project-version-context">场景固定：基准场景</span>
@@ -754,7 +813,7 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, versionId, view
       report={report}
       selectedRunId={reportRunId}
       onSelectRun={setReportRunId}
-      onExport={() => void api.exportReport(projectId, report?.calculationRun?.id, workspace.currentVersion.versionId).catch((reason) => setMessage(reason instanceof Error ? reason.message : 'Excel 导出失败'))}
+      onExport={() => void api.exportReport(projectId, report?.calculationRun?.id, workspace.currentPlan.planId).catch((reason) => setMessage(reason instanceof Error ? reason.message : 'Excel 导出失败'))}
     />}
   </main>
 }
@@ -899,7 +958,7 @@ function ProjectReportView({ report, selectedRunId, onSelectRun, onExport }: { r
   if (!report?.hasFacts) return <div className="empty-report-card"><h2>当前项目尚无报告结果</h2><p>报告只读取成功计算批次。</p></div>
   return <div className="workspace-view formal-report">
     <div className="formal-report-toolbar no-print"><div><b>项目测算报告</b><span>{report.calculationRun ? `RUN-${String(report.calculationRun.runNumber).padStart(4, '0')} · 修订 R${report.calculationRun.draftRevision}` : ''}</span></div><span className="spacer" /><label>成功批次<select value={selectedRunId || report.calculationRun?.id || ''} onChange={(event) => onSelectRun(event.target.value)}>{report.availableRuns.map((run) => <option key={run.id} value={run.id}>RUN-{String(run.runNumber).padStart(4, '0')} · {new Date(run.completedAt).toLocaleString('zh-CN')}</option>)}</select></label><button className="btn" onClick={onExport}><Download size={14} />导出 Excel</button><button className="btn" onClick={() => window.print()}><Printer size={14} />打印 / PDF</button></div>
-    <section className="report-cover"><div><span>项目测算报告</span><h1>{report.projectSnapshot.name}</h1><p>{report.projectSnapshot.code || '无项目编码'} · {report.department?.name || '未指定申报部门'} · {report.scenario.name} · {report.version.name}</p></div><dl><div><dt>经营期间</dt><dd>{report.projectSnapshot.startPeriod}—{report.operationEndPeriod}</dd></div><div><dt>计算批次</dt><dd>{report.calculationRun ? `RUN-${String(report.calculationRun.runNumber).padStart(4, '0')}` : '—'}</dd></div><div><dt>结果状态</dt><dd className={report.isBehindDraft ? 'risk' : 'good'}>{report.isBehindDraft ? '落后于当前配置' : '与当前配置一致'}</dd></div></dl></section>
+    <section className="report-cover"><div><span>项目测算报告</span><h1>{report.projectSnapshot.name}</h1><p>{report.projectSnapshot.code || '无项目编码'} · {report.department?.name || '未指定申报部门'} · {report.scenario.name} · {report.plan.name}</p></div><dl><div><dt>经营期间</dt><dd>{report.plan.startPeriod}—{report.operationEndPeriod}</dd></div><div><dt>计算批次</dt><dd>{report.calculationRun ? `RUN-${String(report.calculationRun.runNumber).padStart(4, '0')}` : '—'}</dd></div><div><dt>结果状态</dt><dd className={report.isBehindDraft ? 'risk' : 'good'}>{report.isBehindDraft ? '落后于当前配置' : '与当前配置一致'}</dd></div></dl></section>
     <section className="metrics-strip"><article><span>收入</span><strong>{formatWan(report.summary.revenue)} 万元</strong></article><article><span>成本</span><strong>{formatWan(report.summary.cost)} 万元</strong></article><article><span>毛利</span><strong>{formatWan(report.summary.grossProfit)} 万元</strong></article><article><span>毛利率</span><strong>{formatPercent(report.summary.grossMargin)}</strong></article><article><span>最大垫资</span><strong>{report.hasCashFacts ? `${formatWan(report.summary.maximumFunding)} 万元` : '暂无现金数据'}</strong></article><article><span>现金转正</span><strong>{report.hasCashFacts ? report.summary.cashPositiveLabel : '暂无现金数据'}</strong></article></section>
     <section className="report-section report-narrative"><h2>1. 测算概况与口径</h2>{report.measurementSummary.map((item) => <p key={item}>{item}</p>)}{report.riskNotes.map((item) => <p className="risk" key={item}>风险提示：{item}</p>)}</section>
     <section className="report-section"><h2>2. 损益、构成与现金趋势</h2><Suspense fallback={<div className="report-chart-loading">正在生成图表…</div>}><ReportCharts report={report} /></Suspense></section>

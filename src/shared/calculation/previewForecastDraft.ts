@@ -3,13 +3,13 @@ import type {
   CashRule,
   ForecastLine,
   ForecastProjectDraft,
-  Project,
+  ProjectCalculationContext,
   ProjectParameter,
 } from '../domain/types'
 import { compileCashSchedule } from './cashScheduleCompiler'
 import { compileForecast } from './forecastCompiler'
 
-export function previewForecastDraft(project: Project, draft: ForecastProjectDraft, versionId = 'working') {
+export function previewForecastDraft(project: ProjectCalculationContext, draft: ForecastProjectDraft, planId: string) {
   const now = new Date(0).toISOString()
   const lines: ForecastLine[] = draft.lines.map((line, index) => ({
     id: line.id ?? line.code ?? `preview-line-${index + 1}`,
@@ -79,7 +79,7 @@ export function previewForecastDraft(project: Project, draft: ForecastProjectDra
     (draft.overrides ?? []).map((item) => ({
       id: item.id ?? `${item.forecastLineId}:${item.period}`,
       projectId: project.id,
-      versionId,
+      planId,
       forecastLineId: item.forecastLineId,
       period: item.period,
       originalValue: item.originalValue,
@@ -87,7 +87,7 @@ export function previewForecastDraft(project: Project, draft: ForecastProjectDra
       reason: item.reason,
       updatedAt: now,
     })),
-    versionId,
+    planId,
   )
   const lineByCode = new Map(lines.map((line) => [line.code, line]))
   const cashRules: CashRule[] = (draft.cashRules ?? []).flatMap((rule, index) => {

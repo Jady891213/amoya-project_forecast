@@ -10,17 +10,18 @@ export type {
   MetricDefinition,
   PeriodDimension,
   Project,
-  ProjectVersion,
+  ProjectPlan,
   ProjectInput,
+  CreateProjectInput,
   ProjectReportDto,
   ProjectWorkspace,
   ProjectWorkspaceDraft,
   SaveProjectWorkspaceRequest,
   Scenario,
-  Version,
+  PivotMetadata,
   PivotRequest,
   PivotResponse,
-  CreateProjectVersionRequest,
+  CreateProjectPlanRequest,
 } from './domain/types'
 
 import type {
@@ -29,8 +30,8 @@ import type {
   MetricDefinition,
   PeriodDimension,
   Project,
+  ProjectPlan,
   Scenario,
-  Version,
 } from './domain/types'
 
 export type StorageMode = 'persistent' | 'portable' | 'transient'
@@ -49,7 +50,7 @@ export interface AppSnapshot {
   projects: Project[]
   periods: PeriodDimension[]
   scenarios: Scenario[]
-  versions: Version[]
+  plans: ProjectPlan[]
   metrics: MetricDefinition[]
   facts: BaseFact[]
   storage: StorageRuntimeInfo
@@ -60,7 +61,7 @@ export interface BootstrapDto {
 }
 
 export interface CalculationRequest {
-  versionId: string
+  planId: string
   expectedRevision: number
 }
 
@@ -77,13 +78,17 @@ export interface RestoreDatabaseResponse {
 
 export function isProjectInput(value: unknown): value is import('./domain/types').ProjectInput {
   if (!value || typeof value !== 'object') return false
-  const input = value as Record<string, unknown>
+  const input = value as unknown as Record<string, unknown>
   return (
     typeof input.name === 'string' &&
-    typeof input.departmentId === 'string' &&
-    typeof input.startPeriod === 'string' &&
-    typeof input.endPeriod === 'string'
+    typeof input.departmentId === 'string'
   )
+}
+
+export function isCreateProjectInput(value: unknown): value is import('./domain/types').CreateProjectInput {
+  if (!isProjectInput(value)) return false
+  const input = value as unknown as Record<string, unknown>
+  return typeof input.startPeriod === 'string' && typeof input.endPeriod === 'string'
 }
 
 export function isSaveProjectWorkspaceRequest(
@@ -91,10 +96,12 @@ export function isSaveProjectWorkspaceRequest(
 ): value is import('./domain/types').SaveProjectWorkspaceRequest {
   if (!value || typeof value !== 'object') return false
   const request = value as Record<string, unknown>
-  if (typeof request.versionId !== 'string' || !request.versionId) return false
+  if (typeof request.planId !== 'string' || !request.planId) return false
   if (!Number.isInteger(request.expectedRevision)) return false
   const draft = request.draft as Record<string, unknown> | undefined
   if (!draft || !isProjectInput(draft.project)) return false
+  const plan = draft.plan as Record<string, unknown> | undefined
+  if (!plan || typeof plan.name !== 'string' || typeof plan.startPeriod !== 'string' || typeof plan.endPeriod !== 'string') return false
   const forecast = draft.forecast as Record<string, unknown> | undefined
   return Boolean(
     forecast &&

@@ -10,6 +10,7 @@ coverage/
 *.sqlite3
 data/*.db
 data/*.db.tmp
+data/*TMP to delete*
 .env
 .env.*
 !.env.example

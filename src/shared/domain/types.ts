@@ -5,7 +5,6 @@ export type MetricCategory = 'profit' | 'cashflow'
 export type MetricValueType = 'currency' | 'percentage'
 export type MetricType = 'base' | 'calculated'
 export type PeriodAggregation = 'sum' | 'recompute' | 'ending'
-export type VersionStatus = 'working' | 'snapshot'
 export type ForecastMethod = 'monthly_input' | 'fixed_monthly' | 'formula'
 export type ForecastCalculationPreset =
   | 'price_quantity'
@@ -44,7 +43,7 @@ export type ForecastCategory =
 export type CalculationRunStatus = 'success' | 'failed'
 
 export const BASELINE_SCENARIO_CODE = 'baseline'
-export const WORKING_VERSION_CODE = 'working'
+export const DEFAULT_PLAN_NAME = '默认方案'
 export const REFERENCE_DATASET_ID = 'historical-project-config-v6'
 
 export type BaseMetricCode =
@@ -80,19 +79,26 @@ export interface Project extends OriginFields {
   code?: string
   name: string
   departmentId: string
+  status: ProjectStatus
+  /** 默认方案期间，仅用于项目列表等汇总视图；不存放在 dim_project。 */
   startPeriod: string
   endPeriod: string
-  status: ProjectStatus
-  attributesJson?: string
   draftRevision: number
+  defaultPlanId?: string
+  attributesJson?: string
   createdAt: string
   updatedAt: string
+}
+
+export interface ProjectCalculationContext extends Project {
+  startPeriod: string
+  endPeriod: string
 }
 
 export interface ForecastOverride {
   id: string
   projectId: string
-  versionId: string
+  planId: string
   forecastLineId: string
   period: string
   originalValue: string
@@ -129,23 +135,13 @@ export interface Scenario {
   updatedAt: string
 }
 
-export interface Version {
-  id: string
-  code: string
-  name: string
-  status: VersionStatus
-  isMutable: boolean
-  origin: 'system' | 'user'
-  createdAt: string
-  updatedAt: string
-}
-
-export interface ProjectVersion {
+export interface ProjectPlan {
   projectId: string
-  versionId: string
-  code: string
+  planId: string
   name: string
-  status: 'active' | 'inactive'
+  startPeriod: string
+  endPeriod: string
+  status: 'active' | 'archived'
   isDefault: boolean
   sortOrder: number
   draftRevision: number
@@ -175,7 +171,7 @@ export interface BaseFact extends OriginFields {
   departmentId: string
   period: string
   scenarioId: string
-  versionId: string
+  planId: string
   metricCode: BaseMetricCode
   value: string
   sourceLabel: string
@@ -323,7 +319,7 @@ export interface CompiledLineValue {
   departmentId: string
   period: string
   scenarioId: string
-  versionId: string
+  planId: string
   metricCode: BaseMetricCode
   value: string
   rawValue: string
@@ -341,7 +337,7 @@ export interface CompiledCashScheduleValue {
   sourcePeriod: string
   settlementPeriod: string
   scenarioId: string
-  versionId: string
+  planId: string
   metricCode: 'cash_inflow' | 'cash_outflow'
   amountBasis: TaxAmountBasis
   taxRate: string
@@ -366,7 +362,7 @@ export interface CalculationRun {
   id: string
   projectId: string
   scenarioId: string
-  versionId: string
+  planId: string
   runNumber: number
   status: CalculationRunStatus
   configHash: string
@@ -424,7 +420,7 @@ export interface CalculatedFact {
   projectId: string
   period: string
   scenarioId: string
-  versionId: string
+  planId: string
   metricCode: CalculatedMetricCode
   value: string | null
   source: 'calculated'
@@ -443,61 +439,109 @@ export interface ProjectInput {
   code?: string
   name: string
   departmentId: string
+  /** 新建项目时用于创建默认方案；工作区保存时以 draft.plan 为准。 */
+  startPeriod: string
+  endPeriod: string
+}
+
+export interface CreateProjectInput extends ProjectInput {
+  startPeriod: string
+  endPeriod: string
+}
+
+export interface ProjectPlanInput {
+  name: string
   startPeriod: string
   endPeriod: string
 }
 
 export interface ProjectWorkspaceDraft {
   project: ProjectInput
+  plan: ProjectPlanInput
   forecast: ForecastProjectDraft
 }
 
 export interface ProjectWorkspace {
   project: Project
-  projectVersions: ProjectVersion[]
-  currentVersion: ProjectVersion
+  projectPlans: ProjectPlan[]
+  currentPlan: ProjectPlan
   draftRevision: number
   forecast: ForecastProjectState
 }
 
 export interface SaveProjectWorkspaceRequest {
-  versionId: string
+  planId: string
   expectedRevision: number
   draft: ProjectWorkspaceDraft
 }
 
-export interface CreateProjectVersionRequest {
-  versionId: string
-  copyFromVersionId?: string
+export interface CreateProjectPlanRequest {
+  name: string
+  startPeriod: string
+  endPeriod: string
+  copyFromPlanId?: string
 }
 
-export type PivotDimension = 'project' | 'department' | 'version' | 'period' | 'metric'
+export type PivotDimension = 'project' | 'plan' | 'department' | 'period' | 'metric'
+
+export interface PivotAxisDimension {
+  dimension: PivotDimension
+  memberIds: string[]
+}
+
+export interface PivotPovDimension {
+  dimension: PivotDimension
+  memberId: string
+}
 
 export interface PivotRequest {
-  rows: PivotDimension[]
-  columns: PivotDimension[]
-  filters?: {
-    projectIds?: string[]
-    departmentIds?: string[]
-    versionIds?: string[]
-    metricCodes?: string[]
-    periodStart?: string
-    periodEnd?: string
-  }
+  rows: PivotAxisDimension[]
+  columns: PivotAxisDimension[]
+  pov: PivotPovDimension[]
+  scenarioId: 'baseline'
+}
+
+export interface PivotMember {
+  id: string
+  label: string
+  parentId?: string
+  sortKey: number
+  status?: string
+}
+
+export interface PivotDimensionMetadata {
+  dimension: PivotDimension
+  label: string
+  members: PivotMember[]
+}
+
+export interface PivotMetadata {
+  dimensions: PivotDimensionMetadata[]
+  scenario: { id: 'baseline'; label: string }
+}
+
+export interface PivotTupleMember {
+  dimension: PivotDimension
+  memberId: string
+  label: string
+  parentId?: string
+}
+
+export interface PivotTuple {
+  key: string
+  members: PivotTupleMember[]
 }
 
 export interface PivotCell {
   rowKey: string
-  rowLabels: string[]
   columnKey: string
-  columnLabels: string[]
   value: string | null
   valueType: MetricValueType
 }
 
 export interface PivotResponse {
-  rows: PivotDimension[]
-  columns: PivotDimension[]
+  rowTuples: PivotTuple[]
+  columnTuples: PivotTuple[]
   cells: PivotCell[]
   sourceFactCount: number
 }
@@ -527,7 +571,7 @@ export interface DepartmentInput {
 export interface ReportQuery {
   projectId: string
   scenarioId: string
-  versionId: string
+  planId: string
 }
 
 export interface MonthlyMetricRow {
@@ -561,7 +605,7 @@ export interface ProjectReport {
   department?: Department
   query: ReportQuery
   scenario: Scenario
-  version: Version
+  plan: ProjectPlan
   hasFacts: boolean
   factCount: number
   monthly: MonthlyMetricRow[]
@@ -577,6 +621,7 @@ export interface ProjectReportDto extends ProjectReport {
   calculationRun?: CalculationRun
   availableRuns: CalculationRun[]
   projectSnapshot: Project
+  planSnapshot: ProjectPlan
   lineBreakdown: ForecastLineBreakdown[]
   cashSchedule: CashScheduleBreakdown[]
   overrides: ForecastOverride[]

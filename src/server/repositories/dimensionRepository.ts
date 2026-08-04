@@ -1,5 +1,5 @@
 import type { DatabaseClient } from '../../app/storage/types'
-import type { PeriodDimension, Scenario, Version } from '../../shared/domain/types'
+import type { PeriodDimension, Scenario } from '../../shared/domain/types'
 import { ProjectRepository } from './projectRepository'
 
 interface PeriodRow {
@@ -36,7 +36,4 @@ export class DimensionRepository {
     return this.projects.listScenarios()
   }
 
-  listVersions(): Promise<Version[]> {
-    return this.projects.listVersions()
-  }
 }

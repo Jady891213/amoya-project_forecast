@@ -28,13 +28,13 @@ import { MultidimensionalViewPage } from './pages/MultidimensionalViewPage'
 type Route =
   | { type: 'projects'; archived: boolean }
   | { type: 'new' }
-  | { type: 'workspace'; projectId: string; view: 'config' | 'calculation' | 'report'; versionId?: string }
+  | { type: 'workspace'; projectId: string; view: 'config' | 'calculation' | 'report'; planId?: string }
   | { type: 'master-data' }
   | { type: 'metrics' }
   | { type: 'multidimensional' }
 
 const emptySnapshot: AppSnapshot = {
-  departments: [], projects: [], periods: [], scenarios: [], versions: [], metrics: [], facts: [],
+  departments: [], projects: [], periods: [], scenarios: [], plans: [], metrics: [], facts: [],
   storage: { mode: 'transient', label: '连接中', detail: '', sqliteVersion: '', schemaVersion: 0, persistent: false },
 }
 
@@ -51,7 +51,7 @@ function parseRoute(): Route {
     type: 'workspace',
     projectId: decodeURIComponent(workspace[1]),
     view: workspace[2] as 'config' | 'calculation' | 'report',
-    versionId: new URLSearchParams(window.location.search).get('versionId') ?? undefined,
+    planId: new URLSearchParams(window.location.search).get('planId') ?? undefined,
   }
   if (path === '/master-data') return { type: 'master-data' }
   if (path === '/metrics') return { type: 'metrics' }
@@ -177,7 +177,7 @@ export default function App() {
     <div className="shell">
       <aside className="global-nav">
         <div className="sidebar-header"><div className="sidebar-brand"><div className="brand-mark"><BarChart3 size={17} /></div><div className="sidebar-brand-copy"><b>项目测算分析工具</b><span>本地财务与 EPM 工作台</span></div></div><button type="button" className="sidebar-collapse" aria-label={navCollapsed ? '展开侧边栏' : '收起侧边栏'} title={navCollapsed ? '展开侧边栏' : '收起侧边栏'} onClick={toggleNavigation}>{navCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}</button></div>
-        <div className="nav-section"><div className="nav-title">项目数据</div><button title="项目列表" className={`nav-item ${route.type === 'projects' || route.type === 'new' || route.type === 'workspace' ? 'active' : ''}`} onClick={openProjectArea}><BriefcaseBusiness size={16} /><span className="nav-label">项目列表</span></button><button title="多维测算" className={`nav-item ${route.type === 'multidimensional' ? 'active' : ''}`} onClick={() => navigate('/multidimensional')}><Table2 size={16} /><span className="nav-label">多维测算</span></button></div>
+        <div className="nav-section"><div className="nav-title">项目数据</div><button title="项目列表" className={`nav-item ${route.type === 'projects' || route.type === 'new' || route.type === 'workspace' ? 'active' : ''}`} onClick={openProjectArea}><BriefcaseBusiness size={16} /><span className="nav-label">项目列表</span></button><button title="项目报表" className={`nav-item ${route.type === 'multidimensional' ? 'active' : ''}`} onClick={() => navigate('/multidimensional')}><Table2 size={16} /><span className="nav-label">项目报表</span></button></div>
         <div className="nav-section"><div className="nav-title">平台配置</div><button title="主数据管理" className={`nav-item ${route.type === 'master-data' ? 'active' : ''}`} onClick={() => navigate('/master-data')}><Database size={16} /><span className="nav-label">主数据管理</span></button><button title="指标管理" className={`nav-item ${route.type === 'metrics' ? 'active' : ''}`} onClick={() => navigate('/metrics')}><Sigma size={16} /><span className="nav-label">指标管理</span></button></div>
         <div className="sidebar-footer">
           <div className="db-box"><b><HardDrive size={14} /><span className="db-box-label">本地数据库</span><span className="db-info" tabIndex={0} aria-label="查看本地数据库说明"><Info size={13} /><span className="db-info-tooltip" role="tooltip">数据自动保存在本机<br />SQLite {snapshot.storage.sqliteVersion}<br />数据结构版本 {snapshot.storage.schemaVersion}</span></span></b><div className="db-box-details"><span>{snapshot.storage.detail.split(' · ')[0] || 'amoya_project_forecast.db'}</span><span>共 {snapshot.projects.length} 个项目</span></div><div className="sidebar-db-actions"><button type="button" title="导出完整数据备份" aria-label="导出完整数据备份" onClick={() => void api.backup()}><Download size={14} /><span>备份</span></button><button type="button" title="从备份恢复全部项目" aria-label="从备份恢复全部项目" onClick={() => restoreInput.current?.click()}><Upload size={14} /><span>恢复</span></button></div></div>
@@ -196,7 +196,7 @@ export default function App() {
       />}
       {route.type === 'metrics' && <MetricPage snapshot={snapshot} />}
       {route.type === 'multidimensional' && <MultidimensionalViewPage api={api} snapshot={snapshot} />}
-      {route.type === 'workspace' && <ProjectWorkspacePage key={`${route.projectId}:${route.view}:${route.versionId ?? 'default'}`} api={api} snapshot={snapshot} projectId={route.projectId} versionId={route.versionId} view={route.view} onNavigate={navigate} onRefresh={refresh} onDirtyChange={setDirty} />}
+      {route.type === 'workspace' && <ProjectWorkspacePage key={`${route.projectId}:${route.view}:${route.planId ?? 'default'}`} api={api} snapshot={snapshot} projectId={route.projectId} planId={route.planId} view={route.view} onNavigate={navigate} onRefresh={refresh} onDirtyChange={setDirty} />}
     </div>
     {notice && <div className="toast-success">{notice}<button onClick={() => setNotice('')}>关闭</button></div>}
   </div>
@@ -277,12 +277,12 @@ function ProjectList({ snapshot, archived, onNavigate, onArchive, onCopy, onDele
   </main>
 }
 
-function NewProjectPage({ snapshot, onCancel, onCreate }: { snapshot: AppSnapshot; onCancel: () => void; onCreate: (input: ProjectInput) => Promise<void> }) {
+function NewProjectPage({ snapshot, onCancel, onCreate }: { snapshot: AppSnapshot; onCancel: () => void; onCreate: (input: import('../shared/domain/types').CreateProjectInput) => Promise<void> }) {
   const firstDepartment = snapshot.departments.find((item) => item.status === 'active')
   const currentPeriod = new Date().toISOString().slice(0, 7)
-  const [draft, setDraft] = useState<ProjectInput>({ name: '', code: '', departmentId: firstDepartment?.id ?? '', startPeriod: currentPeriod, endPeriod: addMonths(currentPeriod, 11) })
+  const [draft, setDraft] = useState<import('../shared/domain/types').CreateProjectInput>({ name: '', code: '', departmentId: firstDepartment?.id ?? '', startPeriod: currentPeriod, endPeriod: addMonths(currentPeriod, 11) })
   const [error, setError] = useState('')
-  const patch = (values: Partial<ProjectInput>) => setDraft((current) => ({ ...current, ...values }))
+  const patch = (values: Partial<import('../shared/domain/types').CreateProjectInput>) => setDraft((current) => ({ ...current, ...values }))
   const periodCount = countPeriods(draft.startPeriod, draft.endPeriod)
   return <main className="page"><div className="page-head"><div className="page-head-main"><PageBreadcrumbs items={[{ label: '项目管理', onClick: onCancel }, { label: '新建项目' }]} /><h1>新建项目</h1></div></div><div className="page-body"><section className="new-project-form"><h2>项目信息</h2><div className="project-information-grid compact-project-master-form"><label>项目编码<input value={draft.code} onChange={(e) => patch({ code: e.target.value })} /></label><label>项目名称<input value={draft.name} onChange={(e) => patch({ name: e.target.value })} /></label><label>申报部门<select value={draft.departmentId} onChange={(e) => patch({ departmentId: e.target.value })}>{snapshot.departments.filter((item) => item.status === 'active').map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label></div><h2 className="new-project-section-title">业务参数</h2><div className="project-information-grid project-period-fields"><label>开始期间<input type="month" value={draft.startPeriod} onChange={(e) => patch({ startPeriod: e.target.value })} /></label><label>结束期间<input type="month" value={draft.endPeriod} onChange={(e) => patch({ endPeriod: e.target.value })} /></label><div className={`period-count-preview ${periodCount < 1 ? 'error' : ''}`}><span>项目周期</span><b>{periodCount < 1 ? '结束期间不能早于开始期间' : `共 ${periodCount} 个月`}</b></div></div>{error && <div className="page-alert error">{error}</div>}<div className="form-footer"><button className="btn" onClick={onCancel}>取消</button><button className="btn primary" disabled={periodCount < 1} onClick={() => void onCreate(draft).catch((reason) => setError(reason instanceof Error ? reason.message : '创建失败'))}><Save size={14} />保存并进入项目</button></div></section></div></main>
 }

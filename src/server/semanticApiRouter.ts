@@ -1,11 +1,12 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { basename } from 'node:path'
 import type { DatabaseClient } from '../app/storage/types'
-import type { ApiError, CreateProjectVersionRequest, DepartmentInput, PivotRequest, ProjectInput, SaveProjectWorkspaceRequest } from '../shared/domain/types'
+import type { ApiError, CreateProjectInput, CreateProjectPlanRequest, DepartmentInput, PivotRequest, SaveProjectWorkspaceRequest } from '../shared/domain/types'
 import { CalculationRunRepository } from './repositories/calculationRunRepository'
 import { MetricRepository } from './repositories/metricRepository'
 import { ProjectRepository } from './repositories/projectRepository'
-import { isProjectInput, isSaveProjectWorkspaceRequest } from '../shared/api'
+import { ProjectPlanRepository } from './repositories/projectPlanRepository'
+import { isCreateProjectInput, isSaveProjectWorkspaceRequest } from '../shared/api'
 import { ProjectWorkspaceService } from './projectWorkspaceService'
 import { ReportWorkbookService } from './services/reportWorkbookService'
 import { PivotService } from './services/pivotService'
@@ -106,15 +107,15 @@ export class SemanticApiRouter {
       }
       if (pathname === '/api/projects' && request.method === 'POST') {
         const payload = await readJson(request)
-        if (!isProjectInput(payload)) invalidRequest('新建项目请求不完整')
-        sendJson(response, 201, await this.exclusive(() => this.service.createProject(payload as ProjectInput)))
+        if (!isCreateProjectInput(payload)) invalidRequest('新建项目请求不完整')
+        sendJson(response, 201, await this.exclusive(() => this.service.createProject(payload as CreateProjectInput)))
         return true
       }
       const workspace = pathname.match(/^\/api\/projects\/([^/]+)\/workspace$/)
       if (workspace && request.method === 'GET') {
         sendJson(response, 200, await this.service.getWorkspace(
           decodeURIComponent(workspace[1]),
-          url.searchParams.get('versionId') ?? undefined,
+          url.searchParams.get('planId') ?? undefined,
         ))
         return true
       }
@@ -129,20 +130,25 @@ export class SemanticApiRouter {
       }
       const calculation = pathname.match(/^\/api\/projects\/([^/]+)\/calculations$/)
       if (calculation && request.method === 'POST') {
-        const payload = await readJson(request) as { expectedRevision?: number; versionId?: string }
-        if (!Number.isInteger(payload.expectedRevision) || !payload.versionId) invalidRequest('计算请求缺少版本或修订号')
+        const payload = await readJson(request) as { expectedRevision?: number; planId?: string }
+        if (!Number.isInteger(payload.expectedRevision) || !payload.planId) invalidRequest('计算请求缺少方案或修订号')
         sendJson(response, 200, await this.exclusive(() => this.service.calculate(
           decodeURIComponent(calculation[1]),
-          payload.versionId as string,
+          payload.planId as string,
           payload.expectedRevision as number,
         )))
         return true
       }
       const latest = pathname.match(/^\/api\/projects\/([^/]+)\/calculations\/latest$/)
       if (latest && request.method === 'GET') {
+        const projectId = decodeURIComponent(latest[1])
+        const requestedPlanId = url.searchParams.get('planId')
+        const plans = requestedPlanId ? [] : await new ProjectPlanRepository(this.database).list(projectId, false)
+        const resolvedPlanId = requestedPlanId ?? plans.find((item) => item.isDefault)?.planId ?? plans[0]?.planId
+        if (!resolvedPlanId) throw Object.assign(new Error('当前项目没有可用方案'), { code: 'NOT_FOUND' })
         const run = await new CalculationRunRepository(this.database).latestSuccess(
-          decodeURIComponent(latest[1]),
-          url.searchParams.get('versionId') ?? 'working',
+          projectId,
+          resolvedPlanId,
         )
         if (!run) throw Object.assign(new Error('当前项目尚无成功计算批次'), { code: 'NOT_FOUND' })
         sendJson(response, 200, run)
@@ -171,23 +177,35 @@ export class SemanticApiRouter {
         sendJson(response, 201, await this.exclusive(() => this.service.copy(decodeURIComponent(copyProject[1]))))
         return true
       }
-      const projectVersions = pathname.match(/^\/api\/projects\/([^/]+)\/versions$/)
-      if (projectVersions && request.method === 'POST') {
-        const payload = await readJson(request) as CreateProjectVersionRequest
-        if (!payload.versionId?.trim()) invalidRequest('请选择版本')
-        sendJson(response, 201, await this.exclusive(() => this.service.createVersion(
-          decodeURIComponent(projectVersions[1]), payload,
+      const projectPlans = pathname.match(/^\/api\/projects\/([^/]+)\/plans$/)
+      if (projectPlans && request.method === 'GET') {
+        sendJson(response, 200, await new ProjectPlanRepository(this.database).list(decodeURIComponent(projectPlans[1])))
+        return true
+      }
+      if (projectPlans && request.method === 'POST') {
+        const payload = await readJson(request) as CreateProjectPlanRequest
+        if (!payload.name?.trim() || !payload.startPeriod || !payload.endPeriod) invalidRequest('方案信息不完整')
+        sendJson(response, 201, await this.exclusive(() => this.service.createPlan(
+          decodeURIComponent(projectPlans[1]), payload,
         )))
         return true
       }
-      const projectVersion = pathname.match(/^\/api\/projects\/([^/]+)\/versions\/([^/]+)$/)
-      if (projectVersion && request.method === 'PUT') {
-        const payload = await readJson(request) as { status?: 'active' | 'inactive' }
-        const projectId = decodeURIComponent(projectVersion[1])
-        const versionId = decodeURIComponent(projectVersion[2])
-        const saved = payload.status
-          ? await this.exclusive(() => this.service.setVersionStatus(projectId, versionId, payload.status!))
-          : invalidRequest('版本更新请求为空')
+      const projectPlan = pathname.match(/^\/api\/projects\/([^/]+)\/plans\/([^/]+)$/)
+      if (projectPlan && request.method === 'PUT') {
+        const payload = await readJson(request) as { name?: string; startPeriod?: string; endPeriod?: string; isDefault?: boolean }
+        const projectId = decodeURIComponent(projectPlan[1])
+        const planId = decodeURIComponent(projectPlan[2])
+        const saved = await this.exclusive(() => this.service.updatePlan(projectId, planId, payload))
+        sendJson(response, 200, saved)
+        return true
+      }
+      const planStatus = pathname.match(/^\/api\/projects\/([^/]+)\/plans\/([^/]+)\/(archive|restore)$/)
+      if (planStatus && request.method === 'POST') {
+        const projectId = decodeURIComponent(planStatus[1])
+        const planId = decodeURIComponent(planStatus[2])
+        const saved = planStatus[3] === 'archive'
+          ? await this.exclusive(() => this.service.archivePlan(projectId, planId))
+          : await this.exclusive(() => this.service.restorePlan(projectId, planId))
         sendJson(response, 200, saved)
         return true
       }
@@ -203,7 +221,7 @@ export class SemanticApiRouter {
         sendJson(response, 200, await this.service.buildReport(
           decodeURIComponent(report[1]),
           url.searchParams.get('runId') ?? undefined,
-          url.searchParams.get('versionId') ?? undefined,
+          url.searchParams.get('planId') ?? undefined,
         ))
         return true
       }
@@ -213,7 +231,7 @@ export class SemanticApiRouter {
         const reportDto = await this.service.buildReport(
           projectId,
           url.searchParams.get('runId') ?? undefined,
-          url.searchParams.get('versionId') ?? undefined,
+          url.searchParams.get('planId') ?? undefined,
         )
         if (!reportDto.calculationRun) {
           throw Object.assign(new Error('当前项目没有可导出的成功计算批次'), { code: 'NOT_FOUND' })
@@ -221,8 +239,8 @@ export class SemanticApiRouter {
         const bytes = await new ReportWorkbookService().build(reportDto)
         const exportDate = new Date().toISOString().slice(0, 10).replaceAll('-', '')
         const safeProject = reportDto.projectSnapshot.name.replace(/[\\/:*?"<>|]/g, '_')
-        const safeVersion = reportDto.version.name.replace(/[\\/:*?"<>|]/g, '_')
-        const fileName = `${reportDto.projectSnapshot.code ?? 'PROJECT'}_${safeProject}_${safeVersion}_RUN-${String(reportDto.calculationRun.runNumber).padStart(4, '0')}_${exportDate}.xlsx`
+        const safePlan = reportDto.plan.name.replace(/[\\/:*?"<>|]/g, '_')
+        const fileName = `${reportDto.projectSnapshot.code ?? 'PROJECT'}_${safeProject}_${safePlan}_RUN-${String(reportDto.calculationRun.runNumber).padStart(4, '0')}_${exportDate}.xlsx`
         response.writeHead(200, {
           'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
           'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
@@ -260,6 +278,10 @@ export class SemanticApiRouter {
       if (pathname === '/api/facts/pivot' && request.method === 'POST') {
         const payload = await readJson(request) as PivotRequest
         sendJson(response, 200, await new PivotService(this.database).build(payload))
+        return true
+      }
+      if (pathname === '/api/facts/pivot/metadata' && request.method === 'GET') {
+        sendJson(response, 200, await new PivotService(this.database).metadata())
         return true
       }
       if (pathname === '/api/database/backup' && request.method === 'GET') {

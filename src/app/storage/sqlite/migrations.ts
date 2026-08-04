@@ -1,9 +1,6 @@
-export const CURRENT_SCHEMA_VERSION = 12
+export const CURRENT_SCHEMA_VERSION = 13
 
-/**
- * 当前开发库直接按最新结构创建，不承担旧 Schema 的升级兼容。
- * 结构变化时重建开发数据库，并由参考数据初始化服务重新生成示例项目。
- */
+/** 当前开发库直接按最新结构创建，不承担旧 Schema 的升级兼容。 */
 export const CURRENT_SCHEMA = `
 PRAGMA foreign_keys = ON;
 
@@ -17,6 +14,15 @@ CREATE TABLE sys_app_metadata (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL,
   updated_at TEXT NOT NULL
+);
+
+CREATE TABLE dim_period (
+  period TEXT PRIMARY KEY CHECK (period GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]'),
+  display_name TEXT NOT NULL,
+  year INTEGER NOT NULL,
+  quarter INTEGER NOT NULL CHECK (quarter BETWEEN 1 AND 4),
+  month_number INTEGER NOT NULL CHECK (month_number BETWEEN 1 AND 12),
+  sort_key INTEGER NOT NULL UNIQUE
 );
 
 CREATE TABLE dim_department (
@@ -35,57 +41,40 @@ CREATE TABLE dim_project (
   code TEXT UNIQUE,
   name TEXT NOT NULL,
   department_id TEXT NOT NULL REFERENCES dim_department(id) ON UPDATE CASCADE,
-  start_period TEXT NOT NULL REFERENCES dim_period(period),
-  end_period TEXT NOT NULL REFERENCES dim_period(period),
   status TEXT NOT NULL CHECK (status IN ('calculating', 'archived')),
   attributes_json TEXT,
   origin TEXT NOT NULL CHECK (origin IN ('system', 'user', 'demo')),
   dataset_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE dim_plan (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES dim_project(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  start_period TEXT NOT NULL REFERENCES dim_period(period),
+  end_period TEXT NOT NULL REFERENCES dim_period(period),
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'archived')),
+  is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1)),
+  sort_order INTEGER NOT NULL DEFAULT 1,
   draft_revision INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
+  UNIQUE (project_id, id),
+  UNIQUE (project_id, name),
   CHECK (end_period >= start_period)
 );
 
-CREATE TABLE dim_period (
-  period TEXT PRIMARY KEY CHECK (period GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]'),
-  display_name TEXT NOT NULL,
-  year INTEGER NOT NULL,
-  quarter INTEGER NOT NULL CHECK (quarter BETWEEN 1 AND 4),
-  month_number INTEGER NOT NULL CHECK (month_number BETWEEN 1 AND 12),
-  sort_key INTEGER NOT NULL UNIQUE
-);
+CREATE UNIQUE INDEX uq_plan_default_active
+  ON dim_plan(project_id)
+  WHERE is_default = 1 AND status = 'active';
 
 CREATE TABLE dim_scenario (
   id TEXT PRIMARY KEY,
   code TEXT NOT NULL UNIQUE,
   name TEXT NOT NULL,
   is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1)),
-  origin TEXT NOT NULL DEFAULT 'system' CHECK (origin IN ('system', 'user')),
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-
-CREATE TABLE rel_project_version (
-  project_id TEXT NOT NULL REFERENCES dim_project(id) ON DELETE CASCADE,
-  version_id TEXT NOT NULL REFERENCES dim_version(id) ON DELETE CASCADE,
-  display_name TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
-  is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1)),
-  sort_order INTEGER NOT NULL DEFAULT 1,
-  draft_revision INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
-  PRIMARY KEY (project_id, version_id),
-  UNIQUE (project_id, display_name)
-);
-
-CREATE TABLE dim_version (
-  id TEXT PRIMARY KEY,
-  code TEXT NOT NULL UNIQUE,
-  name TEXT NOT NULL,
-  status TEXT NOT NULL CHECK (status IN ('working', 'snapshot')),
-  is_mutable INTEGER NOT NULL DEFAULT 1 CHECK (is_mutable IN (0, 1)),
   origin TEXT NOT NULL DEFAULT 'system' CHECK (origin IN ('system', 'user')),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
@@ -110,8 +99,8 @@ CREATE TABLE dim_metric (
 CREATE TABLE sys_calculation_run (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL REFERENCES dim_project(id) ON DELETE CASCADE,
+  plan_id TEXT NOT NULL,
   scenario_id TEXT NOT NULL REFERENCES dim_scenario(id),
-  version_id TEXT NOT NULL REFERENCES dim_version(id),
   run_number INTEGER NOT NULL,
   status TEXT NOT NULL CHECK (status IN ('success', 'failed')),
   config_hash TEXT NOT NULL,
@@ -122,13 +111,14 @@ CREATE TABLE sys_calculation_run (
   project_snapshot_json TEXT NOT NULL DEFAULT '{}',
   started_at TEXT NOT NULL,
   completed_at TEXT NOT NULL,
-  UNIQUE (project_id, version_id, run_number)
+  UNIQUE (project_id, plan_id, run_number),
+  FOREIGN KEY (project_id, plan_id) REFERENCES dim_plan(project_id, id) ON DELETE CASCADE
 );
 
 CREATE TABLE cfg_model_line (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL REFERENCES dim_project(id) ON DELETE CASCADE,
-  version_id TEXT NOT NULL REFERENCES dim_version(id) ON DELETE CASCADE,
+  plan_id TEXT NOT NULL,
   code TEXT NOT NULL,
   name TEXT NOT NULL,
   line_type TEXT NOT NULL CHECK (line_type IN ('parameter', 'profit', 'cash')),
@@ -141,7 +131,8 @@ CREATE TABLE cfg_model_line (
   sort_order INTEGER NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  UNIQUE (project_id, version_id, code),
+  UNIQUE (project_id, plan_id, code),
+  FOREIGN KEY (project_id, plan_id) REFERENCES dim_plan(project_id, id) ON DELETE CASCADE,
   CHECK (end_period >= start_period),
   CHECK (
     (line_type = 'parameter' AND category IS NULL)
@@ -160,20 +151,22 @@ CREATE TABLE cfg_model_line_value (
 CREATE TABLE cfg_forecast_override (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL REFERENCES dim_project(id) ON DELETE CASCADE,
-  version_id TEXT NOT NULL REFERENCES dim_version(id) ON DELETE CASCADE,
+  plan_id TEXT NOT NULL,
   forecast_line_id TEXT NOT NULL REFERENCES cfg_model_line(id) ON DELETE CASCADE,
   period TEXT NOT NULL REFERENCES dim_period(period),
   original_value_text TEXT NOT NULL,
   override_value_text TEXT NOT NULL,
   reason TEXT NOT NULL DEFAULT '',
   updated_at TEXT NOT NULL,
-  UNIQUE (project_id, version_id, forecast_line_id, period)
+  UNIQUE (project_id, plan_id, forecast_line_id, period),
+  FOREIGN KEY (project_id, plan_id) REFERENCES dim_plan(project_id, id) ON DELETE CASCADE
 );
 
 CREATE TABLE fact_forecast_line_value (
   id TEXT PRIMARY KEY,
   calculation_run_id TEXT NOT NULL REFERENCES sys_calculation_run(id) ON DELETE CASCADE,
   project_id TEXT NOT NULL REFERENCES dim_project(id) ON DELETE CASCADE,
+  plan_id TEXT NOT NULL,
   forecast_line_id TEXT NOT NULL,
   line_code TEXT NOT NULL,
   line_name TEXT NOT NULL,
@@ -181,17 +174,18 @@ CREATE TABLE fact_forecast_line_value (
   department_id TEXT NOT NULL REFERENCES dim_department(id),
   period TEXT NOT NULL REFERENCES dim_period(period),
   scenario_id TEXT NOT NULL REFERENCES dim_scenario(id),
-  version_id TEXT NOT NULL REFERENCES dim_version(id),
   metric_code TEXT NOT NULL CHECK (metric_code IN ('revenue', 'cost', 'cash_inflow', 'cash_outflow')),
   value_text TEXT NOT NULL,
   created_at TEXT NOT NULL,
-  UNIQUE (calculation_run_id, forecast_line_id, period)
+  UNIQUE (calculation_run_id, forecast_line_id, period),
+  FOREIGN KEY (project_id, plan_id) REFERENCES dim_plan(project_id, id) ON DELETE CASCADE
 );
 
 CREATE TABLE fact_cash_schedule_value (
   id TEXT PRIMARY KEY,
   calculation_run_id TEXT NOT NULL REFERENCES sys_calculation_run(id) ON DELETE CASCADE,
   project_id TEXT NOT NULL REFERENCES dim_project(id) ON DELETE CASCADE,
+  plan_id TEXT NOT NULL,
   source_line_id TEXT NOT NULL,
   source_line_code TEXT NOT NULL,
   source_line_name TEXT NOT NULL,
@@ -199,7 +193,6 @@ CREATE TABLE fact_cash_schedule_value (
   source_period TEXT NOT NULL REFERENCES dim_period(period),
   settlement_period TEXT NOT NULL REFERENCES dim_period(period),
   scenario_id TEXT NOT NULL REFERENCES dim_scenario(id),
-  version_id TEXT NOT NULL REFERENCES dim_version(id),
   metric_code TEXT NOT NULL CHECK (metric_code IN ('cash_inflow', 'cash_outflow')),
   amount_basis TEXT NOT NULL CHECK (amount_basis IN ('tax_exclusive', 'tax_inclusive', 'non_taxable')),
   tax_rate_text TEXT NOT NULL,
@@ -209,16 +202,17 @@ CREATE TABLE fact_cash_schedule_value (
   settlement_ratio_text TEXT NOT NULL,
   value_text TEXT NOT NULL,
   rule_method TEXT NOT NULL CHECK (rule_method IN ('immediate', 'delayed', 'installment', 'manual_monthly')),
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (project_id, plan_id) REFERENCES dim_plan(project_id, id) ON DELETE CASCADE
 );
 
 CREATE TABLE fact_metric_value (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL REFERENCES dim_project(id) ON DELETE CASCADE,
+  plan_id TEXT NOT NULL,
   department_id TEXT NOT NULL REFERENCES dim_department(id),
   period TEXT NOT NULL REFERENCES dim_period(period),
   scenario_id TEXT NOT NULL REFERENCES dim_scenario(id),
-  version_id TEXT NOT NULL REFERENCES dim_version(id),
   metric_code TEXT NOT NULL REFERENCES dim_metric(code),
   value_text TEXT NOT NULL,
   source_label TEXT NOT NULL DEFAULT '',
@@ -227,20 +221,20 @@ CREATE TABLE fact_metric_value (
   calculation_run_id TEXT REFERENCES sys_calculation_run(id),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  UNIQUE (project_id, department_id, period, scenario_id, version_id, metric_code)
+  UNIQUE (project_id, plan_id, department_id, period, scenario_id, metric_code),
+  FOREIGN KEY (project_id, plan_id) REFERENCES dim_plan(project_id, id) ON DELETE CASCADE
 );
 
 CREATE INDEX idx_project_status ON dim_project(status);
 CREATE INDEX idx_project_department ON dim_project(department_id);
-CREATE INDEX idx_fact_project_query ON fact_metric_value(project_id, scenario_id, version_id, period);
+CREATE INDEX idx_plan_project ON dim_plan(project_id, status, sort_order);
+CREATE INDEX idx_fact_project_query ON fact_metric_value(project_id, plan_id, scenario_id, period);
 CREATE INDEX idx_fact_forecast_line_run ON fact_forecast_line_value(calculation_run_id, forecast_line_id, period);
 CREATE INDEX idx_fact_cash_schedule_run ON fact_cash_schedule_value(calculation_run_id, settlement_period);
-CREATE INDEX idx_calculation_run_project ON sys_calculation_run(project_id, run_number DESC);
-CREATE INDEX idx_calculation_run_version ON sys_calculation_run(project_id, version_id, run_number DESC);
-CREATE INDEX idx_cfg_model_line_project ON cfg_model_line(project_id, version_id, line_type, sort_order);
+CREATE INDEX idx_calculation_run_project ON sys_calculation_run(project_id, plan_id, run_number DESC);
+CREATE INDEX idx_cfg_model_line_project ON cfg_model_line(project_id, plan_id, line_type, sort_order);
 CREATE INDEX idx_cfg_model_line_value_line ON cfg_model_line_value(line_id, period);
-CREATE INDEX idx_cfg_forecast_override_project ON cfg_forecast_override(project_id, version_id, forecast_line_id, period);
-CREATE INDEX idx_project_version_project ON rel_project_version(project_id, status, sort_order);
+CREATE INDEX idx_cfg_forecast_override_project ON cfg_forecast_override(project_id, plan_id, forecast_line_id, period);
 CREATE INDEX idx_reference_project ON dim_project(dataset_id);
 CREATE INDEX idx_reference_fact ON fact_metric_value(dataset_id);
 `

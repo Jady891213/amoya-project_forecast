@@ -8,7 +8,7 @@ import type { DatabaseClient, SqlStatement } from '../../app/storage/types'
 interface OverrideRow {
   id: string
   project_id: string
-  version_id: string
+  plan_id: string
   forecast_line_id: string
   period: string
   original_value_text: string
@@ -21,7 +21,7 @@ function fromRow(row: OverrideRow): ForecastOverride {
   return {
     id: row.id,
     projectId: row.project_id,
-    versionId: row.version_id,
+    planId: row.plan_id,
     forecastLineId: row.forecast_line_id,
     period: row.period,
     originalValue: row.original_value_text,
@@ -34,35 +34,35 @@ function fromRow(row: OverrideRow): ForecastOverride {
 export class ForecastOverrideRepository {
   constructor(private readonly database: DatabaseClient) {}
 
-  async list(projectId: string, versionId: string): Promise<ForecastOverride[]> {
+  async list(projectId: string, planId: string): Promise<ForecastOverride[]> {
     const rows = await this.database.query<OverrideRow>(
       `SELECT * FROM cfg_forecast_override
-       WHERE project_id = ? AND version_id = ?
+       WHERE project_id = ? AND plan_id = ?
        ORDER BY forecast_line_id, period`,
-      [projectId, versionId],
+      [projectId, planId],
     )
     return rows.map(fromRow)
   }
 
   async saveProjectDraft(
     projectId: string,
-    versionId: string,
+    planId: string,
     drafts: ForecastOverrideDraft[],
   ): Promise<ForecastOverride[]> {
     const lineRows = await this.database.query<{ id: string }>(
       `SELECT id FROM cfg_model_line
-       WHERE project_id = ? AND version_id = ? AND line_type IN ('profit', 'cash')`,
-      [projectId, versionId],
+       WHERE project_id = ? AND plan_id = ? AND line_type IN ('profit', 'cash')`,
+      [projectId, planId],
     )
     const lineIds = new Set(lineRows.map((row) => row.id))
-    const existing = await this.list(projectId, versionId)
+    const existing = await this.list(projectId, planId)
     const existingByCoordinate = new Map(
       existing.map((item) => [`${item.forecastLineId}:${item.period}`, item]),
     )
     const statements: SqlStatement[] = [
       {
-        sql: 'DELETE FROM cfg_forecast_override WHERE project_id = ? AND version_id = ?',
-        params: [projectId, versionId],
+        sql: 'DELETE FROM cfg_forecast_override WHERE project_id = ? AND plan_id = ?',
+        params: [projectId, planId],
       },
     ]
     const now = new Date().toISOString()
@@ -83,13 +83,13 @@ export class ForecastOverrideRepository {
       )
       statements.push({
         sql: `INSERT INTO cfg_forecast_override (
-          id, project_id, version_id, forecast_line_id, period,
+          id, project_id, plan_id, forecast_line_id, period,
           original_value_text, override_value_text, reason, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         params: [
           previous?.id ?? draft.id ?? crypto.randomUUID(),
           projectId,
-          versionId,
+          planId,
           draft.forecastLineId,
           draft.period,
           original.toDecimalPlaces(6).toString(),
@@ -100,6 +100,6 @@ export class ForecastOverrideRepository {
       })
     })
     await this.database.batch(statements)
-    return this.list(projectId, versionId)
+    return this.list(projectId, planId)
   }
 }

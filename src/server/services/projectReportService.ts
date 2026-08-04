@@ -1,22 +1,25 @@
 import type { DatabaseClient } from '../../app/storage/types'
-import type { BaseFact, Project, ProjectReport, ReportQuery } from '../../shared/domain/types'
+import type { BaseFact, Project, ProjectPlan, ProjectReport, ReportQuery } from '../../shared/domain/types'
 import { DepartmentRepository } from '../repositories/departmentRepository'
 import { FactRepository } from '../repositories/factRepository'
 import { MetricRepository } from '../repositories/metricRepository'
 import { ProjectRepository } from '../repositories/projectRepository'
 import { calculateMetrics } from '../../shared/calculation/metricEngine'
+import { ProjectPlanRepository } from '../repositories/projectPlanRepository'
 
 export class ProjectReportService {
   private readonly projects: ProjectRepository
   private readonly departments: DepartmentRepository
   private readonly metrics: MetricRepository
   private readonly facts: FactRepository
+  private readonly plans: ProjectPlanRepository
 
   constructor(database: DatabaseClient) {
     this.projects = new ProjectRepository(database)
     this.departments = new DepartmentRepository(database)
     this.metrics = new MetricRepository(database)
     this.facts = new FactRepository(database)
+    this.plans = new ProjectPlanRepository(database)
   }
 
   async build(query: ReportQuery): Promise<ProjectReport> {
@@ -31,29 +34,29 @@ export class ProjectReportService {
     query: ReportQuery,
     facts: BaseFact[],
     projectOverride?: Project,
+    planOverride?: ProjectPlan,
   ): Promise<ProjectReport> {
     const project = projectOverride ?? await this.projects.get(query.projectId)
     if (!project) throw new Error('项目不存在')
 
-    const [department, scenarios, versions, metricDefinitions] =
+    const [department, scenarios, plan, metricDefinitions] =
       await Promise.all([
         this.departments.get(project.departmentId),
         this.projects.listScenarios(),
-        this.projects.listVersions(),
+        planOverride ?? this.plans.get(project.id, query.planId),
         this.metrics.list(),
       ])
     const scenario = scenarios.find((item) => item.id === query.scenarioId)
-    const version = versions.find((item) => item.id === query.versionId)
     if (!scenario) throw new Error('场景不存在')
-    if (!version) throw new Error('版本不存在')
+    if (!plan) throw new Error('方案不存在')
 
-    const calculation = calculateMetrics(project, facts, metricDefinitions)
+    const calculation = calculateMetrics({ ...project, startPeriod: plan.startPeriod, endPeriod: plan.endPeriod }, facts, metricDefinitions)
     return {
       project,
       department,
       query,
       scenario,
-      version,
+      plan,
       hasFacts: facts.length > 0,
       factCount: facts.length,
       monthly: calculation.monthly,

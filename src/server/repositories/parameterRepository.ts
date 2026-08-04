@@ -68,28 +68,28 @@ function normalizeValue(raw: string | undefined, valueType: ProjectParameterDraf
 export class ParameterRepository {
   constructor(private readonly database: DatabaseClient) {}
 
-  async list(projectId: string, versionId: string): Promise<ProjectParameter[]> {
+  async list(projectId: string, planId: string): Promise<ProjectParameter[]> {
     const rows = await this.database.query<ModelLineRow>(
       `SELECT id, project_id, code, name, calculation_method, unit,
               config_json, sort_order, created_at, updated_at
        FROM cfg_model_line
-       WHERE project_id = ? AND version_id = ? AND line_type = 'parameter'
+       WHERE project_id = ? AND plan_id = ? AND line_type = 'parameter'
        ORDER BY sort_order, code`,
-      [projectId, versionId],
+      [projectId, planId],
     )
     return rows.map(fromRow)
   }
 
-  async listValues(projectId: string, versionId: string): Promise<ProjectParameterValue[]> {
+  async listValues(projectId: string, planId: string): Promise<ProjectParameterValue[]> {
     const rows = await this.database.query<{
       line_id: string; period: string; value_text: string
     }>(
       `SELECT value.line_id, value.period, value.value_text
        FROM cfg_model_line_value value
        JOIN cfg_model_line line ON line.id = value.line_id
-       WHERE line.project_id = ? AND line.version_id = ? AND line.line_type = 'parameter'
+       WHERE line.project_id = ? AND line.plan_id = ? AND line.line_type = 'parameter'
        ORDER BY line.sort_order, value.period`,
-      [projectId, versionId],
+      [projectId, planId],
     )
     return rows.map((row) => ({
       parameterId: row.line_id,
@@ -98,12 +98,12 @@ export class ParameterRepository {
     }))
   }
 
-  async saveProjectDraft(projectId: string, versionId: string, drafts: ProjectParameterDraft[]) {
+  async saveProjectDraft(projectId: string, planId: string, drafts: ProjectParameterDraft[]) {
     const [existing, project] = await Promise.all([
-      this.list(projectId, versionId),
+      this.list(projectId, planId),
       this.database.query<{ start_period: string; end_period: string }>(
-        'SELECT start_period, end_period FROM dim_project WHERE id = ?',
-        [projectId],
+        'SELECT start_period, end_period FROM dim_plan WHERE project_id = ? AND id = ?',
+        [projectId, planId],
       ),
     ])
     if (!project[0]) throw new Error('项目不存在')
@@ -129,9 +129,9 @@ export class ParameterRepository {
     if (removed.length) {
       const rows = await this.database.query<{ name: string; config_json: string }>(
         `SELECT name, config_json FROM cfg_model_line
-         WHERE project_id = ? AND version_id = ? AND line_type IN ('profit', 'cash')
+         WHERE project_id = ? AND plan_id = ? AND line_type IN ('profit', 'cash')
            AND calculation_method = 'formula'`,
-        [projectId, versionId],
+        [projectId, planId],
       )
       for (const parameter of removed) {
         const escaped = parameter.code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -144,8 +144,8 @@ export class ParameterRepository {
     }
 
     const statements: SqlStatement[] = removed.map((item) => ({
-      sql: 'DELETE FROM cfg_model_line WHERE id = ? AND project_id = ? AND version_id = ?',
-      params: [item.id, projectId, versionId],
+      sql: 'DELETE FROM cfg_model_line WHERE id = ? AND project_id = ? AND plan_id = ?',
+      params: [item.id, projectId, planId],
     }))
     for (const item of resolved) {
       const { draft, previous, id, code, sortOrder } = item
@@ -158,7 +158,7 @@ export class ParameterRepository {
       }
       statements.push({
         sql: `INSERT INTO cfg_model_line (
-          id, project_id, version_id, code, name, line_type, category,
+          id, project_id, plan_id, code, name, line_type, category,
           calculation_method, start_period, end_period,
           unit, config_json, sort_order, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, 'parameter', NULL, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -168,7 +168,7 @@ export class ParameterRepository {
           unit = excluded.unit, config_json = excluded.config_json,
           sort_order = excluded.sort_order, updated_at = excluded.updated_at`,
         params: [
-          id, projectId, versionId, code, draft.name.trim(),
+          id, projectId, planId, code, draft.name.trim(),
           draft.parameterType === 'fixed' ? 'fixed' : 'monthly_input',
           project[0].start_period, project[0].end_period, draft.unit.trim(),
           JSON.stringify(config), sortOrder, previous?.createdAt ?? now, now,
@@ -187,6 +187,6 @@ export class ParameterRepository {
       }
     }
     await this.database.batch(statements)
-    return this.list(projectId, versionId)
+    return this.list(projectId, planId)
   }
 }

@@ -137,7 +137,7 @@ describe('ForecastCompiler', () => {
     const result = compileForecast(project, [revenue, cost], [], [], [], [{
       id: 'override-1',
       projectId: project.id,
-      versionId: 'working',
+      planId: 'plan-default',
       forecastLineId: revenue.id,
       period: '2026-01',
       originalValue: '100',
@@ -167,7 +167,7 @@ describe('ForecastCompiler', () => {
       [],
     )
     const changedOverride = buildForecastConfigHash(lines, [], [], [], [], project, [{
-      id: 'override-1', projectId: project.id, versionId: 'working', forecastLineId: lines[0].id,
+      id: 'override-1', projectId: project.id, planId: 'plan-default', forecastLineId: lines[0].id,
       period: '2026-01', originalValue: '100.25', overrideValue: '101',
       reason: '', updatedAt: '2026-01-01T00:00:00.000Z',
     }])
@@ -187,7 +187,7 @@ describe('ForecastCompiler', () => {
     const result = compileForecast(project, [formulaLine], [], [], [], [{
       id: 'override-error',
       projectId: project.id,
-      versionId: 'working',
+      planId: 'plan-default',
       forecastLineId: formulaLine.id,
       period: '2026-01',
       originalValue: '0',

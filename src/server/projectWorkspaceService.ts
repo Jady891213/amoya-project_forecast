@@ -1,10 +1,11 @@
 import Decimal from 'decimal.js'
 import type {
   BaseFact,
-  CreateProjectVersionRequest,
+  CreateProjectInput,
+  CreateProjectPlanRequest,
   DepartmentInput,
   ForecastProjectDraft,
-  ProjectInput,
+  ProjectPlanInput,
   ProjectReportDto,
   ProjectWorkspace,
   SaveProjectWorkspaceRequest,
@@ -22,7 +23,7 @@ import { ParameterRepository } from './repositories/parameterRepository'
 import { CalculationService } from './services/calculationService'
 import { ProjectReportService } from './services/projectReportService'
 import { ForecastOverrideRepository } from './repositories/forecastOverrideRepository'
-import { ProjectVersionRepository } from './repositories/projectVersionRepository'
+import { ProjectPlanRepository } from './repositories/projectPlanRepository'
 
 const reportAmountFormatter = new Intl.NumberFormat('zh-CN', {
   minimumFractionDigits: 2,
@@ -37,24 +38,24 @@ export class ProjectWorkspaceService {
   private readonly projects: ProjectRepository
   private readonly departments: DepartmentRepository
   private readonly calculations: CalculationService
-  private readonly projectVersions: ProjectVersionRepository
+  private readonly projectPlans: ProjectPlanRepository
 
   constructor(private readonly database: DatabaseClient) {
     this.projects = new ProjectRepository(database)
     this.departments = new DepartmentRepository(database)
     this.calculations = new CalculationService(database)
-    this.projectVersions = new ProjectVersionRepository(database)
+    this.projectPlans = new ProjectPlanRepository(database)
   }
 
   async bootstrap() {
     const dimensions = new DimensionRepository(this.database)
-    const [departments, projects, periods, scenarios, versions, metrics, facts] =
+    const [departments, projects, periods, scenarios, plans, metrics, facts] =
       await Promise.all([
         this.departments.list(),
         this.projects.list(),
         dimensions.listPeriods(),
         dimensions.listScenarios(),
-        dimensions.listVersions(),
+        this.projectPlans.listAll(),
         new MetricRepository(this.database).list(),
         new FactRepository(this.database).list(),
       ])
@@ -63,34 +64,38 @@ export class ProjectWorkspaceService {
       projects,
       periods,
       scenarios,
-      versions,
+      plans,
       metrics,
       facts,
       storage: { ...this.database.runtime },
     }
   }
 
-  async createProject(input: ProjectInput): Promise<ProjectWorkspace> {
-    const project = await this.projects.save(input, 0)
-    await this.projectVersions.ensureDefault(project.id)
-    return this.getWorkspace(project.id, 'working')
+  async createProject(input: CreateProjectInput): Promise<ProjectWorkspace> {
+    const project = await this.projects.save(input)
+    const plan = await this.projectPlans.create(project.id, {
+      name: '默认方案',
+      startPeriod: input.startPeriod,
+      endPeriod: input.endPeriod,
+    }, true)
+    return this.getWorkspace(project.id, plan.planId)
   }
 
-  async getWorkspace(projectId: string, versionId?: string): Promise<ProjectWorkspace> {
+  async getWorkspace(projectId: string, planId?: string): Promise<ProjectWorkspace> {
     const project = await this.projects.get(projectId)
     if (!project) throw Object.assign(new Error('项目不存在'), { code: 'NOT_FOUND' })
-    const projectVersions = await this.projectVersions.list(projectId)
-    const fallback = projectVersions.find((item) => item.isDefault)
-      ?? await this.projectVersions.ensureDefault(projectId)
-    const currentVersion = projectVersions.find((item) => item.versionId === versionId)
+    const projectPlans = await this.projectPlans.list(projectId)
+    const fallback = projectPlans.find((item) => item.isDefault && item.status === 'active')
+      ?? projectPlans.find((item) => item.status === 'active')
+    if (!fallback) throw Object.assign(new Error('项目没有可用方案'), { code: 'NOT_FOUND' })
+    const currentPlan = projectPlans.find((item) => item.planId === planId)
       ?? fallback
-    const versions = projectVersions.length ? projectVersions : [currentVersion]
-    const forecast = await this.calculations.getProjectState(projectId, currentVersion.versionId)
+    const forecast = await this.calculations.getProjectState(projectId, currentPlan.planId)
     return {
       project,
-      projectVersions: versions,
-      currentVersion,
-      draftRevision: currentVersion.draftRevision,
+      projectPlans,
+      currentPlan,
+      draftRevision: currentPlan.draftRevision,
       forecast,
     }
   }
@@ -101,20 +106,21 @@ export class ProjectWorkspaceService {
   ): Promise<ProjectWorkspace> {
     const backup = await this.database.exportDatabase()
     try {
-      await this.projectVersions.assertRevision(projectId, request.versionId, request.expectedRevision)
+      await this.projectPlans.assertRevision(projectId, request.planId, request.expectedRevision)
       const project = await this.projects.save(
         { ...request.draft.project, id: projectId },
       )
-      await this.calculations.saveDraft(project.id, request.versionId, request.draft.forecast)
-      return await this.getWorkspace(project.id, request.versionId)
+      await this.projectPlans.update(projectId, request.planId, request.draft.plan)
+      await this.calculations.saveDraft(project.id, request.planId, request.draft.forecast)
+      return await this.getWorkspace(project.id, request.planId)
     } catch (reason) {
       await this.database.importDatabase(backup)
       throw reason
     }
   }
 
-  async calculate(projectId: string, versionId: string, expectedRevision: number) {
-    return this.calculations.calculateSaved(projectId, versionId, expectedRevision)
+  async calculate(projectId: string, planId: string, expectedRevision: number) {
+    return this.calculations.calculateSaved(projectId, planId, expectedRevision)
   }
 
   async archive(projectId: string) {
@@ -141,10 +147,12 @@ export class ProjectWorkspaceService {
         code,
         name: `${source.project.name} 副本`,
         departmentId: source.project.departmentId,
-        startPeriod: source.project.startPeriod,
-        endPeriod: source.project.endPeriod,
       })
-      await this.projectVersions.ensureDefault(copiedProject.id)
+      const copiedPlan = await this.projectPlans.create(copiedProject.id, {
+        name: source.currentPlan.name,
+        startPeriod: source.currentPlan.startPeriod,
+        endPeriod: source.currentPlan.endPeriod,
+      }, true)
       const lineValues = new Map<string, Record<string, string>>()
       source.forecast.values.forEach((item) => {
         const values = lineValues.get(item.lineId) ?? {}
@@ -204,12 +212,12 @@ export class ProjectWorkspaceService {
         })),
         overrides: [],
       }
-      const copiedState = await this.calculations.saveDraft(copiedProject.id, 'working', draft)
+      const copiedState = await this.calculations.saveDraft(copiedProject.id, copiedPlan.planId, draft)
       const sourceLineCodeById = new Map(source.forecast.lines.map((line) => [line.id, line.code]))
       const copiedLineIdByCode = new Map(copiedState.lines.map((line) => [line.code, line.id]))
       await new ForecastOverrideRepository(this.database).saveProjectDraft(
         copiedProject.id,
-        'working',
+        copiedPlan.planId,
         source.forecast.overrides.flatMap((override) => {
           const copiedLineId = copiedLineIdByCode.get(sourceLineCodeById.get(override.forecastLineId) ?? '')
           return copiedLineId ? [{
@@ -221,7 +229,7 @@ export class ProjectWorkspaceService {
           }] : []
         }),
       )
-      return this.getWorkspace(copiedProject.id, 'working')
+      return this.getWorkspace(copiedProject.id, copiedPlan.planId)
     } catch (reason) {
       await this.database.importDatabase(backup)
       throw reason
@@ -234,12 +242,12 @@ export class ProjectWorkspaceService {
     await this.database.execute('DELETE FROM dim_project WHERE id = ?', [projectId])
   }
 
-  async createVersion(projectId: string, request: CreateProjectVersionRequest): Promise<ProjectWorkspace> {
+  async createPlan(projectId: string, request: CreateProjectPlanRequest): Promise<ProjectWorkspace> {
     const backup = await this.database.exportDatabase()
     try {
-      const created = await this.projectVersions.enable(projectId, request.versionId)
-      if (request.copyFromVersionId) {
-        const source = await this.getWorkspace(projectId, request.copyFromVersionId)
+      const created = await this.projectPlans.create(projectId, request)
+      if (request.copyFromPlanId) {
+        const source = await this.getWorkspace(projectId, request.copyFromPlanId)
         const lineValues = new Map<string, Record<string, string>>()
         source.forecast.values.forEach((item) => {
           const values = lineValues.get(item.lineId) ?? {}
@@ -299,12 +307,12 @@ export class ProjectWorkspaceService {
           })),
           overrides: [],
         }
-        const copiedState = await this.calculations.saveDraft(projectId, created.versionId, draft)
+        const copiedState = await this.calculations.saveDraft(projectId, created.planId, draft)
         const sourceLineCodeById = new Map(source.forecast.lines.map((line) => [line.id, line.code]))
         const copiedLineIdByCode = new Map(copiedState.lines.map((line) => [line.code, line.id]))
         await new ForecastOverrideRepository(this.database).saveProjectDraft(
           projectId,
-          created.versionId,
+          created.planId,
           source.forecast.overrides.flatMap((override) => {
             const lineId = copiedLineIdByCode.get(sourceLineCodeById.get(override.forecastLineId) ?? '')
             return lineId ? [{
@@ -317,15 +325,30 @@ export class ProjectWorkspaceService {
           }),
         )
       }
-      return this.getWorkspace(projectId, created.versionId)
+      return this.getWorkspace(projectId, created.planId)
     } catch (reason) {
       await this.database.importDatabase(backup)
       throw reason
     }
   }
 
-  async setVersionStatus(projectId: string, versionId: string, status: 'active' | 'inactive') {
-    return this.projectVersions.setStatus(projectId, versionId, status)
+  async updatePlan(projectId: string, planId: string, input: Partial<ProjectPlanInput> & { isDefault?: boolean }) {
+    const current = await this.projectPlans.get(projectId, planId)
+    if (!current) throw Object.assign(new Error('项目方案不存在'), { code: 'NOT_FOUND' })
+    return this.projectPlans.update(projectId, planId, {
+      name: input.name ?? current.name,
+      startPeriod: input.startPeriod ?? current.startPeriod,
+      endPeriod: input.endPeriod ?? current.endPeriod,
+      isDefault: input.isDefault,
+    })
+  }
+
+  async archivePlan(projectId: string, planId: string) {
+    return this.projectPlans.archive(projectId, planId)
+  }
+
+  async restorePlan(projectId: string, planId: string) {
+    return this.projectPlans.restore(projectId, planId)
   }
 
   async saveDepartment(input: DepartmentInput) {
@@ -336,18 +359,22 @@ export class ProjectWorkspaceService {
     return this.departments.setStatus(id, status)
   }
 
-  async buildReport(projectId: string, runId?: string, versionId?: string): Promise<ProjectReportDto> {
+  async buildReport(projectId: string, runId?: string, planId?: string): Promise<ProjectReportDto> {
     const runRepository = new CalculationRunRepository(this.database)
-    const [project, scenarios, versions, projectVersions, availableRuns, state] =
-      await Promise.all([
-        this.projects.get(projectId),
-        new DimensionRepository(this.database).listScenarios(),
-        new DimensionRepository(this.database).listVersions(),
-        this.projectVersions.list(projectId),
-        runRepository.listSuccess(projectId, versionId ?? 'working'),
-        this.calculations.getProjectState(projectId, versionId ?? 'working'),
-      ])
+    const [project, scenarios, projectPlans] = await Promise.all([
+      this.projects.get(projectId),
+      new DimensionRepository(this.database).listScenarios(),
+      this.projectPlans.list(projectId),
+    ])
     if (!project) throw Object.assign(new Error('项目不存在'), { code: 'NOT_FOUND' })
+    const requestedPlan = projectPlans.find((item) => item.planId === planId)
+      ?? projectPlans.find((item) => item.isDefault && item.status === 'active')
+      ?? projectPlans.find((item) => item.status === 'active')
+    if (!requestedPlan) throw Object.assign(new Error('项目没有可用方案'), { code: 'NOT_FOUND' })
+    const [availableRuns, state] = await Promise.all([
+      runRepository.listSuccess(projectId, requestedPlan.planId),
+      this.calculations.getProjectState(projectId, requestedPlan.planId),
+    ])
     const selectedRun = runId
       ? availableRuns.find((item) => item.id === runId)
       : availableRuns[0]
@@ -355,21 +382,20 @@ export class ProjectWorkspaceService {
       throw Object.assign(new Error('所选成功计算批次不存在'), { code: 'NOT_FOUND' })
     }
     const scenario = scenarios.find((item) => item.isDefault)
-    const selectedVersionId = selectedRun?.versionId ?? versionId ?? 'working'
-    const versionDimension = versions.find((item) => item.id === selectedVersionId)
-    const projectVersion = projectVersions.find((item) => item.versionId === selectedVersionId)
-    const version = versionDimension && projectVersion
-      ? { ...versionDimension, name: projectVersion.name }
-      : versionDimension
-    if (!scenario || !version) throw new Error('缺少基准场景或项目版本')
+    if (!scenario) throw new Error('缺少基准场景')
     const reportQuery = {
       projectId,
       scenarioId: selectedRun?.scenarioId ?? scenario.id,
-      versionId: selectedRun?.versionId ?? version.id,
+      planId: selectedRun?.planId ?? requestedPlan.planId,
     }
     let projectSnapshot = project
+    let planSnapshot = requestedPlan
     if (selectedRun?.projectSnapshotJson) {
-      try { projectSnapshot = { ...project, ...JSON.parse(selectedRun.projectSnapshotJson) } }
+      try {
+        const parsed = JSON.parse(selectedRun.projectSnapshotJson)
+        projectSnapshot = { ...project, id: parsed.id ?? project.id, code: parsed.code ?? project.code, name: parsed.name ?? project.name, departmentId: parsed.departmentId ?? project.departmentId, status: parsed.status ?? project.status }
+        planSnapshot = { ...requestedPlan, name: parsed.planName ?? requestedPlan.name, startPeriod: parsed.startPeriod ?? requestedPlan.startPeriod, endPeriod: parsed.endPeriod ?? requestedPlan.endPeriod }
+      }
       catch { projectSnapshot = project }
     }
     const reportService = new ProjectReportService(this.database)
@@ -378,6 +404,7 @@ export class ProjectWorkspaceService {
           reportQuery,
           await this.buildFactsForRun(projectId, selectedRun.id),
           projectSnapshot,
+          planSnapshot,
         )
       : await reportService.build(reportQuery)
     const [lineBreakdown, cashSchedule] = await Promise.all([
@@ -388,7 +415,7 @@ export class ProjectWorkspaceService {
         ? new CashScheduleRepository(this.database).listByRun(selectedRun.id)
         : Promise.resolve([]),
     ])
-    let snapshotParameters = await new ParameterRepository(this.database).list(projectId, version.id)
+    let snapshotParameters = await new ParameterRepository(this.database).list(projectId, requestedPlan.planId)
     let snapshotOverrides = state.overrides
     if (selectedRun?.configSnapshotJson) {
       try {
@@ -399,7 +426,7 @@ export class ProjectWorkspaceService {
     }
     const grossMargin = report.summary.grossMargin
     const measurementSummary = [
-      `项目经营期为 ${report.project.startPeriod} 至 ${report.operationEndPeriod}。`,
+      `方案经营期为 ${report.plan.startPeriod} 至 ${report.operationEndPeriod}。`,
       report.hasFacts
         ? `本批次收入 ${formatReportWan(report.summary.revenue)}、成本 ${formatReportWan(report.summary.cost)}。`
         : '当前批次尚无可展示事实。',
@@ -416,10 +443,10 @@ export class ProjectWorkspaceService {
     ]
     return {
       ...report,
-      version,
       calculationRun: selectedRun,
       availableRuns,
       projectSnapshot,
+      planSnapshot,
       lineBreakdown,
       cashSchedule,
       overrides: snapshotOverrides,
@@ -444,24 +471,24 @@ export class ProjectWorkspaceService {
       department_id: string
       period: string
       scenario_id: string
-      version_id: string
+      plan_id: string
       metric_code: BaseFact['metricCode']
       value_text: string
     }>(
       `SELECT department_id, period, scenario_id,
-              version_id, metric_code, value_text
+              plan_id, metric_code, value_text
        FROM fact_forecast_line_value
        WHERE project_id = ? AND calculation_run_id = ?
        UNION ALL
        SELECT department_id, settlement_period AS period,
-              scenario_id, version_id, metric_code, value_text
+              scenario_id, plan_id, metric_code, value_text
        FROM fact_cash_schedule_value
        WHERE project_id = ? AND calculation_run_id = ?`,
       [projectId, runId, projectId, runId],
     )
     const aggregates = new Map<string, typeof rows[number] & { value: Decimal }>()
     rows.forEach((row) => {
-      const key = [row.department_id, row.period, row.scenario_id, row.version_id, row.metric_code].join(':')
+      const key = [row.department_id, row.period, row.scenario_id, row.plan_id, row.metric_code].join(':')
       const aggregate = aggregates.get(key) ?? { ...row, value: new Decimal(0) }
       aggregate.value = aggregate.value.plus(row.value_text)
       aggregates.set(key, aggregate)
@@ -472,7 +499,7 @@ export class ProjectWorkspaceService {
       departmentId: row.department_id,
       period: row.period,
       scenarioId: row.scenario_id,
-      versionId: row.version_id,
+      planId: row.plan_id,
       metricCode: row.metric_code,
       value: row.value.toDecimalPlaces(6).toString(),
       sourceLabel: '计算批次重建',

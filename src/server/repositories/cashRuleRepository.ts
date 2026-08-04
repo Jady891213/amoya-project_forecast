@@ -14,13 +14,13 @@ interface RuleLineRow {
 export class CashRuleRepository {
   constructor(private readonly database: DatabaseClient) {}
 
-  async list(projectId: string, versionId: string): Promise<CashRule[]> {
+  async list(projectId: string, planId: string): Promise<CashRule[]> {
     const rows = await this.database.query<RuleLineRow>(
       `SELECT id, project_id, code, config_json, created_at, updated_at
        FROM cfg_model_line
-       WHERE project_id = ? AND version_id = ? AND line_type = 'profit'
+       WHERE project_id = ? AND plan_id = ? AND line_type = 'profit'
        ORDER BY sort_order`,
-      [projectId, versionId],
+      [projectId, planId],
     )
     return rows.flatMap((row) => {
       const rule = parseForecastConfig(row.config_json).cashRule
@@ -47,7 +47,7 @@ export class CashRuleRepository {
     })
   }
 
-  async saveProjectDraft(projectId: string, versionId: string, lines: ForecastLine[], drafts: CashRuleDraft[]) {
+  async saveProjectDraft(projectId: string, planId: string, lines: ForecastLine[], drafts: CashRuleDraft[]) {
     const lineByCode = new Map(lines.map((line) => [line.code, line]))
     const draftByLineId = new Map<string, CashRuleDraft>()
     for (const draft of drafts) {
@@ -61,8 +61,8 @@ export class CashRuleRepository {
     const rows = await this.database.query<RuleLineRow>(
       `SELECT id, project_id, code, config_json, created_at, updated_at
        FROM cfg_model_line
-       WHERE project_id = ? AND version_id = ? AND line_type = 'profit'`,
-      [projectId, versionId],
+       WHERE project_id = ? AND plan_id = ? AND line_type = 'profit'`,
+      [projectId, planId],
     )
     const now = new Date().toISOString()
     const statements: SqlStatement[] = rows.map((row) => {
@@ -90,6 +90,6 @@ export class CashRuleRepository {
       }
     })
     await this.database.batch(statements)
-    return this.list(projectId, versionId)
+    return this.list(projectId, planId)
   }
 }

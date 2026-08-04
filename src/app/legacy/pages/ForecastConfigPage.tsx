@@ -579,7 +579,7 @@ export function ForecastConfigPage({
     setMessage('')
     try {
       const selectedPosition = Math.max(selectedIndex, 0)
-      const state = await service.saveDraft(project.id, 'working', projectDraft())
+      const state = await service.saveDraft(project.id, project.defaultPlanId ?? '', projectDraft())
       hydrate(state, selectedPosition)
       setMessage('预测配置草稿已保存')
     } catch (reason) {
@@ -683,7 +683,7 @@ export function ForecastConfigPage({
             ratio: new Decimal(item.ratio || 0).div(100).toString(),
           })),
         })),
-      }),
+      }, 'legacy-default-plan'),
     [cashRuleDrafts, drafts, parameterDrafts, project],
   )
   const selectedPreviewValues = selected

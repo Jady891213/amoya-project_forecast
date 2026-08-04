@@ -20,6 +20,7 @@ import type { DatabaseClient, StorageRuntimeInfo } from './storage/types'
 import type { AppSnapshot } from './state/types'
 import { DepartmentRepository } from './repositories/departmentRepository'
 import { DimensionRepository } from './repositories/dimensionRepository'
+import { ProjectPlanRepository } from '../server/repositories/projectPlanRepository'
 import { FactRepository } from './repositories/factRepository'
 import { MetricRepository } from './repositories/metricRepository'
 import { ProjectRepository } from './repositories/projectRepository'
@@ -50,7 +51,7 @@ const emptySnapshot: AppSnapshot = {
   projects: [],
   periods: [],
   scenarios: [],
-  versions: [],
+  plans: [],
   metrics: [],
   facts: [],
   storage: bootStorage,
@@ -85,13 +86,13 @@ export default function App() {
     if (!client) return
     const projectsRepo = new ProjectRepository(client)
     const dimensions = new DimensionRepository(client)
-    const [departments, projects, periods, scenarios, versions, metrics, facts] =
+    const [departments, projects, periods, scenarios, plans, metrics, facts] =
       await Promise.all([
         new DepartmentRepository(client).list(),
         projectsRepo.list(),
         dimensions.listPeriods(),
         dimensions.listScenarios(),
-        dimensions.listVersions(),
+        new ProjectPlanRepository(client).listAll(),
         new MetricRepository(client).list(),
         new FactRepository(client).list(),
       ])
@@ -100,7 +101,7 @@ export default function App() {
       projects,
       periods,
       scenarios,
-      versions,
+      plans,
       metrics,
       facts,
       storage: { ...client.runtime },

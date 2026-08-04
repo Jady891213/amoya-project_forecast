@@ -5,7 +5,7 @@ import type {
   CalculatedFact,
   MetricDefinition,
   MonthlyMetricRow,
-  Project,
+  ProjectCalculationContext,
   ReportSummary,
 } from '../domain/types'
 
@@ -36,18 +36,18 @@ function value(decimal: Decimal): string {
 }
 
 function calculatedFact(
-  project: Project,
+  project: ProjectCalculationContext,
   period: string,
   metric: MetricDefinition,
   metricValue: Decimal | null,
   scenarioId: string,
-  versionId: string,
+  planId: string,
 ): CalculatedFact {
   return {
     projectId: project.id,
     period,
     scenarioId,
-    versionId,
+    planId,
     metricCode: metric.code as CalculatedFact['metricCode'],
     value: metricValue === null ? null : value(metricValue),
     source: 'calculated',
@@ -57,12 +57,12 @@ function calculatedFact(
 }
 
 export function calculateMetrics(
-  project: Project,
+  project: ProjectCalculationContext,
   facts: BaseFact[],
   metricDefinitions: MetricDefinition[],
 ): MetricEngineResult {
   const scenarioId = facts[0]?.scenarioId ?? 'baseline'
-  const versionId = facts[0]?.versionId ?? 'working'
+  const planId = facts[0]?.planId ?? 'plan-default'
   const operationEndPeriod = project.endPeriod
   const reportEndPeriod = [
     operationEndPeriod,
@@ -112,7 +112,7 @@ export function calculateMetrics(
             definition,
             metricValue,
             scenarioId,
-            versionId,
+            planId,
           ),
         )
       }

@@ -7,7 +7,7 @@ interface FactRow {
   department_id: string
   period: string
   scenario_id: string
-  version_id: string
+  plan_id: string
   metric_code: BaseFact['metricCode']
   value_text: string
   source_label: string
@@ -25,7 +25,7 @@ function fromRow(row: FactRow): BaseFact {
     departmentId: row.department_id,
     period: row.period,
     scenarioId: row.scenario_id,
-    versionId: row.version_id,
+    planId: row.plan_id,
     metricCode: row.metric_code,
     value: row.value_text,
     sourceLabel: row.source_label,
@@ -54,11 +54,11 @@ export class FactRepository {
     const params: unknown[] = [
       query.projectId,
       query.scenarioId,
-      query.versionId,
+      query.planId,
     ]
     const rows = await this.database.query<FactRow>(
       `SELECT * FROM fact_metric_value
-       WHERE project_id = ? AND scenario_id = ? AND version_id = ?
+       WHERE project_id = ? AND scenario_id = ? AND plan_id = ?
        ORDER BY period, metric_code`,
       params,
     )

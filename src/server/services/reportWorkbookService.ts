@@ -139,7 +139,7 @@ export class ReportWorkbookService {
     const rows = [
       ['项目编码', report.projectSnapshot.code ?? '—', '项目名称', report.projectSnapshot.name],
       ['申报部门', report.department?.name ?? '—', '测算期间', `${report.projectSnapshot.startPeriod} 至 ${report.projectSnapshot.endPeriod}`],
-      ['场景', report.scenario.name, '版本', report.version.name],
+      ['场景', report.scenario.name, '方案', report.plan.name],
       ['计算批次', report.calculationRun ? `RUN-${String(report.calculationRun.runNumber).padStart(4, '0')}` : '无', '草稿修订', report.calculationRun?.draftRevision ?? '—'],
       ['结果状态', report.isBehindDraft ? '落后于当前配置' : '与当前配置一致', '导出时间', new Date()],
       ['口径', '金额单位：元；损益为未税标准口径', '现金转正期间', report.hasCashFacts ? report.summary.cashPositiveLabel : '暂无现金数据'],

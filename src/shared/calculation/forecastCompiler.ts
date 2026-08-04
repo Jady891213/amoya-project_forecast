@@ -7,7 +7,7 @@ import type {
   ForecastLine,
   ForecastOverride,
   ForecastMonthlyValue,
-  Project,
+  ProjectCalculationContext,
   ProjectParameter,
   ProjectParameterValue,
 } from '../domain/types'
@@ -55,7 +55,7 @@ export function buildForecastConfigHash(
   parameters: ProjectParameter[] = [],
   parameterValues: ProjectParameterValue[] = [],
   cashRules: CashRule[] = [],
-  project?: Project,
+  project?: ProjectCalculationContext,
   overrides: ForecastOverride[] = [],
 ): string {
   const payload = JSON.stringify({
@@ -140,13 +140,13 @@ export function buildForecastConfigHash(
 }
 
 export function compileForecast(
-  project: Project,
+  project: ProjectCalculationContext,
   lines: ForecastLine[],
   monthlyValues: ForecastMonthlyValue[],
   parameters: ProjectParameter[] = [],
   parameterValues: ProjectParameterValue[] = [],
   overrides: ForecastOverride[] = [],
-  versionId = 'working',
+  planId = 'plan-default',
 ): ForecastCompilation {
   const issues: CalculationIssue[] = []
   const values: CompiledLineValue[] = []
@@ -307,7 +307,7 @@ export function compileForecast(
       departmentId: project.departmentId,
       period,
       scenarioId: 'baseline',
-      versionId,
+      planId,
       metricCode: line.metricCode,
       value: net.toString(),
       rawValue: raw.toString(),

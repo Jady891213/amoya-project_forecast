@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import { SYSTEM_METRICS } from '../domain/metrics'
 import {
   BASELINE_SCENARIO_CODE,
-  WORKING_VERSION_CODE,
   type BaseFact,
   type BaseMetricCode,
   type Project,
@@ -33,7 +32,7 @@ function fact(
     departmentId: project.departmentId,
     period,
     scenarioId: `${project.id}:${BASELINE_SCENARIO_CODE}`,
-    versionId: `${project.id}:${WORKING_VERSION_CODE}`,
+    planId: 'plan-test',
     metricCode,
     value: String(value),
     sourceLabel: '测试',

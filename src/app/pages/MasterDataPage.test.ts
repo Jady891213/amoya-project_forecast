@@ -8,7 +8,7 @@ describe('MasterDataPage', () => {
       'departments',
       'periods',
       'scenarios',
-      'versions',
+      'plans',
     ])
   })
 })

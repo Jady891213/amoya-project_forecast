@@ -2,6 +2,7 @@ import type { DatabaseClient, SqlStatement } from '../../app/storage/types'
 import { REFERENCE_DATASET_ID } from '../../shared/domain/types'
 import {
   REFERENCE_DEPARTMENTS,
+  REFERENCE_PLANS,
   REFERENCE_PROJECTS,
 } from '../../app/mocks/p0ReferenceDataset'
 import { HISTORICAL_PROJECT_CONFIGS } from '../../app/mocks/historicalProjectConfigs'
@@ -42,26 +43,33 @@ export class ReferenceDatasetService {
     REFERENCE_PROJECTS.forEach((row) =>
       statements.push({
         sql: `INSERT OR REPLACE INTO dim_project (
-          id, code, name, department_id, start_period, end_period,
-          status, attributes_json, origin,
+          id, code, name, department_id, status, attributes_json, origin,
           dataset_id, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
         params: [
           row.id, row.code ?? null, row.name, row.departmentId,
-          row.startPeriod, row.endPeriod, row.status,
-          row.origin, row.datasetId, row.createdAt, row.updatedAt,
+          row.status, row.origin, row.datasetId, row.createdAt, row.updatedAt,
         ],
       }),
     )
+    REFERENCE_PLANS.forEach((row) => statements.push({
+      sql: `INSERT OR REPLACE INTO dim_plan (
+        id, project_id, name, start_period, end_period, status, is_default,
+        sort_order, draft_revision, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      params: [row.planId, row.projectId, row.name, row.startPeriod, row.endPeriod, row.status, row.isDefault ? 1 : 0, row.sortOrder, row.draftRevision, row.createdAt, row.updatedAt],
+    }))
     await this.database.batch(statements)
     const calculation = new CalculationService(this.database)
     for (const config of HISTORICAL_PROJECT_CONFIGS) {
+      const plan = REFERENCE_PLANS.find((item) => item.projectId === config.projectId)!
       const result = await calculation.saveAndCalculate(
         config.projectId,
         {
           lines: config.lines,
           parameters: config.parameters,
         },
+        plan.planId,
       )
       if (!result.success) {
         throw new Error(
