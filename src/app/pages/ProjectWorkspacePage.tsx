@@ -55,6 +55,7 @@ interface Props {
   api: ApiClient
   snapshot: AppSnapshot
   projectId: string
+  versionId?: string
   view: WorkspaceView
   onNavigate: (path: string) => void
   onRefresh: () => Promise<void>
@@ -168,7 +169,7 @@ function lineGridValues(line: ForecastLineDraft, periods: string[]) {
   return {}
 }
 
-export function ProjectWorkspacePage({ api, snapshot, projectId, view, onNavigate, onRefresh, onDirtyChange }: Props) {
+export function ProjectWorkspacePage({ api, snapshot, projectId, versionId, view, onNavigate, onRefresh, onDirtyChange }: Props) {
   const dialog = useAppDialog()
   const [workspace, setWorkspace] = useState<ProjectWorkspace>()
   const [projectDraft, setProjectDraft] = useState<ProjectInput>()
@@ -185,6 +186,8 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, view, onNavigat
   const [reportRunId, setReportRunId] = useState('')
   const [editingProjectHeader, setEditingProjectHeader] = useState(false)
   const [createMenu, setCreateMenu] = useState<'profit' | 'cash' | ''>('')
+  const [versionMenuOpen, setVersionMenuOpen] = useState(false)
+  const [versionMemberId, setVersionMemberId] = useState('')
   const [debouncedFormulaExpressions, setDebouncedFormulaExpressions] = useState<Record<string, string>>({})
 
   const markDirty = useCallback(() => {
@@ -224,18 +227,18 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, view, onNavigat
   useEffect(() => {
     let cancelled = false
     setWorkspace(undefined)
-    void api.getWorkspace(projectId).then((result) => {
+    void api.getWorkspace(projectId, versionId).then((result) => {
       if (!cancelled) hydrate(result)
     }).catch((reason) => {
       if (!cancelled) setMessage(reason instanceof Error ? reason.message : '项目加载失败')
     })
     return () => { cancelled = true }
-  }, [api, hydrate, projectId])
+  }, [api, hydrate, projectId, versionId])
 
   useEffect(() => {
     if (!workspace) return
     let cancelled = false
-    void api.report(projectId, view === 'report' && reportRunId ? reportRunId : undefined).then((result) => {
+    void api.report(projectId, view === 'report' && reportRunId ? reportRunId : undefined, workspace.currentVersion.versionId).then((result) => {
       if (!cancelled) setReport(result)
     }).catch((reason) => {
       if (!cancelled) setMessage(reason instanceof Error ? reason.message : '结果加载失败')
@@ -293,6 +296,7 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, view, onNavigat
         normalizedForecast(lines.map((line) => line.forecastMethod === 'formula'
           ? { ...line, formulaExpression: debouncedFormulaExpressions[line.id ?? line.code ?? line.name] ?? line.formulaExpression }
           : line)),
+        workspace.currentVersion.versionId,
       )
     } catch (reason) {
       return {
@@ -317,6 +321,7 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, view, onNavigat
     setMessage('')
     try {
       const saved = await api.saveWorkspace(projectId, {
+        versionId: workspace.currentVersion.versionId,
         expectedRevision: workspace.draftRevision,
         draft: { project: projectDraft, forecast: normalizedForecast() },
       })
@@ -340,18 +345,37 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, view, onNavigat
     setBusy(true); setMessage('')
     try {
       const saved = dirty ? await save(false) : workspace
-      const result = await api.calculate(projectId, saved.draftRevision)
+      const result = await api.calculate(projectId, saved.currentVersion.versionId, saved.draftRevision)
       if (!result.success) {
         setMessage(`计算失败：${result.issues.map((item) => item.message).slice(0, 3).join('；')}`)
         return
       }
-      const refreshed = await api.getWorkspace(projectId)
+      const refreshed = await api.getWorkspace(projectId, saved.currentVersion.versionId)
       hydrate(refreshed)
-      setReport(await api.report(projectId))
+      setReport(await api.report(projectId, undefined, saved.currentVersion.versionId))
       setMessage(`计算完成：RUN-${String(result.run.runNumber).padStart(4, '0')}`)
-      onNavigate(`/projects/${projectId}/calculation`)
+      onNavigate(`/projects/${projectId}/calculation?versionId=${encodeURIComponent(saved.currentVersion.versionId)}`)
     } catch (reason) {
       setMessage(reason instanceof Error ? reason.message : '计算失败')
+    } finally { setBusy(false) }
+  }
+
+  async function createVersion(copyCurrent: boolean) {
+    if (!workspace) return
+    if (!versionMemberId) { setMessage('请选择要启用的版本'); return }
+    setBusy(true)
+    try {
+      const source = dirty ? await save(false) : workspace
+      const created = await api.createVersion(projectId, {
+        versionId: versionMemberId,
+        copyFromVersionId: copyCurrent ? source.currentVersion.versionId : undefined,
+      })
+      await onRefresh()
+      setVersionMenuOpen(false)
+      setVersionMemberId('')
+      onNavigate(`/projects/${projectId}/${view}?versionId=${encodeURIComponent(created.currentVersion.versionId)}`)
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : '启用版本失败')
     } finally { setBusy(false) }
   }
 
@@ -536,6 +560,12 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, view, onNavigat
         ? workspace.forecast.isResultCurrent ? '结果与当前配置一致' : '已保存，等待计算'
         : '已保存，等待计算'
   const departmentName = snapshot.departments.find((item) => item.id === projectDraft.departmentId)?.name ?? '未选择申报部门'
+  const currentVersionId = workspace.currentVersion.versionId
+  const availableVersionMembers = snapshot.versions.filter((member) =>
+    member.id !== 'working' && !workspace.projectVersions.some((item) => item.versionId === member.id),
+  )
+  const versionPath = (targetView: WorkspaceView, targetVersionId = currentVersionId) =>
+    `/projects/${projectId}/${targetView}?versionId=${encodeURIComponent(targetVersionId)}`
   const categoryOrder: ForecastCategory[] = ['revenue', 'cost', 'cash_inflow', 'cash_outflow']
   const orderedLines = [...lines].sort((left, right) => {
     const categoryDifference = categoryOrder.indexOf(left.category) - categoryOrder.indexOf(right.category)
@@ -583,9 +613,9 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, view, onNavigat
         <PageBreadcrumbs back={{ label: '返回', onClick: () => onNavigate('/projects') }} items={[{ label: projectDraft.name }]} />
       </div>
       <div className="workspace-tabs">
-        <button className={view === 'config' ? 'workspace-tab active' : 'workspace-tab'} onClick={() => onNavigate(`/projects/${projectId}/config`)}><Calculator size={14} />项目配置</button>
-        <button className={view === 'calculation' ? 'workspace-tab active' : 'workspace-tab'} onClick={() => onNavigate(`/projects/${projectId}/calculation`)}><TableProperties size={14} />计算底表</button>
-        <button className={view === 'report' ? 'workspace-tab active' : 'workspace-tab'} onClick={() => onNavigate(`/projects/${projectId}/report`)}><FileChartColumn size={14} />项目报告</button>
+        <button className={view === 'config' ? 'workspace-tab active' : 'workspace-tab'} onClick={() => onNavigate(versionPath('config'))}><Calculator size={14} />项目配置</button>
+        <button className={view === 'calculation' ? 'workspace-tab active' : 'workspace-tab'} onClick={() => onNavigate(versionPath('calculation'))}><TableProperties size={14} />计算底表</button>
+        <button className={view === 'report' ? 'workspace-tab active' : 'workspace-tab'} onClick={() => onNavigate(versionPath('report'))}><FileChartColumn size={14} />项目报告</button>
       </div>
       <div className="workspace-head-actions">
         <span className={`workspace-save-state ${dirty ? 'dirty' : ''}`}>{statusText}</span>
@@ -593,6 +623,25 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, view, onNavigat
         <button className="btn primary" disabled={busy} onClick={() => void calculate()}><Calculator size={14} />计算</button>
         <button className="btn icon-only" aria-label="更多项目操作" title="归档项目" onClick={() => void api.archive(projectId).then(() => onNavigate('/projects'))}><MoreHorizontal size={15} /></button>
       </div>
+    </div>
+    <div className="project-version-bar">
+      <span className="project-version-label">测算版本</span>
+      <div className="project-version-tabs">
+        {workspace.projectVersions.filter((item) => item.status === 'active').map((item) => <button
+          key={item.versionId}
+          className={item.versionId === currentVersionId ? 'active' : ''}
+          onClick={() => onNavigate(versionPath(view, item.versionId))}
+        >{item.name}{item.isDefault && <small>默认</small>}</button>)}
+      </div>
+      <div className="project-version-create">
+        <button className="btn" disabled={!availableVersionMembers.length} onClick={() => { setVersionMenuOpen(true); setVersionMemberId(availableVersionMembers[0]?.id ?? '') }}><Plus size={14} />{availableVersionMembers.length ? '添加版本' : '版本已全部启用'}</button>
+        {versionMenuOpen && <div className="project-version-popover">
+          <label>选择预置版本<select autoFocus value={versionMemberId} onChange={(event) => setVersionMemberId(event.target.value)}>{availableVersionMembers.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label>
+          <p>版本成员由平台统一维护，当前项目只选择是否启用。</p>
+          <div><button className="btn" onClick={() => setVersionMenuOpen(false)}>取消</button><button className="btn" disabled={busy || !versionMemberId} onClick={() => void createVersion(false)}>空白启用</button><button className="btn primary" disabled={busy || !versionMemberId} onClick={() => void createVersion(true)}><Copy size={13} />复制当前配置</button></div>
+        </div>}
+      </div>
+      <span className="project-version-context">场景固定：基准场景</span>
     </div>
     {message && <div className="workspace-message">{message}</div>}
 
@@ -705,7 +754,7 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, view, onNavigat
       report={report}
       selectedRunId={reportRunId}
       onSelectRun={setReportRunId}
-      onExport={() => void api.exportReport(projectId, report?.calculationRun?.id).catch((reason) => setMessage(reason instanceof Error ? reason.message : 'Excel 导出失败'))}
+      onExport={() => void api.exportReport(projectId, report?.calculationRun?.id, workspace.currentVersion.versionId).catch((reason) => setMessage(reason instanceof Error ? reason.message : 'Excel 导出失败'))}
     />}
   </main>
 }

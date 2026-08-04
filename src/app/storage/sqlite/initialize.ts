@@ -67,6 +67,12 @@ function metricStatements(): SqlStatement[] {
 }
 
 function globalDimensionStatements(now: string): SqlStatement[] {
+  const versions = [
+    ['working', 'working', '基准方案'],
+    ['version_1', 'version_1', '版本 1'],
+    ['version_2', 'version_2', '版本 2'],
+    ['version_3', 'version_3', '版本 3'],
+  ] as const
   return [
     {
       sql: `INSERT INTO dim_scenario
@@ -77,15 +83,16 @@ function globalDimensionStatements(now: string): SqlStatement[] {
           is_default = excluded.is_default, updated_at = excluded.updated_at`,
       params: [now, now],
     },
-    {
+    ...versions.map(([id, code, name]) => ({
       sql: `INSERT INTO dim_version
         (id, code, name, status, is_mutable, origin, created_at, updated_at)
-        VALUES ('working', 'working', '工作版', 'working', 1, 'system', ?, ?)
+        VALUES (?, ?, ?, 'working', 0, 'system', ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           code = excluded.code, name = excluded.name, status = excluded.status,
-          is_mutable = excluded.is_mutable, updated_at = excluded.updated_at`,
-      params: [now, now],
-    },
+          is_mutable = excluded.is_mutable, origin = excluded.origin,
+          updated_at = excluded.updated_at`,
+      params: [id, code, name, now, now],
+    })),
   ]
 }
 
@@ -107,7 +114,7 @@ export async function initializeSqliteDatabase(
   if (!applied.has(CURRENT_SCHEMA_VERSION)) {
     await database.execute(
       `INSERT INTO sys_schema_migration (version, description, applied_at)
-       VALUES (?, '收入成本衍生现金与统一计算底表结构', ?)`,
+       VALUES (?, '多版本测算与全局多维事实视图结构', ?)`,
       [CURRENT_SCHEMA_VERSION, now],
     )
   }

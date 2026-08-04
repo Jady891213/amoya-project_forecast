@@ -68,31 +68,31 @@ export function calculationRunInsert(run: CalculationRun): SqlStatement {
 export class CalculationRunRepository {
   constructor(private readonly database: DatabaseClient) {}
 
-  async nextRunNumber(projectId: string): Promise<number> {
+  async nextRunNumber(projectId: string, versionId: string): Promise<number> {
     const rows = await this.database.query<{ next_number: number }>(
       `SELECT COALESCE(MAX(run_number), 0) + 1 AS next_number
-       FROM sys_calculation_run WHERE project_id = ?`,
-      [projectId],
+       FROM sys_calculation_run WHERE project_id = ? AND version_id = ?`,
+      [projectId, versionId],
     )
     return rows[0]?.next_number ?? 1
   }
 
-  async latest(projectId: string): Promise<CalculationRun | undefined> {
+  async latest(projectId: string, versionId: string): Promise<CalculationRun | undefined> {
     const rows = await this.database.query<CalculationRunRow>(
       `SELECT * FROM sys_calculation_run
-       WHERE project_id = ?
+       WHERE project_id = ? AND version_id = ?
        ORDER BY run_number DESC LIMIT 1`,
-      [projectId],
+      [projectId, versionId],
     )
     return rows[0] ? fromRow(rows[0]) : undefined
   }
 
-  async latestSuccess(projectId: string): Promise<CalculationRun | undefined> {
+  async latestSuccess(projectId: string, versionId: string): Promise<CalculationRun | undefined> {
     const rows = await this.database.query<CalculationRunRow>(
       `SELECT * FROM sys_calculation_run
-       WHERE project_id = ? AND status = 'success'
+       WHERE project_id = ? AND version_id = ? AND status = 'success'
        ORDER BY run_number DESC LIMIT 1`,
-      [projectId],
+      [projectId, versionId],
     )
     return rows[0] ? fromRow(rows[0]) : undefined
   }
@@ -106,12 +106,12 @@ export class CalculationRunRepository {
     return rows[0] ? fromRow(rows[0]) : undefined
   }
 
-  async listSuccess(projectId: string): Promise<CalculationRun[]> {
+  async listSuccess(projectId: string, versionId: string): Promise<CalculationRun[]> {
     const rows = await this.database.query<CalculationRunRow>(
       `SELECT * FROM sys_calculation_run
-       WHERE project_id = ? AND status = 'success'
+       WHERE project_id = ? AND version_id = ? AND status = 'success'
        ORDER BY run_number DESC`,
-      [projectId],
+      [projectId, versionId],
     )
     return rows.map(fromRow)
   }

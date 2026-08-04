@@ -12,14 +12,14 @@ interface ForecastValueRow {
 export class ForecastValueRepository {
   constructor(private readonly database: DatabaseClient) {}
 
-  async listForProject(projectId: string): Promise<ForecastMonthlyValue[]> {
+  async listForProject(projectId: string, versionId: string): Promise<ForecastMonthlyValue[]> {
     const rows = await this.database.query<ForecastValueRow>(
       `SELECT value.line_id, value.period, value.value_text
        FROM cfg_model_line_value value
        JOIN cfg_model_line line ON line.id = value.line_id
-       WHERE line.project_id = ? AND line.line_type IN ('profit', 'cash')
+       WHERE line.project_id = ? AND line.version_id = ? AND line.line_type IN ('profit', 'cash')
        ORDER BY line.sort_order, value.period`,
-      [projectId],
+      [projectId, versionId],
     )
     return rows.map((row) => ({
       lineId: row.line_id,

@@ -120,7 +120,13 @@ export class ProjectRepository {
   async listVersions(): Promise<Version[]> {
     const rows = await this.database.query<VersionRow>(
       `SELECT * FROM dim_version
-       ORDER BY status, code`,
+       ORDER BY CASE id
+         WHEN 'working' THEN 0
+         WHEN 'version_1' THEN 1
+         WHEN 'version_2' THEN 2
+         WHEN 'version_3' THEN 3
+         ELSE 9
+       END, code`,
     )
     return rows.map(versionFromRow)
   }

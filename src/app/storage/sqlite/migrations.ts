@@ -1,4 +1,4 @@
-export const CURRENT_SCHEMA_VERSION = 11
+export const CURRENT_SCHEMA_VERSION = 12
 
 /**
  * 当前开发库直接按最新结构创建，不承担旧 Schema 的升级兼容。
@@ -61,9 +61,23 @@ CREATE TABLE dim_scenario (
   code TEXT NOT NULL UNIQUE,
   name TEXT NOT NULL,
   is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1)),
-  origin TEXT NOT NULL DEFAULT 'system' CHECK (origin = 'system'),
+  origin TEXT NOT NULL DEFAULT 'system' CHECK (origin IN ('system', 'user')),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
+);
+
+CREATE TABLE rel_project_version (
+  project_id TEXT NOT NULL REFERENCES dim_project(id) ON DELETE CASCADE,
+  version_id TEXT NOT NULL REFERENCES dim_version(id) ON DELETE CASCADE,
+  display_name TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
+  is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1)),
+  sort_order INTEGER NOT NULL DEFAULT 1,
+  draft_revision INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (project_id, version_id),
+  UNIQUE (project_id, display_name)
 );
 
 CREATE TABLE dim_version (
@@ -72,7 +86,7 @@ CREATE TABLE dim_version (
   name TEXT NOT NULL,
   status TEXT NOT NULL CHECK (status IN ('working', 'snapshot')),
   is_mutable INTEGER NOT NULL DEFAULT 1 CHECK (is_mutable IN (0, 1)),
-  origin TEXT NOT NULL DEFAULT 'system' CHECK (origin = 'system'),
+  origin TEXT NOT NULL DEFAULT 'system' CHECK (origin IN ('system', 'user')),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -108,12 +122,13 @@ CREATE TABLE sys_calculation_run (
   project_snapshot_json TEXT NOT NULL DEFAULT '{}',
   started_at TEXT NOT NULL,
   completed_at TEXT NOT NULL,
-  UNIQUE (project_id, run_number)
+  UNIQUE (project_id, version_id, run_number)
 );
 
 CREATE TABLE cfg_model_line (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL REFERENCES dim_project(id) ON DELETE CASCADE,
+  version_id TEXT NOT NULL REFERENCES dim_version(id) ON DELETE CASCADE,
   code TEXT NOT NULL,
   name TEXT NOT NULL,
   line_type TEXT NOT NULL CHECK (line_type IN ('parameter', 'profit', 'cash')),
@@ -126,7 +141,7 @@ CREATE TABLE cfg_model_line (
   sort_order INTEGER NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  UNIQUE (project_id, code),
+  UNIQUE (project_id, version_id, code),
   CHECK (end_period >= start_period),
   CHECK (
     (line_type = 'parameter' AND category IS NULL)
@@ -145,13 +160,14 @@ CREATE TABLE cfg_model_line_value (
 CREATE TABLE cfg_forecast_override (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL REFERENCES dim_project(id) ON DELETE CASCADE,
+  version_id TEXT NOT NULL REFERENCES dim_version(id) ON DELETE CASCADE,
   forecast_line_id TEXT NOT NULL REFERENCES cfg_model_line(id) ON DELETE CASCADE,
   period TEXT NOT NULL REFERENCES dim_period(period),
   original_value_text TEXT NOT NULL,
   override_value_text TEXT NOT NULL,
   reason TEXT NOT NULL DEFAULT '',
   updated_at TEXT NOT NULL,
-  UNIQUE (project_id, forecast_line_id, period)
+  UNIQUE (project_id, version_id, forecast_line_id, period)
 );
 
 CREATE TABLE fact_forecast_line_value (
@@ -220,9 +236,11 @@ CREATE INDEX idx_fact_project_query ON fact_metric_value(project_id, scenario_id
 CREATE INDEX idx_fact_forecast_line_run ON fact_forecast_line_value(calculation_run_id, forecast_line_id, period);
 CREATE INDEX idx_fact_cash_schedule_run ON fact_cash_schedule_value(calculation_run_id, settlement_period);
 CREATE INDEX idx_calculation_run_project ON sys_calculation_run(project_id, run_number DESC);
-CREATE INDEX idx_cfg_model_line_project ON cfg_model_line(project_id, line_type, sort_order);
+CREATE INDEX idx_calculation_run_version ON sys_calculation_run(project_id, version_id, run_number DESC);
+CREATE INDEX idx_cfg_model_line_project ON cfg_model_line(project_id, version_id, line_type, sort_order);
 CREATE INDEX idx_cfg_model_line_value_line ON cfg_model_line_value(line_id, period);
-CREATE INDEX idx_cfg_forecast_override_project ON cfg_forecast_override(project_id, forecast_line_id, period);
+CREATE INDEX idx_cfg_forecast_override_project ON cfg_forecast_override(project_id, version_id, forecast_line_id, period);
+CREATE INDEX idx_project_version_project ON rel_project_version(project_id, status, sort_order);
 CREATE INDEX idx_reference_project ON dim_project(dataset_id);
 CREATE INDEX idx_reference_fact ON fact_metric_value(dataset_id);
 `

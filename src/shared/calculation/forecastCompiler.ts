@@ -146,6 +146,7 @@ export function compileForecast(
   parameters: ProjectParameter[] = [],
   parameterValues: ProjectParameterValue[] = [],
   overrides: ForecastOverride[] = [],
+  versionId = 'working',
 ): ForecastCompilation {
   const issues: CalculationIssue[] = []
   const values: CompiledLineValue[] = []
@@ -306,7 +307,7 @@ export function compileForecast(
       departmentId: project.departmentId,
       period,
       scenarioId: 'baseline',
-      versionId: 'working',
+      versionId,
       metricCode: line.metricCode,
       value: net.toString(),
       rawValue: raw.toString(),

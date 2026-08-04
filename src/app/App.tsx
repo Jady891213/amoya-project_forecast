@@ -12,6 +12,7 @@ import {
   Plus,
   Save,
   Sigma,
+  Table2,
   Upload,
 } from 'lucide-react'
 import { ApiClient } from './api/client'
@@ -22,13 +23,15 @@ import { ProjectWorkspacePage } from './pages/ProjectWorkspacePage'
 import { MasterDataPage } from './pages/MasterDataPage'
 import { PageBreadcrumbs } from './components/PageBreadcrumbs'
 import { useAppDialog } from './ui/AppDialog'
+import { MultidimensionalViewPage } from './pages/MultidimensionalViewPage'
 
 type Route =
   | { type: 'projects'; archived: boolean }
   | { type: 'new' }
-  | { type: 'workspace'; projectId: string; view: 'config' | 'calculation' | 'report' }
+  | { type: 'workspace'; projectId: string; view: 'config' | 'calculation' | 'report'; versionId?: string }
   | { type: 'master-data' }
   | { type: 'metrics' }
+  | { type: 'multidimensional' }
 
 const emptySnapshot: AppSnapshot = {
   departments: [], projects: [], periods: [], scenarios: [], versions: [], metrics: [], facts: [],
@@ -48,9 +51,11 @@ function parseRoute(): Route {
     type: 'workspace',
     projectId: decodeURIComponent(workspace[1]),
     view: workspace[2] as 'config' | 'calculation' | 'report',
+    versionId: new URLSearchParams(window.location.search).get('versionId') ?? undefined,
   }
   if (path === '/master-data') return { type: 'master-data' }
   if (path === '/metrics') return { type: 'metrics' }
+  if (path === '/multidimensional') return { type: 'multidimensional' }
   return { type: 'projects', archived: false }
 }
 
@@ -158,7 +163,7 @@ export default function App() {
   }
 
   function openProjectArea() {
-    if (route.type === 'master-data' || route.type === 'metrics') {
+    if (route.type === 'master-data' || route.type === 'metrics' || route.type === 'multidimensional') {
       navigate(lastProjectPath)
       return
     }
@@ -172,7 +177,7 @@ export default function App() {
     <div className="shell">
       <aside className="global-nav">
         <div className="sidebar-header"><div className="sidebar-brand"><div className="brand-mark"><BarChart3 size={17} /></div><div className="sidebar-brand-copy"><b>项目测算分析工具</b><span>本地财务与 EPM 工作台</span></div></div><button type="button" className="sidebar-collapse" aria-label={navCollapsed ? '展开侧边栏' : '收起侧边栏'} title={navCollapsed ? '展开侧边栏' : '收起侧边栏'} onClick={toggleNavigation}>{navCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}</button></div>
-        <div className="nav-section"><div className="nav-title">项目数据</div><button title="项目列表" className={`nav-item ${route.type === 'projects' || route.type === 'new' || route.type === 'workspace' ? 'active' : ''}`} onClick={openProjectArea}><BriefcaseBusiness size={16} /><span className="nav-label">项目列表</span></button></div>
+        <div className="nav-section"><div className="nav-title">项目数据</div><button title="项目列表" className={`nav-item ${route.type === 'projects' || route.type === 'new' || route.type === 'workspace' ? 'active' : ''}`} onClick={openProjectArea}><BriefcaseBusiness size={16} /><span className="nav-label">项目列表</span></button><button title="多维测算" className={`nav-item ${route.type === 'multidimensional' ? 'active' : ''}`} onClick={() => navigate('/multidimensional')}><Table2 size={16} /><span className="nav-label">多维测算</span></button></div>
         <div className="nav-section"><div className="nav-title">平台配置</div><button title="主数据管理" className={`nav-item ${route.type === 'master-data' ? 'active' : ''}`} onClick={() => navigate('/master-data')}><Database size={16} /><span className="nav-label">主数据管理</span></button><button title="指标管理" className={`nav-item ${route.type === 'metrics' ? 'active' : ''}`} onClick={() => navigate('/metrics')}><Sigma size={16} /><span className="nav-label">指标管理</span></button></div>
         <div className="sidebar-footer">
           <div className="db-box"><b><HardDrive size={14} /><span className="db-box-label">本地数据库</span><span className="db-info" tabIndex={0} aria-label="查看本地数据库说明"><Info size={13} /><span className="db-info-tooltip" role="tooltip">数据自动保存在本机<br />SQLite {snapshot.storage.sqliteVersion}<br />数据结构版本 {snapshot.storage.schemaVersion}</span></span></b><div className="db-box-details"><span>{snapshot.storage.detail.split(' · ')[0] || 'amoya_project_forecast.db'}</span><span>共 {snapshot.projects.length} 个项目</span></div><div className="sidebar-db-actions"><button type="button" title="导出完整数据备份" aria-label="导出完整数据备份" onClick={() => void api.backup()}><Download size={14} /><span>备份</span></button><button type="button" title="从备份恢复全部项目" aria-label="从备份恢复全部项目" onClick={() => restoreInput.current?.click()}><Upload size={14} /><span>恢复</span></button></div></div>
@@ -190,7 +195,8 @@ export default function App() {
         }}
       />}
       {route.type === 'metrics' && <MetricPage snapshot={snapshot} />}
-      {route.type === 'workspace' && <ProjectWorkspacePage key={`${route.projectId}:${route.view}`} api={api} snapshot={snapshot} projectId={route.projectId} view={route.view} onNavigate={navigate} onRefresh={refresh} onDirtyChange={setDirty} />}
+      {route.type === 'multidimensional' && <MultidimensionalViewPage api={api} snapshot={snapshot} />}
+      {route.type === 'workspace' && <ProjectWorkspacePage key={`${route.projectId}:${route.view}:${route.versionId ?? 'default'}`} api={api} snapshot={snapshot} projectId={route.projectId} versionId={route.versionId} view={route.view} onNavigate={navigate} onRefresh={refresh} onDirtyChange={setDirty} />}
     </div>
     {notice && <div className="toast-success">{notice}<button onClick={() => setNotice('')}>关闭</button></div>}
   </div>

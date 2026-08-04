@@ -92,6 +92,7 @@ export interface Project extends OriginFields {
 export interface ForecastOverride {
   id: string
   projectId: string
+  versionId: string
   forecastLineId: string
   period: string
   originalValue: string
@@ -134,7 +135,20 @@ export interface Version {
   name: string
   status: VersionStatus
   isMutable: boolean
-  origin: 'system'
+  origin: 'system' | 'user'
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ProjectVersion {
+  projectId: string
+  versionId: string
+  code: string
+  name: string
+  status: 'active' | 'inactive'
+  isDefault: boolean
+  sortOrder: number
+  draftRevision: number
   createdAt: string
   updatedAt: string
 }
@@ -440,13 +454,52 @@ export interface ProjectWorkspaceDraft {
 
 export interface ProjectWorkspace {
   project: Project
+  projectVersions: ProjectVersion[]
+  currentVersion: ProjectVersion
   draftRevision: number
   forecast: ForecastProjectState
 }
 
 export interface SaveProjectWorkspaceRequest {
+  versionId: string
   expectedRevision: number
   draft: ProjectWorkspaceDraft
+}
+
+export interface CreateProjectVersionRequest {
+  versionId: string
+  copyFromVersionId?: string
+}
+
+export type PivotDimension = 'project' | 'department' | 'version' | 'period' | 'metric'
+
+export interface PivotRequest {
+  rows: PivotDimension[]
+  columns: PivotDimension[]
+  filters?: {
+    projectIds?: string[]
+    departmentIds?: string[]
+    versionIds?: string[]
+    metricCodes?: string[]
+    periodStart?: string
+    periodEnd?: string
+  }
+}
+
+export interface PivotCell {
+  rowKey: string
+  rowLabels: string[]
+  columnKey: string
+  columnLabels: string[]
+  value: string | null
+  valueType: MetricValueType
+}
+
+export interface PivotResponse {
+  rows: PivotDimension[]
+  columns: PivotDimension[]
+  cells: PivotCell[]
+  sourceFactCount: number
 }
 
 export interface FieldError {

@@ -1,4 +1,5 @@
 import Decimal from 'decimal.js'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import type { ForecastOverrideDraft, ProjectReportDto } from '../../shared/domain/types'
 import { FinancialGrid, type FinancialGridChange, type FinancialGridRow } from './FinancialGrid'
@@ -9,6 +10,8 @@ type BaseGroup = '收入' | '成本' | '损益指标' | '项目收款' | '项目
 interface CalculationBaseRow extends FinancialGridRow {
   group: BaseGroup
   calculated?: boolean
+  rowKind: 'section' | 'summary' | 'detail' | 'metric'
+  section: 'profit' | 'cash'
 }
 
 const PROFIT_GROUPS = new Set<BaseGroup>(['收入', '成本', '损益指标'])
@@ -35,6 +38,7 @@ export function CalculationBaseGrid({
   onClearOverride: (rowId: string, period: string) => void
 }) {
   const [view, setView] = useState<BaseView>('all')
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<BaseGroup>>(new Set())
   const periods = report.monthly.map((item) => item.period)
   const rows = useMemo<CalculationBaseRow[]>(() => {
     const overrideMap = new Map(overrides.map((item) => [`${item.forecastLineId}:${item.period}`, item]))
@@ -61,6 +65,9 @@ export function CalculationBaseGrid({
         label: line.lineName,
         secondary: `${line.lineCode} · ${line.category === 'cash_inflow' || line.category === 'cash_outflow' ? '主动录入' : '预测明细'}`,
         group,
+        rowKind: 'detail',
+        section: line.category === 'revenue' || line.category === 'cost' ? 'profit' : 'cash',
+        rowClassName: 'calculation-detail-row',
         editable: true,
         values,
         originalValues,
@@ -77,6 +84,9 @@ export function CalculationBaseGrid({
         label: `${item.sourceLineName}${item.metricCode === 'cash_inflow' ? '收款' : '付款'}`,
         secondary: `${item.sourceLineCode} · ${item.ruleMethod === 'manual_monthly' ? '逐月指定' : '规则生成'}`,
         group,
+        rowKind: 'detail' as const,
+        section: 'cash' as const,
+        rowClassName: 'calculation-detail-row',
         editable: false,
         values: {},
       }
@@ -84,10 +94,13 @@ export function CalculationBaseGrid({
       cashBySource.set(key, row)
     })
 
-    const metricRow = (id: string, label: string, group: BaseGroup, values: Record<string, string>, valueKind?: FinancialGridRow['valueKind']): CalculationBaseRow => ({
+    const metricRow = (id: string, label: string, group: BaseGroup, values: Record<string, string>, valueKind?: FinancialGridRow['valueKind'], rowKind: CalculationBaseRow['rowKind'] = 'metric'): CalculationBaseRow => ({
       id: `metric:${id}`,
       label,
       group,
+      rowKind,
+      section: PROFIT_GROUPS.has(group) ? 'profit' : 'cash',
+      rowClassName: `calculation-${rowKind}-row`,
       calculated: true,
       editable: false,
       valueKind,
@@ -102,26 +115,51 @@ export function CalculationBaseGrid({
     const directPayments = detailRows.filter((row) => row.group === '项目付款')
     const generatedReceipts = [...cashBySource.values()].filter((row) => row.group === '项目收款')
     const generatedPayments = [...cashBySource.values()].filter((row) => row.group === '项目付款')
+    const emptyValues = Object.fromEntries(periods.map((period) => [period, '']))
+    const sectionRow = (id: string, label: string, section: CalculationBaseRow['section']): CalculationBaseRow => ({
+      id: `section:${id}`,
+      label,
+      group: section === 'profit' ? '损益指标' : '现金指标',
+      rowKind: 'section',
+      section,
+      rowClassName: 'calculation-section-row',
+      editable: false,
+      values: emptyValues,
+    })
 
     return [
+      sectionRow('profit', '损益指标', 'profit'),
+      metricRow('revenue', '收入', '收入', monthlyValues('revenue'), undefined, 'summary'),
       ...revenueDetails,
-      metricRow('revenue', '收入合计', '收入', monthlyValues('revenue')),
+      metricRow('cost', '成本', '成本', monthlyValues('cost'), undefined, 'summary'),
       ...costDetails,
-      metricRow('cost', '成本合计', '成本', monthlyValues('cost')),
       metricRow('gross_profit', '毛利', '损益指标', monthlyValues('grossProfit')),
       metricRow('gross_margin', '毛利率', '损益指标', monthlyValues('grossMargin'), 'percentage'),
+      sectionRow('cash', '现金流指标', 'cash'),
+      metricRow('cash_inflow', '项目收款', '项目收款', monthlyValues('cashInflow'), undefined, 'summary'),
       ...generatedReceipts,
       ...directReceipts,
-      metricRow('cash_inflow', '项目收款合计', '项目收款', monthlyValues('cashInflow')),
+      metricRow('cash_outflow', '项目付款', '项目付款', monthlyValues('cashOutflow'), undefined, 'summary'),
       ...generatedPayments,
       ...directPayments,
-      metricRow('cash_outflow', '项目付款合计', '项目付款', monthlyValues('cashOutflow')),
       metricRow('net_cash_flow', '项目净现金流', '现金指标', monthlyValues('netCashFlow')),
       metricRow('cumulative_cash_flow', '累计现金流', '现金指标', monthlyValues('cumulativeCashFlow')),
     ]
-  }, [overrides, report])
+  }, [overrides, periods, report])
 
-  const visibleRows = rows.filter((row) => view === 'all' || (view === 'profit' ? PROFIT_GROUPS.has(row.group) : !PROFIT_GROUPS.has(row.group)))
+  const visibleRows = rows.filter((row) => {
+    if (view !== 'all' && row.section !== view) return false
+    return row.rowKind !== 'detail' || !collapsedGroups.has(row.group)
+  })
+
+  function toggleGroup(group: BaseGroup) {
+    setCollapsedGroups((current) => {
+      const next = new Set(current)
+      if (next.has(group)) next.delete(group)
+      else next.add(group)
+      return next
+    })
+  }
 
   return <section className="calculation-base-stage">
     <div className="calculation-base-toolbar">
@@ -136,14 +174,20 @@ export function CalculationBaseGrid({
       ariaLabel="项目计算底表"
       periods={periods}
       rows={visibleRows}
-      typeColumnTitle="分组"
-      typeColumnWidth={104}
-      labelColumnTitle="底表项目"
-      labelColumnWidth={280}
-      renderRowType={(row) => <span className="calculation-group-label">{(row as CalculationBaseRow).group}</span>}
+      labelColumnTitle="指标 / 行项目"
+      labelColumnWidth={315}
       renderRowLabel={(row) => {
         const item = row as CalculationBaseRow
-        return <div className="calculation-base-label"><div><b>{item.label}</b>{item.calculated && <FormulaIcon />}</div>{item.secondary && <small>{item.secondary}</small>}</div>
+        if (item.rowKind === 'section') return <div className="calculation-section-label"><ChevronDown size={14} />{item.label}</div>
+        const collapsible = item.rowKind === 'summary' && ['收入', '成本', '项目收款', '项目付款'].includes(item.group)
+        return <div className="calculation-base-label">
+          <div>
+            {collapsible && <button className="calculation-collapse-button" aria-label={`${collapsedGroups.has(item.group) ? '展开' : '收起'}${item.label}明细`} onClick={(event) => { event.stopPropagation(); toggleGroup(item.group) }}>{collapsedGroups.has(item.group) ? <ChevronRight size={14} /> : <ChevronDown size={14} />}</button>}
+            <b>{item.label}</b>
+            {item.calculated && <FormulaIcon />}
+          </div>
+          {item.secondary && <small>{item.secondary}</small>}
+        </div>
       }}
       onChange={onChange}
       onClearOverride={onClearOverride}

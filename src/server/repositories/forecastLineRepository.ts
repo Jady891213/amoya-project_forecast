@@ -19,7 +19,7 @@ export interface ForecastConfig {
 }
 
 interface ModelLineRow {
-  id: string; project_id: string; code: string; name: string
+  id: string; project_id: string; version_id: string; code: string; name: string
   category: ForecastLine['category']
   calculation_method: ForecastLine['forecastMethod']; start_period: string
   end_period: string; config_json: string; sort_order: number
@@ -58,21 +58,21 @@ function nextCode(used: Set<string>, seed: number): [string, number] {
 export class ForecastLineRepository {
   constructor(private readonly database: DatabaseClient) {}
 
-  async list(projectId: string): Promise<ForecastLine[]> {
+  async list(projectId: string, versionId: string): Promise<ForecastLine[]> {
     const rows = await this.database.query<ModelLineRow>(
       `SELECT id, project_id, code, name, category,
               calculation_method, start_period, end_period, config_json,
               sort_order, created_at, updated_at
        FROM cfg_model_line
-       WHERE project_id = ? AND line_type IN ('profit', 'cash')
+       WHERE project_id = ? AND version_id = ? AND line_type IN ('profit', 'cash')
        ORDER BY line_type, sort_order, code`,
-      [projectId],
+      [projectId, versionId],
     )
     return rows.map(fromRow)
   }
 
-  async saveProjectDraft(projectId: string, drafts: ForecastLineDraft[]) {
-    const existing = await this.list(projectId)
+  async saveProjectDraft(projectId: string, versionId: string, drafts: ForecastLineDraft[]) {
+    const existing = await this.list(projectId, versionId)
     const existingById = new Map(existing.map((item) => [item.id, item]))
     const existingByCode = new Map(existing.map((item) => [item.code, item]))
     const used = new Set(existing.map((item) => item.code))
@@ -83,8 +83,8 @@ export class ForecastLineRepository {
     const now = new Date().toISOString()
     const configRows = await this.database.query<{ id: string; config_json: string }>(
       `SELECT id, config_json FROM cfg_model_line
-       WHERE project_id = ? AND line_type IN ('profit', 'cash')`,
-      [projectId],
+       WHERE project_id = ? AND version_id = ? AND line_type IN ('profit', 'cash')`,
+      [projectId, versionId],
     )
     const existingConfig = new Map(configRows.map((item) => [item.id, parseForecastConfig(item.config_json)]))
     const resolved = drafts.map((draft, index) => {
@@ -105,7 +105,7 @@ export class ForecastLineRepository {
       if (referenced) throw new Error(`行项目“${line.name}”正在被“${referenced.draft.name || referenced.code}”引用，不能删除`)
     }
     const statements: SqlStatement[] = removed.map((item) => ({
-      sql: 'DELETE FROM cfg_model_line WHERE id = ? AND project_id = ?', params: [item.id, projectId],
+      sql: 'DELETE FROM cfg_model_line WHERE id = ? AND project_id = ? AND version_id = ?', params: [item.id, projectId, versionId],
     }))
     for (const item of resolved) {
       const { draft, previous, id, code, sortOrder } = item
@@ -122,10 +122,10 @@ export class ForecastLineRepository {
       }
       statements.push({
         sql: `INSERT INTO cfg_model_line (
-          id, project_id, code, name, line_type, category,
+          id, project_id, version_id, code, name, line_type, category,
           calculation_method, start_period, end_period,
           unit, config_json, sort_order, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '元', ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '元', ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           name = excluded.name, line_type = excluded.line_type,
           category = excluded.category,
@@ -133,7 +133,7 @@ export class ForecastLineRepository {
           start_period = excluded.start_period, end_period = excluded.end_period,
           config_json = excluded.config_json, sort_order = excluded.sort_order,
           updated_at = excluded.updated_at`,
-        params: [id, projectId, code, draft.name.trim(),
+        params: [id, projectId, versionId, code, draft.name.trim(),
           draft.category === 'revenue' || draft.category === 'cost' ? 'profit' : 'cash',
           draft.category, draft.forecastMethod,
           draft.startPeriod, draft.endPeriod, JSON.stringify(config), sortOrder,
@@ -151,6 +151,6 @@ export class ForecastLineRepository {
       }
     }
     await this.database.batch(statements)
-    return this.list(projectId)
+    return this.list(projectId, versionId)
   }
 }

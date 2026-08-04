@@ -19,6 +19,7 @@ import { ProjectRepository } from '../repositories/projectRepository'
 import { ParameterRepository } from '../repositories/parameterRepository'
 import { CashRuleRepository } from '../repositories/cashRuleRepository'
 import { ForecastOverrideRepository } from '../repositories/forecastOverrideRepository'
+import { ProjectVersionRepository } from '../repositories/projectVersionRepository'
 import { countPeriods, generatePeriodRange, generatePeriods } from '../../app/domain/periods'
 import {
   buildForecastConfigHash,
@@ -67,6 +68,7 @@ export class CalculationService {
   private readonly parameters: ParameterRepository
   private readonly cashRules: CashRuleRepository
   private readonly overrides: ForecastOverrideRepository
+  private readonly projectVersions: ProjectVersionRepository
 
   constructor(private readonly database: DatabaseClient) {
     this.projects = new ProjectRepository(database)
@@ -76,19 +78,20 @@ export class CalculationService {
     this.parameters = new ParameterRepository(database)
     this.cashRules = new CashRuleRepository(database)
     this.overrides = new ForecastOverrideRepository(database)
+    this.projectVersions = new ProjectVersionRepository(database)
   }
 
-  async getProjectState(projectId: string): Promise<ForecastProjectState> {
+  async getProjectState(projectId: string, versionId = 'working'): Promise<ForecastProjectState> {
     const [project, lines, values, parameters, parameterValues, cashRules, overrides, latestRun] =
       await Promise.all([
       this.projects.get(projectId),
-      this.lines.list(projectId),
-      this.values.listForProject(projectId),
-      this.parameters.list(projectId),
-      this.parameters.listValues(projectId),
-      this.cashRules.list(projectId),
-      this.overrides.list(projectId),
-      this.runs.latestSuccess(projectId),
+      this.lines.list(projectId, versionId),
+      this.values.listForProject(projectId, versionId),
+      this.parameters.list(projectId, versionId),
+      this.parameters.listValues(projectId, versionId),
+      this.cashRules.list(projectId, versionId),
+      this.overrides.list(projectId, versionId),
+      this.runs.latestSuccess(projectId, versionId),
     ])
     const currentHash = buildForecastConfigHash(
       lines,
@@ -114,12 +117,17 @@ export class CalculationService {
 
   async saveDraft(
     projectId: string,
+    versionId: string,
     draft: ForecastProjectDraft | ForecastLineDraft[],
   ): Promise<ForecastProjectState> {
     const project = await this.projects.get(projectId)
     if (!project) throw new Error('项目不存在')
     if (project.status !== 'calculating') {
       throw new Error('已归档项目不能修改预测配置')
+    }
+    if (!await this.projectVersions.get(projectId, versionId)) {
+      if (versionId !== 'working') throw new Error('项目版本不存在')
+      await this.projectVersions.ensureDefault(projectId)
     }
     const projectPeriods = generatePeriodRange(project.startPeriod, project.endPeriod)
     const cashPeriods = generatePeriods(
@@ -132,44 +140,42 @@ export class CalculationService {
       cashPeriods,
       lineDrafts,
     )
-    const savedLines = await this.lines.saveProjectDraft(projectId, lineDrafts)
+    const savedLines = await this.lines.saveProjectDraft(projectId, versionId, lineDrafts)
     if (!Array.isArray(draft)) {
-      await this.parameters.saveProjectDraft(projectId, draft.parameters)
+      await this.parameters.saveProjectDraft(projectId, versionId, draft.parameters)
       await this.cashRules.saveProjectDraft(
         projectId,
+        versionId,
         savedLines,
         draft.cashRules ?? [],
       )
-      await this.overrides.saveProjectDraft(projectId, draft.overrides ?? [])
+      await this.overrides.saveProjectDraft(projectId, versionId, draft.overrides ?? [])
     }
-    return this.getProjectState(projectId)
+    const revisionStatement = this.projectVersions.incrementRevisionStatement(projectId, versionId)
+    await this.database.execute(revisionStatement.sql, revisionStatement.params)
+    return this.getProjectState(projectId, versionId)
   }
 
   async saveAndCalculate(
     projectId: string,
     draft: ForecastProjectDraft | ForecastLineDraft[],
+    versionId = 'working',
   ): Promise<SaveAndCalculateResult> {
-    await this.saveDraft(projectId, draft)
-    return this.calculateSaved(projectId)
+    await this.saveDraft(projectId, versionId, draft)
+    return this.calculateSaved(projectId, versionId)
   }
 
   async calculateSaved(
     projectId: string,
+    versionId = 'working',
     expectedRevision?: number,
   ): Promise<SaveAndCalculateResult> {
     const project = await this.projects.get(projectId)
     if (!project) throw new Error('项目不存在')
-    if (
-      expectedRevision !== undefined &&
-      project.draftRevision !== expectedRevision
-    ) {
-      const error = new Error('计算请求的项目修订号已过期') as Error & {
-        code?: string
-        currentRevision?: number
-      }
-      error.code = 'REVISION_CONFLICT'
-      error.currentRevision = project.draftRevision
-      throw error
+    const projectVersion = await this.projectVersions.get(projectId, versionId)
+    if (!projectVersion) throw Object.assign(new Error('项目版本不存在'), { code: 'NOT_FOUND' })
+    if (expectedRevision !== undefined) {
+      await this.projectVersions.assertRevision(projectId, versionId, expectedRevision)
     }
     const [
       lines,
@@ -181,13 +187,13 @@ export class CalculationService {
       runNumber,
     ] =
       await Promise.all([
-      this.lines.list(projectId),
-      this.values.listForProject(projectId),
-      this.parameters.list(projectId),
-      this.parameters.listValues(projectId),
-      this.cashRules.list(projectId),
-      this.overrides.list(projectId),
-      this.runs.nextRunNumber(projectId),
+      this.lines.list(projectId, versionId),
+      this.values.listForProject(projectId, versionId),
+      this.parameters.list(projectId, versionId),
+      this.parameters.listValues(projectId, versionId),
+      this.cashRules.list(projectId, versionId),
+      this.overrides.list(projectId, versionId),
+      this.runs.nextRunNumber(projectId, versionId),
     ])
     const configHash = buildForecastConfigHash(
       lines,
@@ -214,6 +220,7 @@ export class CalculationService {
       parameters,
       parameterValues,
       overrides,
+      versionId,
     )
     const cashCompilation = compileCashSchedule(
       lines,
@@ -227,14 +234,14 @@ export class CalculationService {
       id: crypto.randomUUID(),
       projectId,
       scenarioId: 'baseline',
-      versionId: 'working',
+      versionId,
       runNumber,
       status: errors.length > 0 ? 'failed' : 'success',
       configHash,
       issueCount: allIssues.length,
       issues: allIssues,
       configSnapshotJson,
-      draftRevision: project.draftRevision,
+      draftRevision: projectVersion.draftRevision,
       projectSnapshotJson: JSON.stringify({
         id: project.id,
         code: project.code,
@@ -257,8 +264,8 @@ export class CalculationService {
       {
         sql: `DELETE FROM fact_metric_value
               WHERE project_id = ? AND scenario_id = 'baseline'
-                AND version_id = 'working'`,
-        params: [projectId],
+                AND version_id = ?`,
+        params: [projectId, versionId],
       },
     ]
     const lineById = new Map(lines.map((line) => [line.id, line]))
@@ -360,13 +367,14 @@ export class CalculationService {
           id, project_id, department_id, period,
           scenario_id, version_id, metric_code, value_text, source_label,
           origin, dataset_id, created_at, updated_at, calculation_run_id
-        ) VALUES (?, ?, ?, ?, 'baseline', 'working', ?, ?,
+        ) VALUES (?, ?, ?, ?, 'baseline', ?, ?, ?,
           '预测配置计算', 'user', NULL, ?, ?, ?)`,
         params: [
           crypto.randomUUID(),
           project.id,
           project.departmentId,
           aggregate.period,
+          versionId,
           aggregate.metricCode,
           aggregate.value.toDecimalPlaces(6).toString(),
           now,

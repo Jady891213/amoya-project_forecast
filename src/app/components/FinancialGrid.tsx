@@ -7,6 +7,7 @@ export interface FinancialGridRow {
   id: string
   label: string
   secondary?: string
+  rowClassName?: string
   editable: boolean
   editablePeriods?: Set<string>
   valueKind?: 'number' | 'percentage'
@@ -457,7 +458,7 @@ export function FinancialGrid({
         <colgroup>{renderRowType && <col style={{ width: currentTypeWidth }} />}<col style={{ width: currentLabelWidth }} />{periods.map((period) => <col key={period} style={{ width: periodWidths[period] ?? 92 }} />)}</colgroup>
         <thead><tr>{renderRowType && <th className="grid-type-column" style={{ minWidth: currentTypeWidth, maxWidth: currentTypeWidth, width: currentTypeWidth }}>{typeColumnTitle}<span className="financial-column-resizer" title="拖拽调整列宽" onMouseDown={(event) => startColumnResize(event, currentTypeWidth, 72, 160, setCurrentTypeWidth)} /></th>}<th className="grid-label-column" style={{ left: renderRowType ? currentTypeWidth : 0, minWidth: currentLabelWidth, maxWidth: currentLabelWidth, width: currentLabelWidth }} onMouseDown={() => { setAnchor({ row: 0, column: 0 }); setFocus({ row: rows.length - 1, column: periods.length - 1 }); root.current?.focus() }}>{labelColumnTitle}<span className="financial-column-resizer" title="拖拽调整列宽" onMouseDown={(event) => startColumnResize(event, currentLabelWidth, 220, 560, setCurrentLabelWidth)} /></th>{periods.map((period, columnIndex) => { const periodWidth = periodWidths[period] ?? 92; return <th key={period} style={{ minWidth: periodWidth, maxWidth: periodWidth, width: periodWidth }} onMouseDown={() => { setAnchor({ row: 0, column: columnIndex }); setFocus({ row: rows.length - 1, column: columnIndex }); root.current?.focus() }}>{period}<span className="financial-column-resizer" title="拖拽调整列宽" onMouseDown={(event) => startColumnResize(event, periodWidth, 72, 180, (width) => setPeriodWidths((current) => ({ ...current, [period]: width })))} /></th> })}</tr></thead>
         <tbody>{rows.map((row, rowIndex) => (
-          <tr key={row.id} className={`${row.editable ? 'editable-row' : 'readonly-row'} ${activeRowId === row.id ? 'active-grid-row' : ''}`}>
+          <tr key={row.id} className={`${row.editable ? 'editable-row' : 'readonly-row'} ${row.rowClassName ?? ''} ${activeRowId === row.id ? 'active-grid-row' : ''}`}>
             {renderRowType && <th className="grid-type-cell" style={{ minWidth: currentTypeWidth, maxWidth: currentTypeWidth, width: currentTypeWidth }} onMouseDown={() => onRowActivate?.(row.id)}>{renderRowType(row)}</th>}
             <th className="grid-label-cell" style={{ left: renderRowType ? currentTypeWidth : 0, minWidth: currentLabelWidth, maxWidth: currentLabelWidth, width: currentLabelWidth }} onMouseDown={() => { setAnchor({ row: rowIndex, column: 0 }); setFocus({ row: rowIndex, column: periods.length - 1 }); root.current?.focus(); onRowActivate?.(row.id) }}>{renderRowLabel ? renderRowLabel(row) : <><span>{row.label}</span>{row.secondary && <small>{row.secondary}</small>}</>}</th>
             {periods.map((period, columnIndex) => {

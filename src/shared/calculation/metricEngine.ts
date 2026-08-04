@@ -40,12 +40,14 @@ function calculatedFact(
   period: string,
   metric: MetricDefinition,
   metricValue: Decimal | null,
+  scenarioId: string,
+  versionId: string,
 ): CalculatedFact {
   return {
     projectId: project.id,
     period,
-    scenarioId: 'baseline',
-    versionId: 'working',
+    scenarioId,
+    versionId,
     metricCode: metric.code as CalculatedFact['metricCode'],
     value: metricValue === null ? null : value(metricValue),
     source: 'calculated',
@@ -59,6 +61,8 @@ export function calculateMetrics(
   facts: BaseFact[],
   metricDefinitions: MetricDefinition[],
 ): MetricEngineResult {
+  const scenarioId = facts[0]?.scenarioId ?? 'baseline'
+  const versionId = facts[0]?.versionId ?? 'working'
   const operationEndPeriod = project.endPeriod
   const reportEndPeriod = [
     operationEndPeriod,
@@ -107,6 +111,8 @@ export function calculateMetrics(
             period,
             definition,
             metricValue,
+            scenarioId,
+            versionId,
           ),
         )
       }

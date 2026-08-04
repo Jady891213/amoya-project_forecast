@@ -3,11 +3,15 @@ import type {
   CalculationRun,
   Department,
   DepartmentInput,
+  CreateProjectVersionRequest,
   MetricDefinition,
   Project,
   ProjectInput,
   ProjectReportDto,
+  PivotRequest,
+  PivotResponse,
   ProjectWorkspace,
+  ProjectVersion,
   SaveProjectWorkspaceRequest,
 } from '../../shared/api'
 import type { AppSnapshot } from '../state/types'
@@ -70,8 +74,9 @@ export class ApiClient {
     })
   }
 
-  getWorkspace(projectId: string): Promise<ProjectWorkspace> {
-    return this.request(`/api/projects/${encodeURIComponent(projectId)}/workspace`)
+  getWorkspace(projectId: string, versionId?: string): Promise<ProjectWorkspace> {
+    const query = versionId ? `?versionId=${encodeURIComponent(versionId)}` : ''
+    return this.request(`/api/projects/${encodeURIComponent(projectId)}/workspace${query}`)
   }
 
   saveWorkspace(projectId: string, request: SaveProjectWorkspaceRequest): Promise<ProjectWorkspace> {
@@ -81,14 +86,14 @@ export class ApiClient {
     })
   }
 
-  calculate(projectId: string, expectedRevision: number): Promise<{
+  calculate(projectId: string, versionId: string, expectedRevision: number): Promise<{
     success: boolean
     run: CalculationRun
     issues: Array<{ severity: 'error' | 'warning'; message: string }>
   }> {
     return this.request(`/api/projects/${encodeURIComponent(projectId)}/calculations`, {
       method: 'POST',
-      body: JSON.stringify({ expectedRevision }),
+      body: JSON.stringify({ versionId, expectedRevision }),
     })
   }
 
@@ -102,6 +107,18 @@ export class ApiClient {
 
   copyProject(projectId: string): Promise<ProjectWorkspace> {
     return this.request(`/api/projects/${encodeURIComponent(projectId)}/copy`, { method: 'POST' })
+  }
+
+  createVersion(projectId: string, request: CreateProjectVersionRequest): Promise<ProjectWorkspace> {
+    return this.request(`/api/projects/${encodeURIComponent(projectId)}/versions`, {
+      method: 'POST', body: JSON.stringify(request),
+    })
+  }
+
+  updateVersion(projectId: string, versionId: string, input: { status: ProjectVersion['status'] }): Promise<ProjectVersion> {
+    return this.request(`/api/projects/${encodeURIComponent(projectId)}/versions/${encodeURIComponent(versionId)}`, {
+      method: 'PUT', body: JSON.stringify(input),
+    })
   }
 
   deleteProject(projectId: string): Promise<void> {
@@ -126,9 +143,19 @@ export class ApiClient {
     return this.request('/api/metrics')
   }
 
-  report(projectId: string, runId?: string): Promise<ProjectReportDto> {
-    const query = runId ? `?runId=${encodeURIComponent(runId)}` : ''
-    return this.request(`/api/projects/${encodeURIComponent(projectId)}/report${query}`)
+  pivot(request: PivotRequest): Promise<PivotResponse> {
+    return this.request('/api/facts/pivot', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    })
+  }
+
+  report(projectId: string, runId?: string, versionId?: string): Promise<ProjectReportDto> {
+    const query = new URLSearchParams()
+    if (runId) query.set('runId', runId)
+    if (versionId) query.set('versionId', versionId)
+    const suffix = query.size ? `?${query}` : ''
+    return this.request(`/api/projects/${encodeURIComponent(projectId)}/report${suffix}`)
   }
 
   async backup(): Promise<void> {
@@ -144,8 +171,11 @@ export class ApiClient {
     URL.revokeObjectURL(link.href)
   }
 
-  async exportReport(projectId: string, runId?: string): Promise<void> {
-    const query = runId ? `?runId=${encodeURIComponent(runId)}` : ''
+  async exportReport(projectId: string, runId?: string, versionId?: string): Promise<void> {
+    const params = new URLSearchParams()
+    if (runId) params.set('runId', runId)
+    if (versionId) params.set('versionId', versionId)
+    const query = params.size ? `?${params}` : ''
     const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/export.xlsx${query}`, {
       headers: { 'x-amoya-token': this.token },
     })

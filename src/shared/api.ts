@@ -10,6 +10,7 @@ export type {
   MetricDefinition,
   PeriodDimension,
   Project,
+  ProjectVersion,
   ProjectInput,
   ProjectReportDto,
   ProjectWorkspace,
@@ -17,6 +18,9 @@ export type {
   SaveProjectWorkspaceRequest,
   Scenario,
   Version,
+  PivotRequest,
+  PivotResponse,
+  CreateProjectVersionRequest,
 } from './domain/types'
 
 import type {
@@ -56,6 +60,7 @@ export interface BootstrapDto {
 }
 
 export interface CalculationRequest {
+  versionId: string
   expectedRevision: number
 }
 
@@ -86,6 +91,7 @@ export function isSaveProjectWorkspaceRequest(
 ): value is import('./domain/types').SaveProjectWorkspaceRequest {
   if (!value || typeof value !== 'object') return false
   const request = value as Record<string, unknown>
+  if (typeof request.versionId !== 'string' || !request.versionId) return false
   if (!Number.isInteger(request.expectedRevision)) return false
   const draft = request.draft as Record<string, unknown> | undefined
   if (!draft || !isProjectInput(draft.project)) return false
