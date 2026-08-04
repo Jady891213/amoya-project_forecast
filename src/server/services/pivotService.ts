@@ -143,7 +143,7 @@ export class PivotService {
       const members = axis.map(({ dimension }) => {
         if (dimension === 'metric') return { dimension, memberId: metricCode, label: metricById.get(metricCode)?.label ?? metricCode }
         if (dimension === 'plan' && !axis.some((item) => item.dimension === 'project')) {
-          return { ...coordinates.plan, label: `${coordinates.project.label} / ${coordinates.plan.label}` }
+          return { ...coordinates.plan, label: `${coordinates.project.label}（${coordinates.plan.label}）` }
         }
         return coordinates[dimension]
       })

@@ -97,7 +97,7 @@ describe('项目方案隔离与项目报表', () => {
       scenarioId: 'baseline',
     })
     expect(view.sourceFactCount).toBe(2)
-    expect(view.rowTuples.map((tuple) => tuple.members[0].label)).toEqual(['跨项目 A / 推荐方案', '跨项目 B / 推荐方案'])
+    expect(view.rowTuples.map((tuple) => tuple.members[0].label)).toEqual(['跨项目 A（推荐方案）', '跨项目 B（推荐方案）'])
     expect(view.cells.map((cell) => cell.value).sort()).toEqual(['100', '200'])
   })
 })

@@ -1,5 +1,6 @@
 import type { DatabaseClient } from '../../app/storage/types'
 import type { Project, ProjectInput, Scenario } from '../../shared/domain/types'
+import { nextProjectCode } from '../../shared/domain/projectCode'
 
 interface ProjectRow {
   id: string
@@ -78,12 +79,16 @@ export class ProjectRepository {
   async save(input: Pick<ProjectInput, 'id' | 'code' | 'name' | 'departmentId'> & Partial<Pick<ProjectInput, 'startPeriod' | 'endPeriod'>>): Promise<Project> {
     const name = input.name.trim()
     const departmentId = input.departmentId.trim()
-    const code = input.code?.trim().toUpperCase() || undefined
+    let code = input.code?.trim().toUpperCase() || undefined
     if (!name) invalid('项目名称不能为空')
     if (!departmentId) invalid('申报部门不能为空')
     const departments = await this.database.query<{ origin: string }>('SELECT origin FROM dim_department WHERE id = ?', [departmentId])
     if (!departments.length) invalid('申报部门不存在')
     if (departments[0].origin !== 'user') invalid('真实项目必须引用用户维护的申报部门')
+    if (!input.id && !code) {
+      const existingCodes = await this.database.query<{ code: string | null }>('SELECT code FROM dim_project')
+      code = nextProjectCode(existingCodes.map((item) => item.code ?? undefined))
+    }
     if (code) {
       const duplicate = await this.database.query<{ id: string }>('SELECT id FROM dim_project WHERE code = ? AND id <> ?', [code, input.id ?? ''])
       if (duplicate.length) invalid(`项目编码“${code}”已存在`)

@@ -25,6 +25,7 @@ import { PageBreadcrumbs } from './components/PageBreadcrumbs'
 import { useAppDialog } from './ui/AppDialog'
 import { MultidimensionalViewPage } from './pages/MultidimensionalViewPage'
 import { APP_VERSION } from './version'
+import { nextProjectCode } from '../shared/domain/projectCode'
 
 type Route =
   | { type: 'projects'; archived: boolean }
@@ -281,7 +282,7 @@ function ProjectList({ snapshot, archived, onNavigate, onArchive, onCopy, onDele
 function NewProjectPage({ snapshot, onCancel, onCreate }: { snapshot: AppSnapshot; onCancel: () => void; onCreate: (input: import('../shared/domain/types').CreateProjectInput) => Promise<void> }) {
   const firstDepartment = snapshot.departments.find((item) => item.status === 'active')
   const currentPeriod = new Date().toISOString().slice(0, 7)
-  const [draft, setDraft] = useState<import('../shared/domain/types').CreateProjectInput>({ name: '', code: '', departmentId: firstDepartment?.id ?? '', startPeriod: currentPeriod, endPeriod: addMonths(currentPeriod, 11) })
+  const [draft, setDraft] = useState<import('../shared/domain/types').CreateProjectInput>({ name: '', code: nextProjectCode(snapshot.projects.map((item) => item.code)), departmentId: firstDepartment?.id ?? '', startPeriod: currentPeriod, endPeriod: addMonths(currentPeriod, 11) })
   const [error, setError] = useState('')
   const patch = (values: Partial<import('../shared/domain/types').CreateProjectInput>) => setDraft((current) => ({ ...current, ...values }))
   const periodCount = countPeriods(draft.startPeriod, draft.endPeriod)

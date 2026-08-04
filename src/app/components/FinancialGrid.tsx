@@ -59,6 +59,8 @@ interface Props {
   onRowActivate?: (rowId: string) => void
   activeRowId?: string
   toolbarPlacement?: 'top' | 'bottom'
+  toolbarLeading?: ReactNode
+  toolbarMeta?: ReactNode
 }
 
 export function parseFinancialValue(raw: string): string {
@@ -157,6 +159,8 @@ export function FinancialGrid({
   onRowActivate,
   activeRowId,
   toolbarPlacement = 'top',
+  toolbarLeading,
+  toolbarMeta,
 }: Props) {
   const dialog = useAppDialog()
   const root = useRef<HTMLDivElement>(null)
@@ -389,13 +393,16 @@ export function FinancialGrid({
   }
 
   const toolbar = showToolbar && <div className={`financial-grid-toolbar ${toolbarPlacement}`} aria-label={`${ariaLabel}显示格式`}>
-    {toolbarPlacement === 'bottom' && <span>拖拽或 Shift 扩展选区 · 仅调整显示，不改变计算值</span>}
+    {toolbarLeading && <div className="financial-grid-toolbar-leading">{toolbarLeading}</div>}
+    {toolbarLeading && <span className="financial-grid-toolbar-spacer" />}
+    {toolbarPlacement === 'bottom' && !toolbarLeading && <span>拖拽或 Shift 扩展选区 · 仅调整显示，不改变计算值</span>}
     <b>显示格式</b>
     <label>单位<select aria-label={`${ariaLabel}显示单位`} value={displayUnit} onChange={(event) => setDisplayUnit(event.target.value as FinancialDisplayUnit)}><option value="yuan">元</option><option value="thousand">千元</option><option value="ten_thousand">万元</option></select></label>
     <label>小数<select aria-label={`${ariaLabel}小数位数`} value={decimalPlaces} onChange={(event) => setDecimalPlaces(Number(event.target.value) as 0 | 2 | 4)}><option value={0}>0 位</option><option value={2}>2 位</option><option value={4}>4 位</option></select></label>
     <label className="financial-format-check"><input aria-label={`${ariaLabel}使用千分位`} type="checkbox" checked={thousandSeparator} onChange={(event) => setThousandSeparator(event.target.checked)} />千分位</label>
     <label>负数<select aria-label={`${ariaLabel}负数格式`} value={negativeStyle} onChange={(event) => setNegativeStyle(event.target.value as FinancialNegativeStyle)}><option value="minus">-1,234.56</option><option value="parentheses">(1,234.56)</option></select></label>
-    {toolbarPlacement === 'top' && <span>拖拽或 Shift 扩展选区 · 仅调整显示，不改变计算值</span>}
+    {toolbarMeta && <span className="financial-grid-toolbar-meta">{toolbarMeta}</span>}
+    {toolbarPlacement === 'top' && !toolbarLeading && !toolbarMeta && <span>拖拽或 Shift 扩展选区 · 仅调整显示，不改变计算值</span>}
   </div>
 
   return (

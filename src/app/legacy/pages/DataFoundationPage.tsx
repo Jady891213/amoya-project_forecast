@@ -106,7 +106,11 @@ export function DataFoundationPage({ database, snapshot, onRefresh, onOpenReport
                     <option key={year} value={year}>{year}年</option>
                   ))}
                 </select>
-              ) : <span className="readonly-mark">只读</span>}
+              ) : activeTab === 'projects' ? (
+                <span className="readonly-mark">随项目管理同步</span>
+              ) : activeTab === 'plans' ? (
+                <span className="readonly-mark">随方案管理同步</span>
+              ) : <span className="readonly-mark">系统维护</span>}
             </div>
             <div className="table-wrap tall-table">
               {activeTab === 'projects' && (

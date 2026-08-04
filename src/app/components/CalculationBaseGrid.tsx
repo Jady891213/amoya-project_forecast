@@ -1,7 +1,8 @@
 import Decimal from 'decimal.js'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import type { ForecastOverrideDraft, ProjectReportDto } from '../../shared/domain/types'
+import type { ForecastOverrideDraft, MetricCode, ProjectReportDto } from '../../shared/domain/types'
+import { SYSTEM_METRICS } from '../../shared/domain/metrics'
 import { FinancialGrid, type FinancialGridChange, type FinancialGridRow } from './FinancialGrid'
 
 type BaseView = 'all' | 'profit' | 'cash'
@@ -10,19 +11,26 @@ type BaseGroup = '收入' | '成本' | '损益指标' | '项目收款' | '项目
 interface CalculationBaseRow extends FinancialGridRow {
   group: BaseGroup
   calculated?: boolean
+  metricCode?: MetricCode
   rowKind: 'section' | 'summary' | 'detail' | 'metric'
   section: 'profit' | 'cash'
 }
 
 const PROFIT_GROUPS = new Set<BaseGroup>(['收入', '成本', '损益指标'])
 
-function FormulaIcon() {
+function FormulaIcon({ metricCode }: { metricCode: MetricCode }) {
+  const metric = SYSTEM_METRICS.find((item) => item.code === metricCode)
+  if (!metric?.expression) return null
+  const formula = metric.expression.replaceAll('gross_profit', '毛利').replaceAll('revenue', '收入').replaceAll('cost', '成本').replaceAll('cash_inflow', '现金流入').replaceAll('cash_outflow', '现金流出').replaceAll('net_cash_flow', '净现金流').replaceAll('cumulative_cash_flow', '累计现金流').replace('previous(', '上期(')
   return (
-    <svg className="fx-indicator" viewBox="0 0 24 24" aria-label="系统动态计算" role="img">
-      <path d="M4.5 18.5c2.4 0 3.5-1.3 3.5-3.7v-4.4c0-2.8 1.5-4.6 4.7-4.6" />
-      <path d="M4.8 11h7" />
-      <path d="m14.2 11.4 5.3 7.1m0-7.1-5.3 7.1" />
-    </svg>
+    <span className="fx-help" tabIndex={0} aria-label={`${metric.name}计算说明`}>
+      <svg className="fx-indicator" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4.5 18.5c2.4 0 3.5-1.3 3.5-3.7v-4.4c0-2.8 1.5-4.6 4.7-4.6" />
+        <path d="M4.8 11h7" />
+        <path d="m14.2 11.4 5.3 7.1m0-7.1-5.3 7.1" />
+      </svg>
+      <span className="fx-help-popover" role="tooltip"><b>{metric.name}</b><span><strong>公式</strong>{formula}</span><span><strong>说明</strong>{metric.description}</span></span>
+    </span>
   )
 }
 
@@ -94,14 +102,15 @@ export function CalculationBaseGrid({
       cashBySource.set(key, row)
     })
 
-    const metricRow = (id: string, label: string, group: BaseGroup, values: Record<string, string>, valueKind?: FinancialGridRow['valueKind'], rowKind: CalculationBaseRow['rowKind'] = 'metric'): CalculationBaseRow => ({
+    const metricRow = (id: MetricCode, label: string, group: BaseGroup, values: Record<string, string>, valueKind?: FinancialGridRow['valueKind'], rowKind: CalculationBaseRow['rowKind'] = 'metric'): CalculationBaseRow => ({
       id: `metric:${id}`,
       label,
       group,
       rowKind,
+      metricCode: id,
       section: PROFIT_GROUPS.has(group) ? 'profit' : 'cash',
       rowClassName: `calculation-${rowKind}-row`,
-      calculated: true,
+      calculated: SYSTEM_METRICS.find((item) => item.code === id)?.metricType === 'calculated',
       editable: false,
       valueKind,
       values,
@@ -161,15 +170,13 @@ export function CalculationBaseGrid({
     })
   }
 
+  const viewSwitch = <div className="calculation-view-switch" role="group" aria-label="计算底表视图">
+    <button className={view === 'all' ? 'active' : ''} onClick={() => setView('all')}>全部底表</button>
+    <button className={view === 'profit' ? 'active' : ''} onClick={() => setView('profit')}>损益视图</button>
+    <button className={view === 'cash' ? 'active' : ''} onClick={() => setView('cash')}>现金流视图</button>
+  </div>
+
   return <section className="calculation-base-stage">
-    <div className="calculation-base-toolbar">
-      <div className="calculation-view-switch" role="group" aria-label="计算底表视图">
-        <button className={view === 'all' ? 'active' : ''} onClick={() => setView('all')}>全部底表</button>
-        <button className={view === 'profit' ? 'active' : ''} onClick={() => setView('profit')}>损益视图</button>
-        <button className={view === 'cash' ? 'active' : ''} onClick={() => setView('cash')}>现金流视图</button>
-      </div>
-      <span>{visibleRows.length} 行 · 同一计算批次</span>
-    </div>
     <FinancialGrid
       ariaLabel="项目计算底表"
       periods={periods}
@@ -184,14 +191,16 @@ export function CalculationBaseGrid({
           <div>
             {collapsible && <button className="calculation-collapse-button" aria-label={`${collapsedGroups.has(item.group) ? '展开' : '收起'}${item.label}明细`} onClick={(event) => { event.stopPropagation(); toggleGroup(item.group) }}>{collapsedGroups.has(item.group) ? <ChevronRight size={14} /> : <ChevronDown size={14} />}</button>}
             <b>{item.label}</b>
-            {item.calculated && <FormulaIcon />}
+            {item.calculated && item.metricCode && <FormulaIcon metricCode={item.metricCode} />}
           </div>
           {item.secondary && <small>{item.secondary}</small>}
         </div>
       }}
       onChange={onChange}
       onClearOverride={onClearOverride}
-      toolbarPlacement="bottom"
+      toolbarPlacement="top"
+      toolbarLeading={viewSwitch}
+      toolbarMeta={`${visibleRows.length} 行`}
     />
   </section>
 }

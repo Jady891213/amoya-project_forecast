@@ -3,6 +3,7 @@ import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useS
 import {
   Archive,
   Calculator,
+  Check,
   ChevronDown,
   ChevronUp,
   Copy,
@@ -190,6 +191,7 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
   const [versionMemberId, setVersionMemberId] = useState('')
   const [planManageOpen, setPlanManageOpen] = useState(false)
   const [planNameDrafts, setPlanNameDrafts] = useState<Record<string, string>>({})
+  const [editingPlanNameId, setEditingPlanNameId] = useState('')
   const [debouncedFormulaExpressions, setDebouncedFormulaExpressions] = useState<Record<string, string>>({})
   const createPlanMenuRef = useRef<HTMLDivElement>(null)
 
@@ -431,6 +433,7 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
       await api.updatePlan(projectId, plan.planId, { name })
       await refreshPlanManagement(workspace.currentPlan.planId)
       setMessage('方案名称已更新')
+      setEditingPlanNameId('')
     } catch (reason) { setMessage(reason instanceof Error ? reason.message : '方案更新失败') }
     finally { setBusy(false) }
   }
@@ -739,6 +742,7 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
         <button className="btn" onClick={() => {
           setVersionMenuOpen(false)
           resetPlanNameDrafts(workspace.projectPlans)
+          setEditingPlanNameId('')
           setPlanManageOpen(true)
         }}><Settings size={14} />方案管理</button>
       </div>
@@ -752,10 +756,13 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
           const activeCount = workspace.projectPlans.filter((item) => item.status === 'active').length
           const canArchive = plan.status === 'active' && !plan.isDefault && activeCount > 1
           return <tr key={plan.planId} className={plan.planId === workspace.currentPlan.planId ? 'current' : ''}>
-            <td><div className="plan-name-editor"><input aria-label={`${plan.name}方案名称`} value={nameDraft} onChange={(event) => setPlanNameDrafts((current) => ({ ...current, [plan.planId]: event.target.value }))} /><span>{plan.planId === workspace.currentPlan.planId ? '当前使用' : plan.isDefault ? '默认方案' : ''}</span></div></td>
+            <td><div className={`plan-name-editor ${editingPlanNameId === plan.planId ? 'editing' : ''}`}>
+              {editingPlanNameId === plan.planId ? <div className="plan-name-input-wrap"><input autoFocus aria-label={`${plan.name}方案名称`} value={nameDraft} onChange={(event) => setPlanNameDrafts((current) => ({ ...current, [plan.planId]: event.target.value }))} onKeyDown={(event) => { if (event.key === 'Enter') void savePlanName(plan); if (event.key === 'Escape') { setPlanNameDrafts((current) => ({ ...current, [plan.planId]: plan.name })); setEditingPlanNameId('') } }} /><div className="plan-name-input-actions"><button aria-label="确认修改方案名称" disabled={busy || !nameDraft.trim() || nameDraft.trim() === plan.name} onClick={() => void savePlanName(plan)}><Check size={14} /></button><button aria-label="取消修改方案名称" onClick={() => { setPlanNameDrafts((current) => ({ ...current, [plan.planId]: plan.name })); setEditingPlanNameId('') }}><X size={14} /></button></div></div> : <div className="plan-name-readonly"><b>{plan.name}</b><button aria-label={`修改${plan.name}名称`} onClick={() => { setPlanNameDrafts((current) => ({ ...current, [plan.planId]: plan.name })); setEditingPlanNameId(plan.planId) }}><Pencil size={13} /></button></div>}
+              <span>{plan.planId === workspace.currentPlan.planId ? '当前使用' : plan.isDefault ? '默认方案' : ''}</span>
+            </div></td>
             <td><span className={`plan-status ${plan.status}`}>{plan.status === 'active' ? '可用' : '已归档'}</span></td>
             <td>{plan.startPeriod} 至 {plan.endPeriod}</td><td>R{plan.draftRevision}</td><td>{new Date(plan.updatedAt).toLocaleDateString('zh-CN')}</td>
-            <td><div className="plan-row-actions"><button className="action-link" disabled={busy || !nameDraft.trim() || nameDraft.trim() === plan.name} onClick={() => void savePlanName(plan)}>保存名称</button>{plan.status === 'active' ? <><button className="action-link" disabled={busy || plan.isDefault} onClick={() => void setDefaultPlan(plan.planId)}>设为默认</button><button className="action-link danger-action" disabled={busy || !canArchive} title={!canArchive ? plan.isDefault ? '默认方案不能归档' : '至少保留一个有效方案' : ''} onClick={() => void archiveManagedPlan(plan)}>归档</button></> : <button className="action-link" disabled={busy} onClick={() => void restoreArchivedPlan(plan.planId)}>恢复</button>}</div></td>
+            <td><div className="plan-row-actions">{plan.status === 'active' ? <><button className="action-link" disabled={busy || plan.isDefault} onClick={() => void setDefaultPlan(plan.planId)}>设为默认</button><button className="action-link danger-action" disabled={busy || !canArchive} title={!canArchive ? plan.isDefault ? '默认方案不能归档' : '至少保留一个有效方案' : ''} onClick={() => void archiveManagedPlan(plan)}>归档</button></> : <button className="action-link" disabled={busy} onClick={() => void restoreArchivedPlan(plan.planId)}>恢复</button>}</div></td>
           </tr>
         })}</tbody></table></div>
         <footer className="modal-actions"><button className="btn" onClick={() => setPlanManageOpen(false)}>关闭</button></footer>
@@ -796,10 +803,8 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
           <div className="planning-grid-stage unified-preview-grid">
             <FinancialGrid
               ariaLabel="统一行项目分月预览"
-              typeColumnTitle="类型"
-              typeColumnWidth={88}
               labelColumnTitle="预测项"
-              labelColumnWidth={330}
+              labelColumnWidth={360}
               periods={cashPeriods}
               activeRowId={selectedParameterId || selectedLineId}
               rows={modelRows.map((item) => {
@@ -836,22 +841,20 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
                 if (item?.parameter) { setSelectedLineId(''); setSelectedParameterId(rowId) }
                 else { setSelectedParameterId(''); setSelectedLineId(item?.parentLine?.id ?? rowId) }
               }}
-              renderRowType={(row) => {
-                const item = modelRows.find((candidate) => candidate.id === row.id)
-                return item ? <span className={`model-type-tag ${item.kind.replaceAll('_', '-')}`}>{typeLabels[item.kind]}</span> : null
-              }}
               renderRowLabel={(row) => {
                 const item = modelRows.find((candidate) => candidate.id === row.id)
-                if (item?.parameter) return <div className="model-row-content"><button className="model-row-summary"><b>{item.parameter.name}</b><span>{item.parameter.code} · {item.parameter.parameterType === 'fixed' ? `全期固定 · ${item.parameter.fixedValue || '未填写'} ${item.parameter.unit}` : `逐月填写 · ${Object.keys(item.parameter.monthlyValues).length}/${projectPeriods.length} 月已填`}</span></button><div className="model-row-actions"><button title="复制参数" aria-label={`复制${item.parameter.name}`} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); duplicateParameter(item.id) }}><Copy size={15} /></button><button title="删除参数" aria-label={`删除${item.parameter.name}`} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); removeParameter(item.id) }}><Trash2 size={15} /></button></div></div>
-                if (item?.cashRule && item.parentLine) return <div className="model-row-content cash-plan-row-content"><button className="model-row-summary"><b>{item.parentLine.name} · {item.parentLine.category === 'revenue' ? '收款计划' : '付款计划'}</b><span>{item.parentLine.code} · {item.cashRule.method === 'manual_monthly' ? `逐月指定 · ${Object.keys(item.cashRule.monthlyValues).length} 个月已填` : item.cashRule.method === 'delayed' ? `自动生成 · 延后 ${item.cashRule.delayMonths} 个月` : item.cashRule.method === 'installment' ? '自动生成 · 分期收付' : '自动生成 · 当月收付'}</span></button></div>
+                const typeTag = item ? <span className={`model-type-tag ${item.kind.replaceAll('_', '-')}`}>{typeLabels[item.kind]}</span> : null
+                if (item?.parameter) return <div className="model-row-content"><button className="model-row-summary"><span className="model-row-title-line">{typeTag}<b>{item.parameter.name}</b></span><span>{item.parameter.code} · {item.parameter.parameterType === 'fixed' ? `全期固定 · ${item.parameter.fixedValue || '未填写'} ${item.parameter.unit}` : `逐月填写 · ${Object.keys(item.parameter.monthlyValues).length}/${projectPeriods.length} 月已填`}</span></button><div className="model-row-actions"><button title="复制参数" aria-label={`复制${item.parameter.name}`} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); duplicateParameter(item.id) }}><Copy size={15} /></button><button title="删除参数" aria-label={`删除${item.parameter.name}`} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); removeParameter(item.id) }}><Trash2 size={15} /></button></div></div>
+                if (item?.cashRule && item.parentLine) return <div className="model-row-content cash-plan-row-content"><button className="model-row-summary"><span className="model-row-title-line">{typeTag}<b>{item.parentLine.name} · {item.parentLine.category === 'revenue' ? '收款计划' : '付款计划'}</b></span><span>{item.parentLine.code} · {item.cashRule.method === 'manual_monthly' ? `逐月指定 · ${Object.keys(item.cashRule.monthlyValues).length} 个月已填` : item.cashRule.method === 'delayed' ? `自动生成 · 延后 ${item.cashRule.delayMonths} 个月` : item.cashRule.method === 'installment' ? '自动生成 · 分期收付' : '自动生成 · 当月收付'}</span></button></div>
                 const line = item?.line
                 if (!line) return row.label
                 const rule = cashRules.find((candidate) => candidate.sourceLineCode === line.code)
                 const method = line.forecastMethod === 'fixed_monthly' ? `${line.fixedMonthlyValue || '未填写'} 元/月` : line.forecastMethod === 'formula' ? formulaSummary(line.formulaExpression, parameters, lines) : `${Object.keys(line.monthlyValues).length} 个月已填`
                 const settlement = line.category === 'revenue' || line.category === 'cost' ? ` · ${line.amountBasis === 'tax_inclusive' ? '含税' : line.amountBasis === 'non_taxable' ? '免税' : '未税'} ${line.taxRate || 0}% · ${rule?.method === 'delayed' ? `延后${rule.delayMonths}月` : rule?.method === 'installment' ? '分期收付' : rule?.method === 'manual_monthly' ? '逐月指定收付' : rule?.method === 'disabled' ? '不生成现金' : '当月收付'}` : ''
                 const issue = previewIssuesByLine.get(item.id)?.[0]
-                return <div className="model-row-content"><button className="model-row-summary"><b>{line.name}</b><span className={issue ? 'preview-line-error' : ''}>{line.code} · {issue ? `预览错误：${issue}` : `${forecastSchemeLabel(line)} · ${method}${settlement}`}</span></button><div className="model-row-actions"><button title="复制预测项" aria-label={`复制${line.name}`} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); duplicateLine(item.id) }}><Copy size={15} /></button><button title="删除预测项" aria-label={`删除${line.name}`} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); removeLine(item.id) }}><Trash2 size={15} /></button></div></div>
+                return <div className="model-row-content"><button className="model-row-summary"><span className="model-row-title-line">{typeTag}<b>{line.name}</b></span><span className={issue ? 'preview-line-error' : ''}>{line.code} · {issue ? `预览错误：${issue}` : `${forecastSchemeLabel(line)} · ${method}${settlement}`}</span></button><div className="model-row-actions"><button title="复制预测项" aria-label={`复制${line.name}`} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); duplicateLine(item.id) }}><Copy size={15} /></button><button title="删除预测项" aria-label={`删除${line.name}`} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); removeLine(item.id) }}><Trash2 size={15} /></button></div></div>
               }}
+              toolbarPlacement="bottom"
             />
           </div>
         </section>
