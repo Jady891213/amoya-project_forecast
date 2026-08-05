@@ -42,6 +42,12 @@ describe('SQLite 当前数据结构与测算闭环', () => {
       const columns = await database.query<{ name: string }>(`PRAGMA table_info(${table})`)
       expect(columns.map((item) => item.name)).toContain('plan_id')
     }
+    const metricColumns = await database.query<{ name: string }>('PRAGMA table_info(dim_metric)')
+    expect(metricColumns.map((item) => item.name)).toEqual(expect.arrayContaining([
+      'parent_code', 'hierarchy_level', 'is_leaf',
+    ]))
+    const lineColumns = await database.query<{ name: string }>('PRAGMA table_info(cfg_model_line)')
+    expect(lineColumns.map((item) => item.name)).toContain('metric_code')
     expect(tables.map((row) => row.name)).not.toContain('dim_version')
     expect(tables.map((row) => row.name)).not.toContain('rel_project_version')
     expect(await database.query('SELECT * FROM dim_plan')).toHaveLength(0)
@@ -87,7 +93,7 @@ describe('SQLite 当前数据结构与测算闭环', () => {
     await calculation.saveDraft(project.id, plan.planId, {
       lines: [{
         id: 'line-revenue', code: 'LINE-001', name: '会员收入',
-        category: 'revenue', forecastMethod: 'formula',
+        category: 'revenue', metricCode: 'revenue_annual_subscription', forecastMethod: 'formula',
         formulaExpression: '24 * 100', calculationPreset: 'price_quantity',
         calculationConfig: { priceValue: '24', quantityValue: '100' },
         startPeriod: '2026-01', endPeriod: '2026-02',
@@ -117,6 +123,7 @@ describe('SQLite 当前数据结构与测算闭环', () => {
       lines: [
         {
           id: 'line-revenue', code: 'LINE-001', name: '服务收入', category: 'revenue',
+          metricCode: 'revenue_project_service',
           forecastMethod: 'fixed_monthly', fixedMonthlyValue: '100', startPeriod: '2026-01', endPeriod: '2026-02',
           amountBasis: 'tax_exclusive', taxRate: '0', assumption: '', sortOrder: 1, monthlyValues: {},
         },
@@ -147,8 +154,8 @@ describe('SQLite 当前数据结构与测算闭环', () => {
     const saved = await calculation.saveDraft(project.id, plan.planId, {
       parameters: [],
       lines: [
-        { code: 'LINE-001', name: '收入', category: 'revenue', forecastMethod: 'fixed_monthly', fixedMonthlyValue: '100', startPeriod: '2026-01', endPeriod: '2026-01', amountBasis: 'tax_exclusive', taxRate: '0', assumption: '', sortOrder: 1, monthlyValues: {} },
-        { code: 'LINE-002', name: '收入分成', category: 'cost', forecastMethod: 'formula', formulaExpression: 'LINE("LINE-001") * 50%', startPeriod: '2026-01', endPeriod: '2026-01', amountBasis: 'tax_exclusive', taxRate: '0', assumption: '', sortOrder: 2, monthlyValues: {} },
+        { code: 'LINE-001', name: '收入', category: 'revenue', metricCode: 'revenue_other', forecastMethod: 'fixed_monthly', fixedMonthlyValue: '100', startPeriod: '2026-01', endPeriod: '2026-01', amountBasis: 'tax_exclusive', taxRate: '0', assumption: '', sortOrder: 1, monthlyValues: {} },
+        { code: 'LINE-002', name: '收入分成', category: 'cost', metricCode: 'cost_copyright_purchase', forecastMethod: 'formula', formulaExpression: 'LINE("LINE-001") * 50%', startPeriod: '2026-01', endPeriod: '2026-01', amountBasis: 'tax_exclusive', taxRate: '0', assumption: '', sortOrder: 2, monthlyValues: {} },
       ],
       cashRules: [{ sourceLineCode: 'LINE-001', method: 'immediate', delayMonths: 0, installments: [], monthlyValues: {} }],
     })
@@ -156,7 +163,7 @@ describe('SQLite 当前数据结构与测算闭环', () => {
     expect(calculated.success).toBe(true)
     const revenueLine = saved.lines.find((line) => line.code === 'LINE-001')!
     await calculation.saveAdjustments(project.id, plan.planId, calculated.state.resultRevision, [{
-      forecastLineId: revenueLine.id, period: '2026-01', metricCode: 'revenue', adjustedValue: '120', reason: '复核调整',
+      forecastLineId: revenueLine.id, period: '2026-01', metricCode: 'revenue_other', adjustedValue: '120', reason: '复核调整',
     }])
     const report = await new ProjectReportService(database).build({ projectId: project.id, scenarioId: 'baseline', planId: plan.planId })
     expect(report.summary.revenue).toBe('120')

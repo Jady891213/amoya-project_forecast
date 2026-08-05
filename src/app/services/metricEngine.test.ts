@@ -121,6 +121,25 @@ describe('MetricEngine', () => {
     expect(all.summary.grossMargin).toBe('0.175')
   })
 
+  it('先汇总收入两级和成本三级末级事实，再计算父级与毛利', () => {
+    const result = calculateMetrics(
+      { ...project, endPeriod: project.startPeriod },
+      [
+        fact('2026-01', 'revenue_project_service', 100),
+        fact('2026-01', 'revenue_value_added', 50),
+        fact('2026-01', 'cost_business_customer_maintenance', 10),
+        fact('2026-01', 'cost_technical_cdn', 20),
+        fact('2026-01', 'cost_labor_delivery', 30),
+      ],
+      SYSTEM_METRICS,
+    )
+
+    expect(result.summary.revenue).toBe('150')
+    expect(result.summary.cost).toBe('60')
+    expect(result.summary.grossProfit).toBe('90')
+    expect(result.summary.grossMargin).toBe('0.6')
+  })
+
   it('区分无需垫资与预测期内未转正', () => {
     const noFunding = calculateMetrics(
       { ...project, endPeriod: project.startPeriod },

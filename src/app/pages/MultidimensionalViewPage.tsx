@@ -282,7 +282,7 @@ export function MultidimensionalViewPage({ api }: Props) {
       <section className="pivot-table-panel"><div className="pivot-table-head"><div className="pivot-background-controls">{executed && metadata && visibleBackgroundPov.length ? visibleBackgroundPov.map((item) => {
         const members = item.dimension === 'plan' ? plansForProject(metadata, ALL_PROJECTS) : item.dimension === 'period' ? periodMembers(metadata, executed?.periodLevel ?? 'month') : metadata.dimensions.find((dimension) => dimension.dimension === item.dimension)?.members ?? []
         return <label key={item.dimension}><span>{LABELS[item.dimension]}</span><select value={item.memberId} onChange={(event) => updateBackground(item.dimension, event.target.value)}>{members.map((member) => <option key={member.id} value={member.id}>{displayMemberLabel(metadata, item.dimension, member)}</option>)}</select></label>
-      }) : <span className="pivot-no-background">无背景筛选</span>}</div><div className="pivot-table-head-actions">{executed && <><label className="pivot-display-toggle"><input type="checkbox" checked={hideNoDataRows} onChange={(event) => setHideNoDataRows(event.target.checked)} />隐藏无数据行</label><span className="pivot-query-status">{backgroundChanged ? '条件已调整' : ''}</span><button className="btn primary" disabled={loading || !backgroundChanged} onClick={queryBackground}><Search size={14} />{loading ? '查询中' : '查询'}</button><button className="btn pivot-drawer-toggle" onClick={() => setConfigurationOpen((current) => !current)}>{configurationOpen ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}{configurationOpen ? '收起配置' : '展开配置'}</button></>}</div></div>{error && <div className="page-alert error">{error}</div>}{!error && executed && <PivotGrid request={executed} result={result} hideNoDataRows={hideNoDataRows} />}</section>
+      }) : <span className="pivot-no-background">无背景筛选</span>}</div><div className="pivot-table-head-actions">{executed && <><label className="pivot-display-toggle"><input type="checkbox" checked={hideNoDataRows} onChange={(event) => setHideNoDataRows(event.target.checked)} />隐藏无数据行</label><span className="pivot-query-status">{backgroundChanged ? '条件已调整' : ''}</span><button className="btn primary" disabled={loading || !backgroundChanged} onClick={queryBackground}><Search size={14} />{loading ? '查询中' : '查询'}</button><button className="btn pivot-drawer-toggle" onClick={() => setConfigurationOpen((current) => !current)}>{configurationOpen ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}{configurationOpen ? '收起配置' : '展开配置'}</button></>}</div></div>{error && <div className="page-alert error">{error}</div>}{!error && executed && metadata && <PivotGrid request={executed} result={result} metadata={metadata} hideNoDataRows={hideNoDataRows} />}</section>
       {draft && metadata && <aside className="pivot-config-drawer" aria-hidden={!configurationOpen}>
         <div className="pivot-config-drawer-head"><div><b>报表配置</b><span>设置背景、行轴和列轴</span></div><button type="button" aria-label="收起报表配置" onClick={() => setConfigurationOpen(false)}><PanelRightClose size={15} /></button></div>
         <div className="pivot-config-drawer-body">
@@ -366,7 +366,22 @@ function AxisDimensionChip({ dimension, axis, metadata, periodLevel, onMembers, 
     document.addEventListener('pointerdown', closeOnOutside)
     return () => document.removeEventListener('pointerdown', closeOnOutside)
   }, [open])
-  const renderMember = (member: (typeof members)[number]) => <label key={member.id}><input type="checkbox" checked={axis.memberIds.includes(member.id)} onChange={() => onMembers(dimension, axis.memberIds.includes(member.id) ? axis.memberIds.filter((id) => id !== member.id) : [...axis.memberIds, member.id])} /><span>{displayMemberLabel(metadata, dimension, member)}</span></label>
+  const metricDescendants = (memberId: string) => {
+    if (dimension !== 'metric') return [memberId]
+    const result = [memberId]
+    for (let index = 0; index < result.length; index += 1) {
+      members.filter((candidate) => candidate.parentId === result[index]).forEach((candidate) => result.push(candidate.id))
+    }
+    return result
+  }
+  const renderMember = (member: (typeof members)[number]) => {
+    const branch = metricDescendants(member.id)
+    const branchSelected = branch.every((id) => axis.memberIds.includes(id))
+    const toggleBranch = () => onMembers(dimension, branchSelected
+      ? axis.memberIds.filter((id) => !branch.includes(id))
+      : [...new Set([...axis.memberIds, ...branch])])
+    return <label key={member.id} className={dimension === 'metric' ? 'pivot-metric-member' : undefined} style={dimension === 'metric' ? { paddingLeft: 8 + (member.hierarchyLevel ?? 0) * 18 } : undefined}><input type="checkbox" checked={axis.memberIds.includes(member.id)} onChange={() => onMembers(dimension, axis.memberIds.includes(member.id) ? axis.memberIds.filter((id) => id !== member.id) : [...axis.memberIds, member.id])} /><span>{displayMemberLabel(metadata, dimension, member)}</span>{dimension === 'metric' && !member.isLeaf && <button type="button" className="pivot-select-branch" onClick={(event) => { event.preventDefault(); event.stopPropagation(); toggleBranch() }}>{branchSelected ? '清空分支' : '选择分支'}</button>}</label>
+  }
   const summary = dimension === 'period' && axis.memberIds.length
     ? `${PERIOD_LEVEL_LABELS[periodLevel]} · ${members[rangeStart]?.label}—${members[rangeEnd]?.label}，${axis.memberIds.length}期`
     : `${axis.memberIds.length} 个成员`
@@ -395,23 +410,44 @@ function isRepeated(tuples: PivotTuple[], tupleIndex: number, level: number) {
   return tuples[tupleIndex].members.slice(0, level + 1).every((member, i) => member.memberId === tuples[tupleIndex - 1].members[i]?.memberId)
 }
 
-function PivotGrid({ request, result, hideNoDataRows }: { request: PivotRequest; result?: PivotResponse; hideNoDataRows: boolean }) {
+function PivotGrid({ request, result, metadata, hideNoDataRows }: { request: PivotRequest; result?: PivotResponse; metadata: PivotMetadata; hideNoDataRows: boolean }) {
   const [unit, setUnit] = useState(10_000)
   const [decimals, setDecimals] = useState(2)
   const [grouping, setGrouping] = useState(true)
   const [negativeStyle, setNegativeStyle] = useState<'minus' | 'parentheses'>('minus')
+  const [collapsedMetrics, setCollapsedMetrics] = useState<Set<string>>(() => new Set())
   const allRows = result?.rowTuples ?? []
   const columns = result?.columnTuples ?? []
   const root = useRef<HTMLDivElement>(null)
   const cells = useMemo(() => new Map(result?.cells.map((cell) => [`${cell.rowKey}\u001e${cell.columnKey}`, cell]) ?? []), [result])
+  const metricMembers = useMemo(() => metadata.dimensions.find((item) => item.dimension === 'metric')?.members ?? [], [metadata])
+  const metricById = useMemo(() => new Map(metricMembers.map((member) => [member.id, member])), [metricMembers])
+  const selectedMetricIds = request.rows.find((item) => item.dimension === 'metric')?.memberIds ?? []
+  const hasSelectedDescendant = (memberId: string) => selectedMetricIds.some((candidateId) => {
+    let current = metricById.get(candidateId)
+    while (current?.parentId) {
+      if (current.parentId === memberId) return true
+      current = metricById.get(current.parentId)
+    }
+    return false
+  })
+  const hiddenByCollapsedParent = (row: PivotTuple) => {
+    const metric = row.members.find((member) => member.dimension === 'metric')
+    let current = metric?.parentId ? metricById.get(metric.parentId) : undefined
+    while (current) {
+      if (collapsedMetrics.has(current.id)) return true
+      current = current.parentId ? metricById.get(current.parentId) : undefined
+    }
+    return false
+  }
   const rows = useMemo(
-    () => hideNoDataRows
-      ? allRows.filter((row) => columns.some((column) => {
+    () => allRows.filter((row) => !hiddenByCollapsedParent(row)).filter((row) => hideNoDataRows
+      ? columns.some((column) => {
         const cell = cells.get(`${row.key}\u001e${column.key}`)
         return cell?.value !== null && cell?.value !== '' && cell?.value !== undefined
-      }))
-      : allRows,
-    [allRows, cells, columns, hideNoDataRows],
+      })
+      : true),
+    [allRows, cells, columns, hideNoDataRows, collapsedMetrics, metricById],
   )
   const selection = useGridSelection(rows.length, columns.length, { initialSelection: false })
 
@@ -474,7 +510,10 @@ function PivotGrid({ request, result, hideNoDataRows }: { request: PivotRequest;
   })}</tr>)}</thead><tbody>{rows.map((row, rowIndex) => <tr key={row.key}>{request.rows.map((axis, level) => {
     if (isRepeated(rows, rowIndex, level)) return null
     const span = spanLength(rows, rowIndex, level)
-    return <th key={axis.dimension} rowSpan={span} onMouseDown={() => { selection.selectRows(rowIndex, rowIndex + span - 1); root.current?.focus() }}>{row.members[level]?.label}</th>
+    const member = row.members[level]
+    const isMetric = axis.dimension === 'metric'
+    const canCollapse = isMetric && member && hasSelectedDescendant(member.memberId)
+    return <th key={axis.dimension} rowSpan={span} className={isMetric ? 'pivot-metric-row-head' : undefined} onMouseDown={() => { selection.selectRows(rowIndex, rowIndex + span - 1); root.current?.focus() }}><div style={isMetric ? { paddingLeft: (member?.hierarchyLevel ?? 0) * 14 } : undefined}>{canCollapse && <button type="button" className="pivot-tree-toggle" aria-label={`${collapsedMetrics.has(member.memberId) ? '展开' : '收起'}${member.label}`} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); setCollapsedMetrics((current) => { const next = new Set(current); if (next.has(member.memberId)) next.delete(member.memberId); else next.add(member.memberId); return next }) }}>{collapsedMetrics.has(member.memberId) ? '›' : '⌄'}</button>}<span>{member?.label}</span></div></th>
   })}{columns.map((column, columnIndex) => {
     const cell = cells.get(`${row.key}\u001e${column.key}`)
     const isSelected = selection.isSelected(rowIndex, columnIndex)

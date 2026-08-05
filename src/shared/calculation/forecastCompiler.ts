@@ -11,6 +11,7 @@ import type {
   ProjectParameterValue,
 } from '../domain/types'
 import { resolveFormulaDependencies } from './formulaDependencyGraph'
+import { PROFIT_METRIC_BY_CODE, metricPath } from '../../config/profitMetricHierarchy'
 import {
   evaluateFormula,
   parseFormula,
@@ -89,6 +90,7 @@ export function buildForecastConfigHash(
         code: line.code,
         name: line.name,
         category: line.category,
+        metricCode: line.metricCode,
         forecastMethod: line.forecastMethod,
         startPeriod: line.startPeriod,
         endPeriod: line.endPeriod,
@@ -183,6 +185,22 @@ export function compileForecast(
         field: 'name',
         message: '行项目名称不能为空',
       })
+    }
+    if (line.category === 'revenue' || line.category === 'cost') {
+      const metric = PROFIT_METRIC_BY_CODE.get(line.metricCode as never)
+      const rootCode = metricPath(line.metricCode)[0]?.code
+      if (!metric || !metric.isLeaf || rootCode !== line.category) {
+        issues.push({
+          severity: 'error',
+          lineId: line.id,
+          field: 'metricCode',
+          message: line.category === 'revenue' ? '请选择具体收入分类' : '请选择具体成本分类',
+        })
+        return
+      }
+    } else if (line.metricCode !== line.category) {
+      issues.push({ severity: 'error', lineId: line.id, field: 'metricCode', message: '现金事项指标与类型不一致' })
+      return
     }
     const allowedPeriods =
       line.category === 'cash_inflow' || line.category === 'cash_outflow'

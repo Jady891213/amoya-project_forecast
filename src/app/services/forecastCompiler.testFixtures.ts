@@ -17,13 +17,13 @@ export const project: Project = {
 export function line(
   overrides: Partial<ForecastLine> = {},
 ): ForecastLine {
-  return {
+  const result: ForecastLine = {
     id: 'line-1',
     projectId: project.id,
     code: 'LINE-001',
     name: '基础收入',
     category: 'revenue',
-    metricCode: 'revenue',
+    metricCode: 'revenue_other',
     forecastMethod: 'fixed_monthly',
     startPeriod: '2026-01',
     endPeriod: '2026-04',
@@ -36,4 +36,7 @@ export function line(
     updatedAt: '2026-01-01T00:00:00.000Z',
     ...overrides,
   }
+  if (!overrides.metricCode && overrides.category === 'cost') result.metricCode = 'cost_business_other'
+  if (!overrides.metricCode && overrides.category === 'revenue') result.metricCode = 'revenue_other'
+  return result
 }

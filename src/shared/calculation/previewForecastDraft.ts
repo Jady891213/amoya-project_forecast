@@ -8,6 +8,7 @@ import type {
 } from '../domain/types'
 import { compileCashSchedule } from './cashScheduleCompiler'
 import { compileForecast } from './forecastCompiler'
+import { defaultProfitLeafCode } from '../../config/profitMetricHierarchy'
 
 export function previewForecastDraft(project: ProjectCalculationContext, draft: ForecastProjectDraft, planId: string) {
   const now = new Date(0).toISOString()
@@ -17,7 +18,11 @@ export function previewForecastDraft(project: ProjectCalculationContext, draft: 
     code: line.code ?? `LINE-${String(index + 1).padStart(3, '0')}`,
     name: line.name,
     category: line.category,
-    metricCode: line.category,
+    metricCode: line.metricCode ?? (
+      line.category === 'revenue' || line.category === 'cost'
+        ? defaultProfitLeafCode(line.category)
+        : line.category
+    ),
     forecastMethod: line.forecastMethod,
     startPeriod: line.startPeriod,
     endPeriod: line.endPeriod,

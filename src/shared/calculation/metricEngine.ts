@@ -8,6 +8,7 @@ import type {
   ProjectCalculationContext,
   ReportSummary,
 } from '../domain/types'
+import { descendantProfitLeafCodes } from '../../config/profitMetricHierarchy'
 
 interface MetricEngineResult {
   monthly: MonthlyMetricRow[]
@@ -28,6 +29,13 @@ function sumMetric(
     .filter(
       (fact) => fact.period === period && fact.metricCode === metricCode,
     )
+    .reduce((sum, fact) => sum.plus(fact.value), ZERO)
+}
+
+function sumProfitMetric(facts: BaseFact[], period: string, metricCode: 'revenue' | 'cost'): Decimal {
+  const leafCodes = new Set(descendantProfitLeafCodes(metricCode))
+  return facts
+    .filter((fact) => fact.period === period && (leafCodes.has(fact.metricCode as never) || String(fact.metricCode) === metricCode))
     .reduce((sum, fact) => sum.plus(fact.value), ZERO)
 }
 
@@ -82,8 +90,8 @@ export function calculateMetrics(
   const calculatedFacts: CalculatedFact[] = []
 
   const monthly = periods.map((period) => {
-    const revenue = sumMetric(facts, period, 'revenue')
-    const cost = sumMetric(facts, period, 'cost')
+    const revenue = sumProfitMetric(facts, period, 'revenue')
+    const cost = sumProfitMetric(facts, period, 'cost')
     const grossProfit = revenue.minus(cost)
     const grossMargin = revenue.isZero()
       ? null

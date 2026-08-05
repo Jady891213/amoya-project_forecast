@@ -37,7 +37,10 @@ describe('统一 Excel 报告', () => {
     expect(reportSheet?.getCell('E6').numFmt).toContain('0.00%')
     expect(reportSheet?.getCell('G10').font.color).toEqual({ argb: 'FF0000FF' })
     expect(monthlySheet?.getCell('A4').value).toBe('指标 / 测算项')
-    expect(monthlySheet?.getCell('B5').value).toMatchObject({ formula: expect.stringContaining('SUM') })
+    expect(monthlySheet?.getCell('B5').value).toEqual(expect.any(Number))
+    const monthlyLabels = monthlySheet?.getColumn(1).values.map((value) => String(value ?? '').trim()) ?? []
+    expect(monthlyLabels).toContain('项目服务费')
+    expect(monthlyLabels).toContain('技术成本')
     expect(monthlySheet?.views[0]).toMatchObject({
       state: 'frozen',
       xSplit: 1,
@@ -68,10 +71,12 @@ describe('统一 Excel 报告', () => {
     expect(reportSheet?.getCell('A2').value).toContain('含税口径 · 单位：元')
     expect(monthlySheet?.getCell('A2').value).toContain('含税口径 · 单位：元')
     expect(reportSheet?.getCell('B6').value).toMatchObject({
-      formula: expect.stringContaining('G'),
+      formula: expect.stringContaining('I'),
       result: expect.any(Number),
     })
     const firstMonthNet = new Decimal(firstRevenue.monthly[0]?.value ?? 0)
-    expect(monthlySheet?.getCell('B6').value).toBeCloseTo(firstMonthNet.times('1.06').toNumber(), 6)
+    const revenueRow = monthlySheet?.getColumn(1).values.findIndex((value) => value === `    ${firstRevenue.name}`) ?? -1
+    expect(revenueRow).toBeGreaterThan(0)
+    expect(monthlySheet?.getCell(revenueRow, 2).value).toBeCloseTo(firstMonthNet.times('1.06').toNumber(), 6)
   })
 })

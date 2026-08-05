@@ -18,8 +18,8 @@ React 页面
   → SQLite 文件 data/amoya_project_forecast.db
 ```
 
-- 当前软件版本：`v0.6.0`，唯一版本源是 `src/package.json`。
-- 当前数据结构：Schema v14。
+- 当前软件版本：`v0.7.0`，唯一版本源是 `src/package.json`。
+- 当前数据结构：Schema v15。
 - 正式地址：`http://127.0.0.1:4173/projects`。
 - 已删除旧单 HTML、PWA/OPFS 运行入口和浏览器数据库持久化；不要恢复。
 - `dist/` 只是 `pnpm build` 自动生成的网页文件，不是源码或数据，可以删除重建，不提交 Git。
@@ -90,6 +90,8 @@ pnpm start:lan
 ## 6. 关键计算规则
 
 - 统一行项目类型：参数、收入、成本、其他收款、其他付款。
+- 收入、成本预测项必须归属末级指标；收入为两级、成本为三级。父级和成本大类只做递归汇总，不写重复事实。
+- 新建项目首个“方案 1”预置 4 条收入和 15 条成本零金额预测项，全部默认不生成现金；新建空白 Plan 不预置。
 - 支持固定金额、逐月填写、受限公式、收入“单价 × 数量”和成本“按收入比例”。
 - 公式只允许四则运算、括号、百分数、参数引用和其他预测项引用；必须检查缺失、除零和循环依赖。
 - 金额统一使用 Decimal.js 和十进制字符串，不使用 JavaScript 浮点数。
@@ -108,6 +110,7 @@ src/app/                         React 页面与交互
 src/server/                      本地服务、语义 API、仓储与事务
 src/shared/                      前后端共享类型和确定性计算引擎
 src/config/prompts/              版本化 AI 分析提示词
+src/config/profitMetricHierarchy.ts 收入成本指标树唯一配置
 src/app/storage/sqlite/          当前 Schema 与初始化
 src/app/mocks/                   五个参考项目配置
 ```
@@ -119,6 +122,7 @@ src/app/mocks/                   五个参考项目配置
 - `src/server/projectWorkspaceService.ts`：项目工作区聚合保存和读取。
 - `src/server/services/calculationService.ts`：计算、人工调整和最终事实事务。
 - `src/shared/calculation/`：公式、预测、税、现金和指标的唯一计算实现。
+- `src/config/profitMetricHierarchy.ts`：4 个收入分类、5 个成本大类和 15 个成本末级分类；页面不开放维护，需要由 WorkBuddy 修改并重新构建。
 - `src/app/pages/ProjectWorkspacePage.tsx`：项目配置、底稿、报告和操作指引。
 - `src/app/pages/MultidimensionalViewPage.tsx`：跨项目项目报表。
 - `src/app/components/FinancialGrid.tsx`：统一财务表格选区、复制和粘贴。

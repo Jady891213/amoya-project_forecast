@@ -66,6 +66,10 @@ import guideSaveCalculate from '../assets/guide/04_save_calculate.png'
 import guideAdjustmentReport from '../assets/guide/05_adjustment_report.png'
 import guideReportExport from '../assets/guide/06_report_export.png'
 import guideAiAnalysisMaterial from '../assets/guide/07_ai_analysis_material.png'
+import {
+  PROFIT_METRIC_HIERARCHY,
+  metricPathLabel,
+} from '../../config/profitMetricHierarchy'
 
 type WorkspaceView = 'config' | 'calculation' | 'report'
 interface Props {
@@ -100,6 +104,7 @@ function stateToLineDrafts(workspace: ProjectWorkspace): ForecastLineDraft[] {
     code: line.code,
     name: line.name,
     category: line.category,
+    metricCode: line.metricCode,
     forecastMethod: line.forecastMethod,
     startPeriod: line.startPeriod,
     endPeriod: line.endPeriod,
@@ -570,6 +575,7 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
       code: nextCode('LINE', lines.map((item) => item.code)),
       name: category === 'revenue' ? '新增收入项' : category === 'cost' ? '新增成本项' : category === 'cash_inflow' ? '新增收款项' : '新增付款项',
       category,
+      metricCode: category === 'cash_inflow' || category === 'cash_outflow' ? category : undefined,
       forecastMethod: 'fixed_monthly',
       startPeriod: periods[0], endPeriod: periods[periods.length - 1],
       fixedMonthlyValue: '', formulaExpression: '',
@@ -577,9 +583,6 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
       taxRate: '0', assumption: '', sortOrder: lines.length + 1, monthlyValues: {},
     }
     setLines((current) => [...current, line])
-    if (category === 'revenue' || category === 'cost') {
-      setCashRules((current) => [...current, { sourceLineId: id, sourceLineCode: line.code ?? '', method: 'immediate', delayMonths: 0, installments: [], monthlyValues: {} }])
-    }
     setSelectedParameterId('')
     setSelectedLineId(id); markDirty()
   }
@@ -657,7 +660,7 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
       } else {
         const line = breakdown.get(change.rowId)
         if (!line) return
-        next.push({ forecastLineId: change.rowId, period: change.period, metricCode: line.category, adjustedValue: change.value, reason: '计算底稿人工调整' })
+        next.push({ forecastLineId: change.rowId, period: change.period, metricCode: line.metricCode, adjustedValue: change.value, reason: '计算底稿人工调整' })
         hasChange = true
       }
     })
@@ -890,9 +893,10 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
                 if (!line) return row.label
                 const rule = cashRules.find((candidate) => candidate.sourceLineCode === line.code)
                 const method = line.forecastMethod === 'fixed_monthly' ? `${line.fixedMonthlyValue || '未填写'} 元/月` : line.forecastMethod === 'formula' ? formulaSummary(line.formulaExpression, parameters, lines) : `${Object.keys(line.monthlyValues).length} 个月已填`
-                const settlement = line.category === 'revenue' || line.category === 'cost' ? ` · ${line.amountBasis === 'tax_inclusive' ? '含税' : line.amountBasis === 'non_taxable' ? '免税' : '未税'} ${line.taxRate || 0}% · ${rule?.method === 'delayed' ? `延后${rule.delayMonths}月` : rule?.method === 'installment' ? '分期收付' : rule?.method === 'manual_monthly' ? '逐月指定收付' : rule?.method === 'disabled' ? '不生成现金' : '当月收付'}` : ''
+                const metricPath = line.metricCode ? metricPathLabel(line.metricCode) : ''
+                const settlement = line.category === 'revenue' || line.category === 'cost' ? ` · ${line.amountBasis === 'tax_inclusive' ? '含税' : line.amountBasis === 'non_taxable' ? '免税' : '未税'} ${line.taxRate || 0}% · ${rule?.method === 'delayed' ? `延后${rule.delayMonths}月` : rule?.method === 'installment' ? '分期收付' : rule?.method === 'manual_monthly' ? '逐月指定收付' : rule?.method === 'disabled' || !rule ? '不生成现金' : '当月收付'}` : ''
                 const issue = previewIssuesByLine.get(item.id)?.[0]
-                return <div className="model-row-content"><button className="model-row-summary"><span className="model-row-title-line">{typeTag}<b>{line.name}</b></span><span className={issue ? 'preview-line-error' : ''}>{line.code} · {issue ? `预览错误：${issue}` : `${forecastSchemeLabel(line)} · ${method}${settlement}`}</span></button><div className="model-row-actions"><button title="复制预测项" aria-label={`复制${line.name}`} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); duplicateLine(item.id) }}><Copy size={15} /></button><button title="删除预测项" aria-label={`删除${line.name}`} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); removeLine(item.id) }}><Trash2 size={15} /></button></div></div>
+                return <div className="model-row-content"><button className="model-row-summary"><span className="model-row-title-line">{typeTag}<b>{line.name}</b></span><span className={issue ? 'preview-line-error' : ''}>{line.code}{metricPath ? ` · ${metricPath}` : ''} · {issue ? `预览错误：${issue}` : `${forecastSchemeLabel(line)} · ${method}${settlement}`}</span></button><div className="model-row-actions"><button title="复制预测项" aria-label={`复制${line.name}`} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); duplicateLine(item.id) }}><Copy size={15} /></button><button title="删除预测项" aria-label={`删除${line.name}`} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); removeLine(item.id) }}><Trash2 size={15} /></button></div></div>
               }}
               toolbarPlacement="bottom"
             />
@@ -950,6 +954,15 @@ function LineEditor({ line, periods, parameters, lines, cashRule, onPatch, onCas
   return <aside className="forecast-editor compact-line-editor"><div className="editor-head"><div>{editingTitle ? <input className="drawer-title-input" value={line.name} autoFocus onChange={(event) => onPatch({ name: event.target.value })} onBlur={() => setEditingTitle(false)} onKeyDown={(event) => { if (event.key === 'Enter') setEditingTitle(false) }} /> : <button className="drawer-title-button" onClick={() => setEditingTitle(true)} title="点击编辑名称"><b>{line.name}</b></button>}<small>{line.code}</small></div><div className="editor-head-actions"><button className="icon-button" aria-label="关闭配置" onClick={onClose}><X size={15} /></button></div></div>
     <div className="editor-form compact-editor-form">
       <div className="drawer-section-title full-field">基本信息与计算规则</div>
+        {isProfit && <label className="full-field">指标分类
+          <select value={line.metricCode ?? ''} onChange={(event) => onPatch({ metricCode: event.target.value as ForecastLineDraft['metricCode'] })}>
+            <option value="">请选择末级指标</option>
+            {line.category === 'revenue'
+              ? PROFIT_METRIC_HIERARCHY[0].children.map((metric) => <option key={metric.code} value={metric.code}>{metric.name}</option>)
+              : PROFIT_METRIC_HIERARCHY[1].children.map((group) => <optgroup key={group.code} label={group.name}>{group.children.map((metric) => <option key={metric.code} value={metric.code}>{group.name} / {metric.name}</option>)}</optgroup>)}
+          </select>
+          {line.metricCode && <small className="drawer-field-note">当前路径：{metricPathLabel(line.metricCode)}</small>}
+        </label>}
         <label className="full-field">测算方式<select value={scheme} onChange={(e) => onPatch(patchForForecastScheme(line, e.target.value as ForecastScheme, parameters, lines))}><option value="fixed_monthly">固定月金额</option><option value="monthly_input">逐月填写</option>{isProfit && <option value="price_quantity">单价 × 数量</option>}{line.category === 'cost' && <option value="revenue_ratio">按收入比例</option>}<option value="custom_formula">自定义公式</option></select></label>
         <div className="drawer-field-pair full-field"><label>开始期间<select value={line.startPeriod} onChange={(e) => onPatch({ startPeriod: e.target.value })}>{periods.map((period) => <option key={period}>{period}</option>)}</select></label><label>结束期间<select value={line.endPeriod} onChange={(e) => onPatch({ endPeriod: e.target.value })}>{periods.map((period) => <option key={period}>{period}</option>)}</select></label></div>
         {scheme === 'fixed_monthly' && <label className="full-field">每月金额（元）<input value={line.fixedMonthlyValue ?? ''} onChange={(e) => onPatch({ fixedMonthlyValue: e.target.value })} /></label>}
@@ -1091,12 +1104,12 @@ function ProjectReportView({ report, onExport, onOpenAi }: { report?: ProjectRep
 
     <section className="report-section v31-report-section"><header><div><h2>测算假设</h2><p>关键参数、测算方式与税口径，供审阅复核</p></div></header>
       {presentation.parameterResults.length > 0 && <div className="report-assumption-chips">{presentation.parameterResults.map((item) => <article key={item.code}><span>{item.name}</span><b>{item.inputMode === '全期固定' ? `${item.monthly[0]?.value ?? '—'} ${item.unit}` : `${item.monthly.filter((value) => value.value !== null).length} 个月已填`}</b><small>{item.code} · {item.inputMode}</small></article>)}</div>}
-      <div className="report-assumption-table-wrap"><table className="report-assumption-table"><thead><tr><th>类型</th><th>测算项</th><th>测算方式</th><th>主要配置</th><th>税率</th><th>{display.basisLabel}合计（{unitLabel}）</th></tr></thead><tbody>{display.lineResults.filter((item) => item.category === 'revenue' || item.category === 'cost').map((item) => <tr key={item.lineId}><td><span className={`report-line-type ${item.category}`}>{item.category === 'revenue' ? '收入' : '成本'}</span></td><td><b>{item.name}</b><small>{item.code}</small></td><td>{item.method}</td><td title={item.methodDescription}>{assumptionConfig(item)}</td><td>{new Decimal(item.taxRate).times(100).toFixed(2)}%</td><td>{amountText(item.displayTotal)}</td></tr>)}</tbody></table></div>
+      <div className="report-assumption-table-wrap"><table className="report-assumption-table"><thead><tr><th>类型</th><th>指标分类</th><th>测算项</th><th>测算方式</th><th>主要配置</th><th>税率</th><th>{display.basisLabel}合计（{unitLabel}）</th></tr></thead><tbody>{display.lineResults.filter((item) => item.category === 'revenue' || item.category === 'cost').map((item) => <tr key={item.lineId}><td><span className={`report-line-type ${item.category}`}>{item.category === 'revenue' ? '收入' : '成本'}</span></td><td>{metricPathLabel(item.metricCode)}</td><td><b>{item.name}</b><small>{item.code}</small></td><td>{item.method}</td><td title={item.methodDescription}>{assumptionConfig(item)}</td><td>{new Decimal(item.taxRate).times(100).toFixed(2)}%</td><td>{amountText(item.displayTotal)}</td></tr>)}</tbody></table></div>
     </section>
 
     <div className="report-composition-grid">
-      <section className="report-section v31-report-section"><header><div><h2>收入结构</h2><p>各项收入占收入合计的比重</p></div></header><div className="v31-bar-list">{display.revenueComposition.map((item) => <article key={item.code}><div><b>{item.name}</b><span>{amountText(item.amount)} {unitLabel} · {shareText(item.share)}</span></div><div className="v31-bar-track"><i className="income" style={{ width: `${Math.max(0, Number(item.share ?? 0) * 100)}%` }} /></div><small>{item.description}</small></article>)}</div></section>
-      <section className="report-section v31-report-section"><header><div><h2>成本结构</h2><p>按成本项展示金额、占比与测算来源</p></div></header><div className="v31-bar-list">{display.costComposition.map((item) => <article key={item.code}><div><b>{item.name}</b><span>{amountText(item.amount)} {unitLabel} · {shareText(item.share)}</span></div><div className="v31-bar-track"><i className="cost" style={{ width: `${Math.max(0, Number(item.share ?? 0) * 100)}%` }} /></div><small>{item.description}</small></article>)}</div></section>
+      <section className="report-section v31-report-section"><header><div><h2>收入结构</h2><p>固定按4类收入展示，空分类仍保留</p></div></header><div className="v31-bar-list">{display.revenueMetricGroups.map((item) => <article key={item.metricCode}><div><b>{item.name}</b><span>{amountText(item.amount)} {unitLabel} · {shareText(item.share)}</span></div><div className="v31-bar-track"><i className="income" style={{ width: `${Math.max(0, Number(item.share ?? 0) * 100)}%` }} /></div><small>{item.items.length ? item.items.map((line) => line.name).join('、') : '当前方案暂不涉及该分类'}</small></article>)}</div></section>
+      <section className="report-section v31-report-section"><header><div><h2>成本结构</h2><p>按5个成本大类及15个末级分类展示</p></div></header><div className="v31-bar-list metric-tree-report-list">{display.costMetricGroups.map((group) => <article key={group.metricCode} className="report-metric-major-group"><div><b>{group.name}</b><span>{amountText(group.amount)} {unitLabel} · {shareText(group.share)}</span></div><div className="v31-bar-track"><i className="cost" style={{ width: `${Math.max(0, Number(group.share ?? 0) * 100)}%` }} /></div><div className="report-metric-children">{group.children.map((item) => <div key={item.metricCode}><span><b>{item.name}</b><em>{amountText(item.amount)} {unitLabel}</em></span><small>{item.items.length ? item.items.map((line) => line.name).join('、') : '当前方案暂不涉及该分类'}</small></div>)}</div></article>)}</div></section>
     </div>
 
     <section className="report-section v31-report-section"><header><div><h2>年度收入、成本和利润分布</h2><p>按自然年汇总当前方案的{display.basisLabel}损益结果</p></div></header><div className="annual-report-list">{display.annualResults.map((item) => <article key={item.year}><b>{item.year}<small>年</small></b><div><p><span>收入</span><i className="income" style={{ width: `${Math.abs(Number(item.revenue)) / largestAnnual * 100}%` }} /><em>{amountText(item.revenue)} {unitLabel}</em></p><p><span>成本</span><i className="cost" style={{ width: `${Math.abs(Number(item.cost)) / largestAnnual * 100}%` }} /><em>{amountText(item.cost)} {unitLabel}</em></p></div><aside><strong>{amountText(item.grossProfit)} {unitLabel}</strong><span>利润率 {formatPercent(item.grossMargin)}</span></aside></article>)}</div></section>

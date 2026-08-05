@@ -112,7 +112,7 @@ describe('FormulaEngine', () => {
       code: 'LINE-002',
       name: '渠道分成',
       category: 'cost',
-      metricCode: 'cost',
+      metricCode: 'cost_marketing_channel',
       forecastMethod: 'formula',
       formulaExpression: 'LINE("LINE-001") * PARAM("PAR-003")',
       startPeriod: '2026-01',

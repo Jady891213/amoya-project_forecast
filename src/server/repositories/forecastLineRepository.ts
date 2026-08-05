@@ -21,6 +21,7 @@ export interface ForecastConfig {
 interface ModelLineRow {
   id: string; project_id: string; plan_id: string; code: string; name: string
   category: ForecastLine['category']
+  metric_code: ForecastLine['metricCode']
   calculation_method: ForecastLine['forecastMethod']; start_period: string
   end_period: string; config_json: string; sort_order: number
   created_at: string; updated_at: string
@@ -35,7 +36,7 @@ function fromRow(row: ModelLineRow): ForecastLine {
   const config = parseForecastConfig(row.config_json)
   return {
     id: row.id, projectId: row.project_id, code: row.code, name: row.name,
-    category: row.category, metricCode: row.category,
+    category: row.category, metricCode: row.metric_code,
     forecastMethod: row.calculation_method,
     startPeriod: row.start_period, endPeriod: row.end_period,
     fixedMonthlyValue: config.fixedMonthlyValueText,
@@ -60,7 +61,7 @@ export class ForecastLineRepository {
 
   async list(projectId: string, planId: string): Promise<ForecastLine[]> {
     const rows = await this.database.query<ModelLineRow>(
-      `SELECT id, project_id, code, name, category,
+      `SELECT id, project_id, code, name, category, metric_code,
               calculation_method, start_period, end_period, config_json,
               sort_order, created_at, updated_at
        FROM cfg_model_line
@@ -120,22 +121,26 @@ export class ForecastLineRepository {
         assumption: draft.assumption.trim(),
         cashRule: oldConfig?.cashRule,
       }
+      const metricCode = draft.category === 'cash_inflow' || draft.category === 'cash_outflow'
+        ? draft.category
+        : draft.metricCode
       statements.push({
         sql: `INSERT INTO cfg_model_line (
           id, project_id, plan_id, code, name, line_type, category,
-          calculation_method, start_period, end_period,
+          metric_code, calculation_method, start_period, end_period,
           unit, config_json, sort_order, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '元', ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '元', ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           name = excluded.name, line_type = excluded.line_type,
           category = excluded.category,
+          metric_code = excluded.metric_code,
           calculation_method = excluded.calculation_method,
           start_period = excluded.start_period, end_period = excluded.end_period,
           config_json = excluded.config_json, sort_order = excluded.sort_order,
           updated_at = excluded.updated_at`,
         params: [id, projectId, planId, code, draft.name.trim(),
           draft.category === 'revenue' || draft.category === 'cost' ? 'profit' : 'cash',
-          draft.category, draft.forecastMethod,
+          draft.category, metricCode, draft.forecastMethod,
           draft.startPeriod, draft.endPeriod, JSON.stringify(config), sortOrder,
           previous?.createdAt ?? now, now],
       })

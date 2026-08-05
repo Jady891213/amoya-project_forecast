@@ -14,6 +14,9 @@ interface MetricRow {
   dependencies_json: string
   sort_order: number
   system_managed: number
+  parent_code: MetricDefinition['parentCode'] | null
+  hierarchy_level: number
+  is_leaf: number
 }
 
 export class MetricRepository {
@@ -37,6 +40,9 @@ export class MetricRepository {
       sortOrder: row.sort_order,
       systemManaged: Boolean(row.system_managed),
       origin: 'system',
+      parentCode: row.parent_code ?? undefined,
+      hierarchyLevel: row.hierarchy_level,
+      isLeaf: Boolean(row.is_leaf),
     }))
   }
 }

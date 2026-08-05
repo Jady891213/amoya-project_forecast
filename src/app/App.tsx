@@ -289,8 +289,9 @@ function NewProjectPage({ snapshot, onCancel, onCreate }: { snapshot: AppSnapsho
 }
 
 function MetricPage({ snapshot }: { snapshot: AppSnapshot }) {
-  const baseCount = snapshot.metrics.filter((item) => item.metricType === 'base').length
-  const calculatedCount = snapshot.metrics.length - baseCount
+  const calculatedCount = snapshot.metrics.filter((item) => item.metricType === 'calculated').length
+  const leafCount = snapshot.metrics.filter((item) => item.metricType === 'base' && item.isLeaf).length
+  const summaryCount = snapshot.metrics.filter((item) => item.metricType === 'base' && !item.isLeaf).length
   const profitCount = snapshot.metrics.filter((item) => item.category === 'profit').length
   const cashCount = snapshot.metrics.length - profitCount
   const aggregationLabel: Record<string, string> = { sum: '求和', recompute: '重新计算', ending: '期末值' }
@@ -299,20 +300,24 @@ function MetricPage({ snapshot }: { snapshot: AppSnapshot }) {
     <div className="page-body metric-management-page">
       <section className="project-kpi-grid metric-kpi-grid" aria-label="指标概览">
         <article className="project-kpi-card"><span className="project-kpi-icon"><BarChart3 size={18} /></span><div><span>指标总数</span><b>{snapshot.metrics.length}</b><small>统一指标维度成员</small></div></article>
-        <article className="project-kpi-card"><span className="project-kpi-icon green"><Database size={18} /></span><div><span>基础指标</span><b>{baseCount}</b><small>由项目事实直接写入</small></div></article>
+        <article className="project-kpi-card"><span className="project-kpi-icon green"><Database size={18} /></span><div><span>明细指标</span><b>{leafCount}</b><small>预测行与现金事实归属</small></div></article>
         <article className="project-kpi-card"><span className="project-kpi-icon purple"><Sigma size={18} /></span><div><span>系统计算</span><b>{calculatedCount}</b><small>按统一公式动态计算</small></div></article>
-        <article className="project-kpi-card"><span className="project-kpi-icon amber"><Layers3 size={18} /></span><div><span>指标分类</span><b>2</b><small>损益 {profitCount} · 现金流 {cashCount}</small></div></article>
+        <article className="project-kpi-card"><span className="project-kpi-icon amber"><Layers3 size={18} /></span><div><span>汇总指标</span><b>{summaryCount}</b><small>损益 {profitCount} · 现金流 {cashCount}</small></div></article>
       </section>
       <div className="project-list-context"><b>指标定义</b><span>共 {snapshot.metrics.length} 个</span></div>
-      <div className="data-panel"><table className="data-table metric-management-table"><thead><tr><th>编码</th><th>指标</th><th>类型</th><th>分类</th><th>计算定义</th><th>期间汇总</th><th>说明</th></tr></thead><tbody>{snapshot.metrics.map((metric) => <tr key={metric.code}>
+      <div className="data-panel"><table className="data-table metric-management-table"><thead><tr><th>编码</th><th>指标</th><th>父级</th><th>级次</th><th>性质</th><th>分类</th><th>计算定义</th><th>期间汇总</th><th>说明</th></tr></thead><tbody>{snapshot.metrics.map((metric) => {
+        const parent = metric.parentCode ? snapshot.metrics.find((item) => item.code === metric.parentCode) : undefined
+        const nature = metric.metricType === 'calculated' ? '计算指标' : metric.isLeaf ? '明细指标' : '汇总指标'
+        return <tr key={metric.code}>
         <td><code>{metric.code}</code></td>
-        <td><b className="metric-name-cell">{metric.name}</b></td>
-        <td><span className={`metric-pill ${metric.metricType === 'base' ? 'base' : 'calculated'}`}>{metric.metricType === 'base' ? '基础' : '计算'}</span></td>
+        <td><b className="metric-name-cell" style={{ paddingLeft: `${metric.hierarchyLevel * 18}px` }}>{metric.hierarchyLevel > 0 ? '└ ' : ''}{metric.name}</b></td>
+        <td>{parent?.name ?? '—'}</td><td>{metric.hierarchyLevel + 1} 级</td>
+        <td><span className={`metric-pill ${metric.metricType === 'calculated' ? 'calculated' : metric.isLeaf ? 'base' : 'profit'}`}>{nature}</span></td>
         <td><span className={`metric-pill ${metric.category === 'profit' ? 'profit' : 'cash'}`}>{metric.category === 'profit' ? '损益' : '现金流'}</span></td>
         <td>{metric.expression ? <span className="metric-expression"><Sigma size={13} />{metric.expression}</span> : <span className="metric-fact-label">事实录入</span>}</td>
         <td><span className="metric-aggregation-pill">{aggregationLabel[metric.periodAggregation] ?? metric.periodAggregation}</span></td>
         <td className="metric-description-cell">{metric.description}</td>
-      </tr>)}</tbody></table></div>
+      </tr>})}</tbody></table></div>
     </div>
   </main>
 }

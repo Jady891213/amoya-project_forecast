@@ -9,9 +9,15 @@ import type {
   ProjectReportPresentation,
   ReportCompositionItem,
   ReportLineResult,
+  ReportMetricGroup,
   ReportParameterResult,
 } from '../../shared/domain/types'
 import { countPeriods, generatePeriodRange } from '../../shared/domain/periods'
+import {
+  PROFIT_METRIC_NODES,
+  metricPath,
+  type ProfitMetricCode,
+} from '../../config/profitMetricHierarchy'
 
 function decimal(value: Decimal.Value | null | undefined): Decimal {
   try { return new Decimal(value ?? 0) }
@@ -85,6 +91,7 @@ function buildLineResults(
       code: item.lineCode,
       name: item.lineName,
       category: item.category,
+      metricCode: item.metricCode,
       method: line ? methodLabel(line) : item.forecastMethod === 'monthly_input' ? '逐月填写' : '固定月金额',
       methodDescription: line ? lineDescription(line, item) : item.sourceSummary ?? '',
       amountBasis,
@@ -97,6 +104,40 @@ function buildLineResults(
       monthly,
     }
   })
+}
+
+function buildMetricGroups(
+  lines: ReportLineResult[],
+  rootCode: 'revenue' | 'cost',
+  rootTotal: Decimal,
+): ReportMetricGroup[] {
+  const nodes = PROFIT_METRIC_NODES.filter((node) => metricPath(node.code)[0]?.code === rootCode)
+  const byParent = new Map<string, typeof nodes>()
+  nodes.forEach((node) => {
+    const key = node.parentCode ?? '__root__'
+    byParent.set(key, [...(byParent.get(key) ?? []), node])
+  })
+  const lineAmount = (code: string) => lines
+    .filter((line) => line.metricCode === code)
+    .reduce((sum, line) => sum.plus(line.netTotal), new Decimal(0))
+  const build = (node: (typeof nodes)[number]): ReportMetricGroup => {
+    const children = (byParent.get(node.code) ?? []).map(build)
+    const items = node.isLeaf ? lines.filter((line) => line.metricCode === node.code) : []
+    const amount = node.isLeaf
+      ? lineAmount(node.code)
+      : children.reduce((sum, child) => sum.plus(child.amount), new Decimal(0))
+    return {
+      metricCode: node.code,
+      name: node.name,
+      parentCode: node.parentCode,
+      hierarchyLevel: node.hierarchyLevel,
+      amount: amount.toString(),
+      share: ratio(amount, rootTotal),
+      items,
+      children,
+    }
+  }
+  return (byParent.get(rootCode) ?? []).map(build)
 }
 
 function buildParameterResults(
@@ -167,6 +208,8 @@ export function buildProjectReportPresentation(input: {
   const cost = decimal(report.summary.cost)
   const profit = decimal(report.summary.grossProfit)
   const roi = cost.isZero() ? null : profit.div(cost).toString()
+  const revenueMetricGroups = buildMetricGroups(lineResults, 'revenue', revenue)
+  const costMetricGroups = buildMetricGroups(lineResults, 'cost', cost)
   const byYear = new Map<number, { revenue: Decimal; cost: Decimal }>()
   report.monthly
     .filter((item) => item.period <= report.operationEndPeriod)
@@ -207,7 +250,7 @@ export function buildProjectReportPresentation(input: {
   else if (grossMargin?.lt(0.05)) conclusionTitle = '低利润项目'
   else if (grossMargin?.lt(0.1)) conclusionTitle = '微利项目'
   else if (grossMargin?.gt(0.5)) conclusionTitle = '利润表现较好'
-  const topCost = buildComposition(lineResults, 'cost', cost)[0]
+  const topCost = [...costMetricGroups].sort((a, b) => decimal(b.amount).comparedTo(decimal(a.amount)))[0]
   const marginText = grossMargin ? `${grossMargin.times(100).toFixed(2)}%` : '—'
   const roiText = roi ? `${decimal(roi).times(100).toFixed(2)}%` : '—'
   const conclusionDescription = `${report.plan.name}预计实现不含税收入 ${revenue.div(10_000).toFixed(2)} 万元、成本 ${cost.div(10_000).toFixed(2)} 万元、利润 ${profit.div(10_000).toFixed(2)} 万元，利润率 ${marginText}，ROI ${roiText}。${topCost ? `成本占比最高的是“${topCost.name}”，建议作为成本复核重点。` : ''}`
@@ -217,6 +260,8 @@ export function buildProjectReportPresentation(input: {
     parameterResults,
     revenueComposition: buildComposition(lineResults, 'revenue', revenue),
     costComposition: buildComposition(lineResults, 'cost', cost),
+    revenueMetricGroups,
+    costMetricGroups,
     annualResults,
     unitEconomics,
     conclusionTitle,

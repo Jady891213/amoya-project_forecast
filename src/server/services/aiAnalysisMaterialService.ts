@@ -6,6 +6,7 @@ import type {
   ProjectReportDto,
   ReportCompositionItem,
   ReportLineResult,
+  ReportMetricGroup,
   ReportParameterResult,
 } from '../../shared/domain/types'
 import { ReportWorkbookService } from './reportWorkbookService'
@@ -100,6 +101,14 @@ function composition(items: ReportLineResult[], category: 'revenue' | 'cost', to
     }))
 }
 
+function remapMetricGroups(groups: ReportMetricGroup[], lines: ReportLineResult[]): ReportMetricGroup[] {
+  return groups.map((group) => ({
+    ...group,
+    items: lines.filter((line) => line.metricCode === group.metricCode),
+    children: remapMetricGroups(group.children, lines),
+  }))
+}
+
 export class AiAnalysisMaterialService {
   preview(report: ProjectReportDto): AiAnalysisPreviewDto {
     const status = statusOf(report)
@@ -167,7 +176,9 @@ export class AiAnalysisMaterialService {
         description: `${item.inputMode} · ${item.valueType === 'percentage' ? '比例' : item.valueType === 'quantity' ? '数量' : item.valueType === 'currency' ? '金额' : '数值'}`,
       }
     })
-    const topCost = composition(lineResults, 'cost', report.summary.cost)
+    const revenueMetricGroups = remapMetricGroups(report.presentation.revenueMetricGroups, lineResults)
+    const costMetricGroups = remapMetricGroups(report.presentation.costMetricGroups, lineResults)
+    const topCost = [...costMetricGroups]
       .sort((left, right) => new Decimal(right.amount || 0).comparedTo(left.amount || 0))[0]
     const margin = report.summary.grossMargin === null ? '—' : `${new Decimal(report.summary.grossMargin).times(100).toFixed(2)}%`
     const roi = report.presentation.roi === null ? '—' : `${new Decimal(report.presentation.roi).times(100).toFixed(2)}%`
@@ -232,6 +243,8 @@ export class AiAnalysisMaterialService {
         parameterResults,
         revenueComposition: composition(lineResults, 'revenue', report.summary.revenue),
         costComposition: composition(lineResults, 'cost', report.summary.cost),
+        revenueMetricGroups,
+        costMetricGroups,
         unitEconomics: report.presentation.unitEconomics ? {
           ...report.presentation.unitEconomics,
           basisName: parameterAliases.get(

@@ -26,6 +26,7 @@ import { ProjectReportService } from './services/projectReportService'
 import { ProjectPlanRepository } from './repositories/projectPlanRepository'
 import { countPeriods, generatePeriods } from '../shared/domain/periods'
 import { buildProjectReportPresentation } from './services/reportPresentationService'
+import { buildDefaultForecastLines } from '../shared/domain/defaultForecast'
 
 const reportAmountFormatter = new Intl.NumberFormat('zh-CN', {
   minimumFractionDigits: 2,
@@ -57,6 +58,7 @@ function cloneForecastDraft(source: ProjectWorkspace): ForecastProjectDraft {
       code: line.code,
       name: line.name,
       category: line.category,
+      metricCode: line.metricCode,
       forecastMethod: line.forecastMethod,
       startPeriod: line.startPeriod,
       endPeriod: line.endPeriod,
@@ -121,11 +123,22 @@ export class ProjectWorkspaceService {
   }
 
   async createProject(input: CreateProjectInput): Promise<ProjectWorkspace> {
-    const project = await this.projects.save(input)
-    const plan = await this.projectPlans.create(project.id, {
-      name: '方案 1', startPeriod: input.startPeriod, endPeriod: input.endPeriod,
-    })
-    return this.getWorkspace(project.id, plan.planId)
+    const backup = await this.database.exportDatabase()
+    try {
+      const project = await this.projects.save(input)
+      const plan = await this.projectPlans.create(project.id, {
+        name: '方案 1', startPeriod: input.startPeriod, endPeriod: input.endPeriod,
+      })
+      await this.calculations.saveDraft(project.id, plan.planId, {
+        lines: buildDefaultForecastLines(input.startPeriod, input.endPeriod),
+        parameters: [],
+        cashRules: [],
+      })
+      return this.getWorkspace(project.id, plan.planId)
+    } catch (reason) {
+      await this.database.importDatabase(backup)
+      throw reason
+    }
   }
 
   async getWorkspace(projectId: string, planId?: string): Promise<ProjectWorkspace> {

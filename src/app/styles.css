@@ -2227,6 +2227,12 @@ body.resizing-financial-column * { cursor: col-resize !important; user-select: n
 .report-line-type.cost { color: #c36c19; background: #fff1df; }
 .report-composition-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .report-composition-grid .report-section { width: 100%; }
+.metric-tree-report-list .report-metric-major-group { padding-bottom: 10px; }
+.report-metric-children { display: grid; gap: 5px; margin-top: 8px; padding-left: 10px; border-left: 2px solid #e7ecf5; }
+.report-metric-children > div { padding: 5px 7px; border-radius: 6px; background: #f8fafc; }
+.report-metric-children span { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.report-metric-children em { color: #64748b; font-style: normal; font-weight: 600; }
+.report-metric-children small { display: block; margin-top: 2px; color: #94a3b8; }
 .v31-bar-list { display: grid; gap: 13px; }
 .v31-bar-list article > div:first-child { display: flex; justify-content: space-between; gap: 16px; }
 .v31-bar-list article > div:first-child span { color: #526174; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -3531,6 +3537,10 @@ textarea:focus {
 .pivot-member-popover label { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 6px 8px; line-height: 18px; cursor: pointer; }
 .pivot-member-popover label:hover { background: #f5f7fc; }
 .pivot-member-popover label input[type="checkbox"] { width: 14px; height: 14px; margin: 0; }
+.pivot-member-popover label.pivot-metric-member { position: relative; }
+.pivot-member-popover label.pivot-metric-member > span { min-width: 0; flex: 1; }
+.pivot-select-branch { flex: 0 0 auto; height: 24px; padding: 0 6px; border-radius: 4px; color: #6b7890 !important; font-size: 11px; }
+.pivot-select-branch:hover { color: #315cda !important; background: #eef3ff !important; }
 .pivot-member-empty { display: grid; place-items: center; min-height: 120px; color: #8a95a7; font-size: 12px; }
 .pivot-grid thead th { top: auto; z-index: 4; }
 .pivot-grid thead tr:nth-child(1) th { position: sticky; top: 0; }
@@ -3542,6 +3552,9 @@ textarea:focus {
 .pivot-grid tbody th { min-width: 160px; position: sticky; left: 0; z-index: 2; background: #f8f9fc; text-align: left; vertical-align: top; }
 .pivot-grid tbody th:nth-child(2) { left: 160px; }
 .pivot-grid tbody th:nth-child(3) { left: 320px; }
+.pivot-grid .pivot-metric-row-head > div { display: flex; align-items: center; min-height: 30px; gap: 4px; }
+.pivot-tree-toggle { width: 18px; height: 18px; display: inline-grid; place-items: center; padding: 0; border: 0; border-radius: 4px; background: transparent; color: #61708a; cursor: pointer; font-size: 16px; line-height: 1; }
+.pivot-tree-toggle:hover { background: #e8eefc; color: #315cda; }
 .pivot-grid td { user-select: none; cursor: cell; }
 .pivot-grid td.selected { position: relative; }
 .pivot-empty { display: grid; place-items: center; min-height: 260px; color: #7a8598; }

@@ -1,3 +1,5 @@
+import type { ProfitLeafMetricCode, ProfitMetricCode } from '../../config/profitMetricHierarchy'
+
 export type DataOrigin = 'system' | 'user' | 'demo'
 export type DepartmentStatus = 'active' | 'inactive'
 export type ProjectStatus = 'calculating' | 'archived'
@@ -47,8 +49,7 @@ export const DEFAULT_PLAN_NAME = '方案 1'
 export const REFERENCE_DATASET_ID = 'historical-project-config-v6'
 
 export type BaseMetricCode =
-  | 'revenue'
-  | 'cost'
+  | ProfitLeafMetricCode
   | 'cash_inflow'
   | 'cash_outflow'
 
@@ -58,7 +59,7 @@ export type CalculatedMetricCode =
   | 'net_cash_flow'
   | 'cumulative_cash_flow'
 
-export type MetricCode = BaseMetricCode | CalculatedMetricCode
+export type MetricCode = BaseMetricCode | CalculatedMetricCode | ProfitMetricCode
 
 export interface OriginFields {
   origin: DataOrigin
@@ -163,6 +164,9 @@ export interface MetricDefinition {
   sortOrder: number
   systemManaged: boolean
   origin: 'system'
+  parentCode?: MetricCode
+  hierarchyLevel: number
+  isLeaf: boolean
 }
 
 export interface BaseFact extends OriginFields {
@@ -212,6 +216,7 @@ export interface ForecastLineDraft {
   code?: string
   name: string
   category: ForecastCategory
+  metricCode?: BaseMetricCode
   forecastMethod: ForecastMethod
   startPeriod: string
   endPeriod: string
@@ -384,6 +389,7 @@ export interface ForecastLineBreakdown {
   lineCode: string
   lineName: string
   category: ForecastCategory
+  metricCode: BaseMetricCode
   forecastMethod?: ForecastMethod
   sourceSummary?: string
   dependencies?: string[]
@@ -502,6 +508,8 @@ export interface PivotMember {
   parentId?: string
   sortKey: number
   status?: string
+  hierarchyLevel?: number
+  isLeaf?: boolean
 }
 
 export interface PivotDimensionMetadata {
@@ -520,6 +528,8 @@ export interface PivotTupleMember {
   memberId: string
   label: string
   parentId?: string
+  hierarchyLevel?: number
+  isLeaf?: boolean
 }
 
 export interface PivotTuple {
@@ -629,6 +639,7 @@ export interface ReportLineResult {
   code: string
   name: string
   category: ForecastCategory
+  metricCode: BaseMetricCode
   method: string
   methodDescription: string
   amountBasis: TaxAmountBasis
@@ -660,6 +671,17 @@ export interface ReportCompositionItem {
   description: string
 }
 
+export interface ReportMetricGroup {
+  metricCode: string
+  name: string
+  parentCode?: string
+  hierarchyLevel: number
+  amount: string
+  share: string | null
+  items: ReportLineResult[]
+  children: ReportMetricGroup[]
+}
+
 export interface ReportAnnualResult {
   year: number
   revenue: string
@@ -683,6 +705,8 @@ export interface ProjectReportPresentation {
   parameterResults: ReportParameterResult[]
   revenueComposition: ReportCompositionItem[]
   costComposition: ReportCompositionItem[]
+  revenueMetricGroups: ReportMetricGroup[]
+  costMetricGroups: ReportMetricGroup[]
   annualResults: ReportAnnualResult[]
   unitEconomics?: ReportUnitEconomics
   conclusionTitle: string

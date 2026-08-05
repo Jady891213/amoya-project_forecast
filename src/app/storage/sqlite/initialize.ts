@@ -34,8 +34,8 @@ function metricStatements(): SqlStatement[] {
     sql: `INSERT INTO dim_metric (
       code, name, metric_type, category, expression, unit, value_type,
       period_aggregation, description, dependencies_json, sort_order,
-      system_managed, origin
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      system_managed, origin, parent_code, hierarchy_level, is_leaf
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(code) DO UPDATE SET
       name = excluded.name,
       metric_type = excluded.metric_type,
@@ -47,7 +47,10 @@ function metricStatements(): SqlStatement[] {
       description = excluded.description,
       dependencies_json = excluded.dependencies_json,
       sort_order = excluded.sort_order,
-      system_managed = excluded.system_managed`,
+      system_managed = excluded.system_managed,
+      parent_code = excluded.parent_code,
+      hierarchy_level = excluded.hierarchy_level,
+      is_leaf = excluded.is_leaf`,
     params: [
       metric.code,
       metric.name,
@@ -62,6 +65,9 @@ function metricStatements(): SqlStatement[] {
       metric.sortOrder,
       metric.systemManaged ? 1 : 0,
       metric.origin,
+      metric.parentCode ?? null,
+      metric.hierarchyLevel,
+      metric.isLeaf ? 1 : 0,
     ],
   }))
 }
@@ -106,7 +112,7 @@ export async function initializeSqliteDatabase(
   if (!applied.has(CURRENT_SCHEMA_VERSION)) {
     await database.execute(
       `INSERT INTO sys_schema_migration (version, description, applied_at)
-       VALUES (?, '事实调整层与最新结果模式', ?)`,
+       VALUES (?, '收入成本层级指标体系', ?)`,
       [CURRENT_SCHEMA_VERSION, now],
     )
   }

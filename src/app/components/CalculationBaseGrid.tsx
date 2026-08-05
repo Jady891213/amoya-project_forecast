@@ -1,7 +1,6 @@
 import Decimal from 'decimal.js'
-import { ChevronDown, ChevronRight } from 'lucide-react'
-import { useMemo, useState } from 'react'
-import type { FactAdjustmentDraft, MetricCode, ProjectReportDto } from '../../shared/domain/types'
+import { useMemo } from 'react'
+import type { FactAdjustmentDraft, MetricCode, ProjectReportDto, ReportMetricGroup } from '../../shared/domain/types'
 import { SYSTEM_METRICS } from '../../shared/domain/metrics'
 import { FinancialGrid, type FinancialGridChange, type FinancialGridRow } from './FinancialGrid'
 
@@ -13,6 +12,7 @@ interface CalculationBaseRow extends FinancialGridRow {
   metricCode?: MetricCode
   rowKind: 'section' | 'summary' | 'detail' | 'metric'
   section: 'profit' | 'cash'
+  indent?: number
 }
 
 const PROFIT_GROUPS = new Set<BaseGroup>(['收入', '成本', '损益指标'])
@@ -44,7 +44,6 @@ export function CalculationBaseGrid({
   onChange: (changes: FinancialGridChange[]) => void
   onClearOverride: (rowId: string, period: string) => void
 }) {
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<BaseGroup>>(new Set())
   const periods = report.monthly.map((item) => item.period)
   const rows = useMemo<CalculationBaseRow[]>(() => {
     const adjustmentMap = new Map(adjustments.map((item) => [`${item.forecastLineId}:${item.period}`, item]))
@@ -133,13 +132,29 @@ export function CalculationBaseGrid({
       editable: false,
       values: emptyValues,
     })
+    const sumRows = (items: CalculationBaseRow[]) => Object.fromEntries(periods.map((period) => [
+      period,
+      items.reduce((sum, item) => sum.plus(item.values[period] ?? 0), new Decimal(0)).toString(),
+    ]))
+    const hierarchyRows = (groups: ReportMetricGroup[], details: CalculationBaseRow[], group: '收入' | '成本'): CalculationBaseRow[] => groups.flatMap((metricGroup): CalculationBaseRow[] => {
+      const childRows = hierarchyRows(metricGroup.children, details, group)
+      const ownDetails = details.filter((row) => metricGroup.items.some((item) => item.lineId === row.id))
+        .map((row) => ({ ...row, indent: metricGroup.hierarchyLevel + 2 }))
+      const descendants = [...childRows.filter((row) => row.rowKind === 'detail'), ...ownDetails]
+      if (!descendants.length) return []
+      const subtotal = metricRow(metricGroup.metricCode as MetricCode, metricGroup.name, group, sumRows(descendants), undefined, 'summary')
+      subtotal.indent = metricGroup.hierarchyLevel + 1
+      return [subtotal, ...childRows, ...ownDetails]
+    })
+    const revenueHierarchy = hierarchyRows(report.presentation.revenueMetricGroups, revenueDetails, '收入')
+    const costHierarchy = hierarchyRows(report.presentation.costMetricGroups, costDetails, '成本')
 
     return [
       sectionRow('profit', '损益指标', 'profit'),
       metricRow('revenue', '收入', '收入', monthlyValues('revenue'), undefined, 'summary'),
-      ...revenueDetails,
+      ...revenueHierarchy,
       metricRow('cost', '成本', '成本', monthlyValues('cost'), undefined, 'summary'),
-      ...costDetails,
+      ...costHierarchy,
       metricRow('gross_profit', '毛利', '损益指标', monthlyValues('grossProfit')),
       metricRow('gross_margin', '毛利率', '损益指标', monthlyValues('grossMargin'), 'percentage'),
       sectionRow('cash', '现金流指标', 'cash'),
@@ -154,16 +169,7 @@ export function CalculationBaseGrid({
     ]
   }, [adjustments, periods, report])
 
-  const visibleRows = rows.filter((row) => row.rowKind !== 'detail' || !collapsedGroups.has(row.group))
-
-  function toggleGroup(group: BaseGroup) {
-    setCollapsedGroups((current) => {
-      const next = new Set(current)
-      if (next.has(group)) next.delete(group)
-      else next.add(group)
-      return next
-    })
-  }
+  const visibleRows = rows
 
   return <section className="calculation-base-stage">
     <FinancialGrid
@@ -175,10 +181,8 @@ export function CalculationBaseGrid({
       renderRowLabel={(row) => {
         const item = row as CalculationBaseRow
         if (item.rowKind === 'section') return <div className="calculation-section-label">{item.label}</div>
-        const collapsible = item.rowKind === 'summary' && ['收入', '成本', '项目收款', '项目付款'].includes(item.group)
-        return <div className="calculation-base-label">
+        return <div className="calculation-base-label" style={{ paddingLeft: `${(item.indent ?? 0) * 14}px` }}>
           <div>
-            {collapsible && <button className="calculation-collapse-button" aria-label={`${collapsedGroups.has(item.group) ? '展开' : '收起'}${item.label}明细`} onClick={(event) => { event.stopPropagation(); toggleGroup(item.group) }}>{collapsedGroups.has(item.group) ? <ChevronRight size={14} /> : <ChevronDown size={14} />}</button>}
             <b>{item.label}</b>
             {item.calculated && item.metricCode && <FormulaIcon metricCode={item.metricCode} />}
           </div>

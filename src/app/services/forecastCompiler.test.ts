@@ -23,7 +23,7 @@ describe('ForecastCompiler', () => {
   it('逐月填写将空白月份按0展开，并保留负数调整提醒', () => {
     const monthlyLine = line({
       category: 'cost',
-      metricCode: 'cost',
+      metricCode: 'cost_marketing_channel',
       forecastMethod: 'monthly_input',
       fixedMonthlyValue: undefined,
       startPeriod: '2026-01',
@@ -77,7 +77,7 @@ describe('ForecastCompiler', () => {
       code: 'LINE-002',
       name: '渠道分成',
       category: 'cost',
-      metricCode: 'cost',
+      metricCode: 'cost_marketing_channel',
       forecastMethod: 'formula',
       formulaExpression: 'LINE("LINE-001") * 20%',
       fixedMonthlyValue: undefined,
@@ -127,7 +127,7 @@ describe('ForecastCompiler', () => {
       id: 'line-cost',
       code: 'LINE-002',
       category: 'cost',
-      metricCode: 'cost',
+      metricCode: 'cost_marketing_channel',
       forecastMethod: 'formula',
       formulaExpression: 'LINE("LINE-001") * 20%',
       fixedMonthlyValue: undefined,
@@ -142,6 +142,14 @@ describe('ForecastCompiler', () => {
     expect(result.values.find((item) => item.lineId === cost.id)).toEqual(
       expect.objectContaining({ netValue: '20' }),
     )
+  })
+
+  it('收入成本预测行只能落在合法末级指标', () => {
+    const result = compileForecast(project, [line({ metricCode: 'revenue' })], [])
+    expect(result.issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ field: 'metricCode', severity: 'error' }),
+    ]))
+    expect(result.values).toHaveLength(0)
   })
 
   it('项目计算坐标变化会改变完整输入摘要', () => {

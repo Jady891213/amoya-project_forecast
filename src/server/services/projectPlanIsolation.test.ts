@@ -11,6 +11,26 @@ beforeEach(async () => { database = await NodeSqliteClient.create(); await initi
 afterEach(async () => { await database.close() })
 
 describe('项目方案隔离与项目报表', () => {
+  it('新建项目首个方案预置19条末级预测行且全部不生成现金', async () => {
+    const department = await new DepartmentRepository(database).save({ code: 'DEFAULT', name: '默认项目部' })
+    const workspace = await new ProjectWorkspaceService(database).createProject({
+      code: 'DEFAULT-001', name: '默认预测项项目', departmentId: department.id,
+      startPeriod: '2026-01', endPeriod: '2026-03',
+    })
+
+    expect(workspace.forecast.lines).toHaveLength(19)
+    expect(workspace.forecast.lines.filter((line) => line.category === 'revenue')).toHaveLength(4)
+    expect(workspace.forecast.lines.filter((line) => line.category === 'cost')).toHaveLength(15)
+    expect(workspace.forecast.lines.every((line) => line.metricCode && !['revenue', 'cost'].includes(line.metricCode))).toBe(true)
+    expect(workspace.forecast.cashRules).toHaveLength(0)
+    expect(workspace.forecast.lines.every((line) => line.fixedMonthlyValue === '0')).toBe(true)
+
+    const blankPlan = await new ProjectWorkspaceService(database).createPlan(workspace.project.id, {
+      name: '空白方案', startPeriod: '2026-01', endPeriod: '2026-03',
+    })
+    expect(blankPlan.forecast.lines).toHaveLength(0)
+  })
+
   it('约束方案归档恢复和项目与方案的合法组合', async () => {
     const department = await new DepartmentRepository(database).save({ code: 'LIFE', name: '方案生命周期部' })
     const service = new ProjectWorkspaceService(database)
@@ -40,7 +60,7 @@ describe('项目方案隔离与项目报表', () => {
     const baseId = created.currentPlan.planId
     const saveWithAmount = async (workspace: typeof created, amount: string) => service.saveWorkspace(created.project.id, {
       planId: workspace.currentPlan.planId, expectedRevision: workspace.draftRevision,
-      draft: { project: { ...workspace.project, startPeriod: workspace.currentPlan.startPeriod, endPeriod: workspace.currentPlan.endPeriod }, plan: { name: workspace.currentPlan.name, startPeriod: workspace.currentPlan.startPeriod, endPeriod: workspace.currentPlan.endPeriod }, forecast: { parameters: [], cashRules: [], lines: [{ code: 'LINE-001', name: '订阅收入', category: 'revenue', forecastMethod: 'fixed_monthly', fixedMonthlyValue: amount, startPeriod: '2026-01', endPeriod: '2026-02', amountBasis: 'tax_exclusive', taxRate: '0', assumption: '', sortOrder: 1, monthlyValues: {} }] } },
+      draft: { project: { ...workspace.project, startPeriod: workspace.currentPlan.startPeriod, endPeriod: workspace.currentPlan.endPeriod }, plan: { name: workspace.currentPlan.name, startPeriod: workspace.currentPlan.startPeriod, endPeriod: workspace.currentPlan.endPeriod }, forecast: { parameters: [], cashRules: [], lines: [{ code: 'LINE-001', name: '订阅收入', category: 'revenue', metricCode: 'revenue_annual_subscription', forecastMethod: 'fixed_monthly', fixedMonthlyValue: amount, startPeriod: '2026-01', endPeriod: '2026-02', amountBasis: 'tax_exclusive', taxRate: '0', assumption: '', sortOrder: 1, monthlyValues: {} }] } },
     })
     const base = await saveWithAmount(created, '100')
     expect((await service.calculate(created.project.id, baseId, base.draftRevision)).success).toBe(true)
@@ -49,7 +69,7 @@ describe('项目方案隔离与项目报表', () => {
     expect((await service.calculate(created.project.id, copied.currentPlan.planId, growth.draftRevision)).success).toBe(true)
     expect((await service.buildReport(created.project.id, baseId)).summary.revenue).toBe('200')
     expect((await service.buildReport(created.project.id, copied.currentPlan.planId)).summary.revenue).toBe('300')
-    const facts = await database.query<{ plan_id: string }>("SELECT plan_id FROM fact_metric_value WHERE project_id = ? AND metric_code = 'revenue'", [created.project.id])
+    const facts = await database.query<{ plan_id: string }>("SELECT plan_id FROM fact_metric_value WHERE project_id = ? AND metric_code = 'revenue_annual_subscription'", [created.project.id])
     expect(new Set(facts.map((item) => item.plan_id))).toEqual(new Set([baseId, copied.currentPlan.planId]))
   })
 
@@ -57,9 +77,9 @@ describe('项目方案隔离与项目报表', () => {
     const department = await new DepartmentRepository(database).save({ code: 'PVT', name: '透视验证部' })
     const service = new ProjectWorkspaceService(database)
     const workspace = await service.createProject({ code: 'PVT-001', name: '透视验证项目', departmentId: department.id, startPeriod: '2026-01', endPeriod: '2026-01' })
-    const saved = await service.saveWorkspace(workspace.project.id, { planId: workspace.currentPlan.planId, expectedRevision: 0, draft: { project: { ...workspace.project, startPeriod: '2026-01', endPeriod: '2026-01' }, plan: { name: '方案 1', startPeriod: '2026-01', endPeriod: '2026-01' }, forecast: { parameters: [], cashRules: [], lines: [
-      { code: 'LINE-001', name: '收入', category: 'revenue', forecastMethod: 'fixed_monthly', fixedMonthlyValue: '100', startPeriod: '2026-01', endPeriod: '2026-01', amountBasis: 'tax_exclusive', taxRate: '0', assumption: '', sortOrder: 1, monthlyValues: {} },
-      { code: 'LINE-002', name: '成本', category: 'cost', forecastMethod: 'fixed_monthly', fixedMonthlyValue: '40', startPeriod: '2026-01', endPeriod: '2026-01', amountBasis: 'tax_exclusive', taxRate: '0', assumption: '', sortOrder: 2, monthlyValues: {} },
+    const saved = await service.saveWorkspace(workspace.project.id, { planId: workspace.currentPlan.planId, expectedRevision: workspace.draftRevision, draft: { project: { ...workspace.project, startPeriod: '2026-01', endPeriod: '2026-01' }, plan: { name: '方案 1', startPeriod: '2026-01', endPeriod: '2026-01' }, forecast: { parameters: [], cashRules: [], lines: [
+      { code: 'LINE-001', name: '收入', category: 'revenue', metricCode: 'revenue_other', forecastMethod: 'fixed_monthly', fixedMonthlyValue: '100', startPeriod: '2026-01', endPeriod: '2026-01', amountBasis: 'tax_exclusive', taxRate: '0', assumption: '', sortOrder: 1, monthlyValues: {} },
+      { code: 'LINE-002', name: '成本', category: 'cost', metricCode: 'cost_business_other', forecastMethod: 'fixed_monthly', fixedMonthlyValue: '40', startPeriod: '2026-01', endPeriod: '2026-01', amountBasis: 'tax_exclusive', taxRate: '0', assumption: '', sortOrder: 2, monthlyValues: {} },
     ] } } })
     await service.calculate(workspace.project.id, workspace.currentPlan.planId, saved.draftRevision)
     const view = await new PivotService(database).build({ rows: [{ dimension: 'plan', memberIds: [workspace.currentPlan.planId] }, { dimension: 'metric', memberIds: ['revenue', 'gross_profit', 'gross_margin'] }], columns: [{ dimension: 'period', memberIds: ['2026-01'] }], pov: [{ dimension: 'project', memberId: workspace.project.id }, { dimension: 'department', memberId: department.id }], periodLevel: 'month', scenarioId: 'baseline' })
@@ -75,11 +95,11 @@ describe('项目方案隔离与项目报表', () => {
       const workspace = await service.createProject({ code, name, departmentId: department.id, startPeriod: '2026-01', endPeriod: '2026-01' })
       const saved = await service.saveWorkspace(workspace.project.id, {
         planId: workspace.currentPlan.planId,
-        expectedRevision: 0,
+        expectedRevision: workspace.draftRevision,
         draft: {
           project: { ...workspace.project, startPeriod: '2026-01', endPeriod: '2026-01' },
           plan: { name: '推荐方案', startPeriod: '2026-01', endPeriod: '2026-01' },
-          forecast: { parameters: [], cashRules: [], lines: [{ code: 'LINE-001', name: '收入', category: 'revenue', forecastMethod: 'fixed_monthly', fixedMonthlyValue: amount, startPeriod: '2026-01', endPeriod: '2026-01', amountBasis: 'tax_exclusive', taxRate: '0', assumption: '', sortOrder: 1, monthlyValues: {} }] },
+          forecast: { parameters: [], cashRules: [], lines: [{ code: 'LINE-001', name: '收入', category: 'revenue', metricCode: 'revenue_other', forecastMethod: 'fixed_monthly', fixedMonthlyValue: amount, startPeriod: '2026-01', endPeriod: '2026-01', amountBasis: 'tax_exclusive', taxRate: '0', assumption: '', sortOrder: 1, monthlyValues: {} }] },
         },
       })
       await service.calculate(workspace.project.id, workspace.currentPlan.planId, saved.draftRevision)
@@ -105,13 +125,13 @@ describe('项目方案隔离与项目报表', () => {
     const workspace = await service.createProject({ code: 'PERIOD-001', name: '期间聚合项目', departmentId: department.id, startPeriod: '2026-01', endPeriod: '2026-03' })
     const saved = await service.saveWorkspace(workspace.project.id, {
       planId: workspace.currentPlan.planId,
-      expectedRevision: 0,
+      expectedRevision: workspace.draftRevision,
       draft: {
         project: { ...workspace.project, startPeriod: '2026-01', endPeriod: '2026-03' },
         plan: { name: '方案 1', startPeriod: '2026-01', endPeriod: '2026-03' },
         forecast: { parameters: [], cashRules: [], lines: [
-          { code: 'LINE-001', name: '收入', category: 'revenue', forecastMethod: 'fixed_monthly', fixedMonthlyValue: '100', startPeriod: '2026-01', endPeriod: '2026-03', amountBasis: 'tax_exclusive', taxRate: '0', assumption: '', sortOrder: 1, monthlyValues: {} },
-          { code: 'LINE-002', name: '成本', category: 'cost', forecastMethod: 'fixed_monthly', fixedMonthlyValue: '40', startPeriod: '2026-01', endPeriod: '2026-03', amountBasis: 'tax_exclusive', taxRate: '0', assumption: '', sortOrder: 2, monthlyValues: {} },
+          { code: 'LINE-001', name: '收入', category: 'revenue', metricCode: 'revenue_other', forecastMethod: 'fixed_monthly', fixedMonthlyValue: '100', startPeriod: '2026-01', endPeriod: '2026-03', amountBasis: 'tax_exclusive', taxRate: '0', assumption: '', sortOrder: 1, monthlyValues: {} },
+          { code: 'LINE-002', name: '成本', category: 'cost', metricCode: 'cost_business_other', forecastMethod: 'fixed_monthly', fixedMonthlyValue: '40', startPeriod: '2026-01', endPeriod: '2026-03', amountBasis: 'tax_exclusive', taxRate: '0', assumption: '', sortOrder: 2, monthlyValues: {} },
         ] },
       },
     })

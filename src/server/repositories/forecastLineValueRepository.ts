@@ -13,6 +13,7 @@ interface LineValueRow {
   line_code: string
   line_name: string
   line_category: ForecastCategory
+  metric_code: ForecastLineBreakdown['metricCode']
   period: string
   value_text: string
 }
@@ -23,7 +24,7 @@ export class ForecastLineValueRepository {
   async listBreakdown(projectId: string, planId: string): Promise<ForecastLineBreakdown[]> {
     const [rows, lines, parameters] = await Promise.all([
       this.database.query<LineValueRow>(
-      `SELECT forecast_line_id, line_code, line_name, line_category,
+      `SELECT forecast_line_id, line_code, line_name, line_category, metric_code,
               period, value_text
        FROM fact_forecast_line_value
        WHERE project_id = ? AND plan_id = ?
@@ -94,6 +95,7 @@ export class ForecastLineValueRepository {
         lineCode: snapshot.line_code,
         lineName: snapshot.line_name,
         category: snapshot.line_category,
+        metricCode: snapshot.metric_code,
         forecastMethod: lineSnapshot?.forecastMethod,
         sourceSummary,
         dependencies,

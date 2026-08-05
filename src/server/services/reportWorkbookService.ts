@@ -3,6 +3,7 @@ import ExcelJS from 'exceljs'
 import type {
   ProjectReportDto,
   ReportLineResult,
+  ReportMetricGroup,
   ReportParameterResult,
 } from '../../shared/domain/types'
 import {
@@ -13,6 +14,7 @@ import {
   type ReportDisplayUnit,
   type ReportTaxBasis,
 } from '../../shared/reporting/reportDisplay'
+import { metricPathLabel } from '../../config/profitMetricHierarchy'
 import { V31_REPORT_TEMPLATE as TEMPLATE } from '../reportTemplates/v31ProjectReportTemplate'
 
 const FONT = 'Microsoft YaHei'
@@ -162,6 +164,17 @@ function annualLineAmount(item: ReportDisplayLine, year: number, displayUnit: Re
     .reduce((sum, value) => sum.plus(value.value), new Decimal(0)), displayUnit)
 }
 
+function metricGroupLines(group: ReportMetricGroup): ReportDisplayLine[] {
+  return [
+    ...(group.items as ReportDisplayLine[]),
+    ...group.children.flatMap(metricGroupLines),
+  ]
+}
+
+function metricGroupMonthly(group: ReportMetricGroup, period: string): Decimal {
+  return metricGroupLines(group).reduce((sum, line) => sum.plus(line.displayMonthly.find((item) => item.period === period)?.value ?? 0), new Decimal(0))
+}
+
 export class ReportWorkbookService {
   async build(report: ProjectReportDto, options: ReportWorkbookOptions = {}): Promise<Buffer> {
     const workbook = new ExcelJS.Workbook()
@@ -221,7 +234,7 @@ export class ReportWorkbookService {
     const assumptionHeaderRow = 9
     styleSection(sheet, assumptionSectionRow, '二、测算假设与输入')
     const assumptionHeader = sheet.getRow(assumptionHeaderRow)
-    assumptionHeader.values = ['类型', '测算项', '测算方式', '单价/比例', '数量', '月数', '含税合计', '税率', '不含税合计', '说明']
+    assumptionHeader.values = ['类型', '指标分类', '测算项', '测算方式', '单价/比例', '数量', '月数', '税率', `${display.basisLabel}合计`, '说明']
     styleHeader(assumptionHeader, 1, 10)
     const revenueRows: number[] = []
     const costRows: number[] = []
@@ -230,14 +243,14 @@ export class ReportWorkbookService {
       const row = sheet.getRow(rowNumber)
       row.values = [
         item.category === 'revenue' ? '收入' : '成本',
+        metricPathLabel(item.metricCode),
         item.name,
         item.method,
         assumptionValue(item, displayUnit),
         item.quantity ? numeric(item.quantity) : null,
         item.months ?? null,
-        amount(item.grossTotal),
         numeric(item.taxRate),
-        formula(`G${rowNumber}/(1+H${rowNumber})`, amount(item.netTotal)),
+        amount(item.displayTotal),
         lineExplanation(item),
       ]
       styleDataRow(row, 1, 10)
@@ -245,20 +258,22 @@ export class ReportWorkbookService {
         name: FONT, size: 10, bold: true,
         color: { argb: item.category === 'revenue' ? 'FF159B6B' : 'FFE27A17' },
       }
-      ;[4, 5, 6, 7, 8].forEach((column) => {
+      ;[5, 6, 7, 8].forEach((column) => {
         if (row.getCell(column).value !== null) row.getCell(column).font = { name: FONT, size: 10, color: { argb: TEMPLATE.colors.assumption } }
       })
-      row.getCell(4).numFmt = item.method === '按收入比例' ? TEMPLATE.numberFormats.percentage : TEMPLATE.numberFormats.decimal
-      row.getCell(5).numFmt = TEMPLATE.numberFormats.quantity
+      row.getCell(5).numFmt = item.method === '按收入比例' ? TEMPLATE.numberFormats.percentage : TEMPLATE.numberFormats.decimal
       row.getCell(6).numFmt = TEMPLATE.numberFormats.quantity
-      row.getCell(7).numFmt = TEMPLATE.numberFormats.amount
+      row.getCell(7).numFmt = TEMPLATE.numberFormats.quantity
       row.getCell(8).numFmt = TEMPLATE.numberFormats.percentage
       row.getCell(9).numFmt = TEMPLATE.numberFormats.amount
+      row.getCell(2).alignment = { vertical: 'middle', horizontal: 'left', wrapText: true }
+      row.getCell(3).alignment = { vertical: 'middle', horizontal: 'left', wrapText: true }
       row.getCell(10).alignment = { vertical: 'middle', horizontal: 'left', wrapText: true }
+      row.height = 32
       ;(item.category === 'revenue' ? revenueRows : costRows).push(rowNumber)
     })
 
-    const basisColumn = taxBasis === 'tax_inclusive' ? 'G' : 'I'
+    const basisColumn = 'I'
     core.getCell(2).value = formula(sumFormula(basisColumn, revenueRows).slice(1), amount(display.summary.revenue))
     core.getCell(3).value = formula(sumFormula(basisColumn, costRows).slice(1), amount(display.summary.cost))
     core.getCell(4).value = formula('B6-C6', amount(display.summary.grossProfit))
@@ -275,9 +290,9 @@ export class ReportWorkbookService {
     styleHeader(annualHeader, 1, annualLastColumn)
     const yearColumnByYear = new Map(years.map((year, index) => [year, index + 2]))
     let annualRow = annualHeaderRow + 1
-    const addAnnualGroup = (label: string, category: 'revenue' | 'cost') => {
-      const items = lines.filter((item) => item.category === category)
+    const addAnnualGroup = (label: string, category: 'revenue' | 'cost', groups: ReportMetricGroup[]) => {
       const groupRow = sheet.getRow(annualRow++)
+      const rootRowNumber = groupRow.number
       groupRow.getCell(1).value = label
       years.forEach((year, index) => {
         const annual = display.annualResults.find((item) => item.year === year)
@@ -286,31 +301,43 @@ export class ReportWorkbookService {
       groupRow.getCell(annualLastColumn).value = amount(category === 'revenue' ? display.summary.revenue : display.summary.cost)
       styleSummaryRow(groupRow, annualLastColumn)
       for (let column = 2; column <= annualLastColumn; column += 1) groupRow.getCell(column).numFmt = TEMPLATE.numberFormats.amount
-      items.forEach((item) => {
-        const row = sheet.getRow(annualRow++)
-        row.getCell(1).value = `  ${item.name}`
+      const addMetricGroup = (metricGroup: ReportMetricGroup, indent: number) => {
+        const groupLines = metricGroupLines(metricGroup)
+        const metricRow = sheet.getRow(annualRow++)
+        metricRow.getCell(1).value = `${'  '.repeat(indent)}${metricGroup.name}`
         years.forEach((year) => {
           const column = yearColumnByYear.get(year) ?? 2
-          row.getCell(column).value = annualLineAmount(item, year, displayUnit)
-          row.getCell(column).numFmt = TEMPLATE.numberFormats.amount
+          metricRow.getCell(column).value = groupLines.reduce((sum, item) => sum + annualLineAmount(item, year, displayUnit), 0)
+          metricRow.getCell(column).numFmt = TEMPLATE.numberFormats.amount
         })
-        const firstYearColumn = years.length ? 2 : annualLastColumn
-        const lastYearColumn = Math.max(firstYearColumn, years.length + 1)
-        row.getCell(annualLastColumn).value = formula(
-          `SUM(${sheet.getColumn(firstYearColumn).letter}${row.number}:${sheet.getColumn(lastYearColumn).letter}${row.number})`,
-          amount(item.displayTotal),
-        )
-        row.getCell(annualLastColumn).numFmt = TEMPLATE.numberFormats.amount
-        styleDataRow(row, 1, annualLastColumn)
-      })
+        metricRow.getCell(annualLastColumn).value = amount(metricGroup.amount)
+        metricRow.getCell(annualLastColumn).numFmt = TEMPLATE.numberFormats.amount
+        styleSummaryRow(metricRow, annualLastColumn, indent === 1 ? TEMPLATE.colors.primarySoft : TEMPLATE.colors.header)
+        metricGroup.children.forEach((child) => addMetricGroup(child, indent + 1))
+        metricGroup.items.forEach((rawItem) => {
+          const item = rawItem as ReportDisplayLine
+          const row = sheet.getRow(annualRow++)
+          row.getCell(1).value = `${'  '.repeat(indent + 1)}${item.name}`
+          years.forEach((year) => {
+            const column = yearColumnByYear.get(year) ?? 2
+            row.getCell(column).value = annualLineAmount(item, year, displayUnit)
+            row.getCell(column).numFmt = TEMPLATE.numberFormats.amount
+          })
+          row.getCell(annualLastColumn).value = amount(item.displayTotal)
+          row.getCell(annualLastColumn).numFmt = TEMPLATE.numberFormats.amount
+          styleDataRow(row, 1, annualLastColumn)
+        })
+      }
+      groups.forEach((metricGroup) => addMetricGroup(metricGroup, 1))
+      return rootRowNumber
     }
-    addAnnualGroup('收入', 'revenue')
-    addAnnualGroup('成本', 'cost')
+    const annualRevenueRow = addAnnualGroup('收入', 'revenue', display.revenueMetricGroups)
+    const annualCostRow = addAnnualGroup('成本', 'cost', display.costMetricGroups)
     const profitRow = sheet.getRow(annualRow++)
     profitRow.getCell(1).value = '利润'
     display.annualResults.forEach((item, index) => {
       const column = index + 2
-      profitRow.getCell(column).value = formula(`${sheet.getColumn(column).letter}${annualHeaderRow + 1}-${sheet.getColumn(column).letter}${annualHeaderRow + 2 + lines.filter((line) => line.category === 'revenue').length}`, amount(item.grossProfit))
+      profitRow.getCell(column).value = formula(`${sheet.getColumn(column).letter}${annualRevenueRow}-${sheet.getColumn(column).letter}${annualCostRow}`, amount(item.grossProfit))
       profitRow.getCell(column).numFmt = TEMPLATE.numberFormats.amount
     })
     profitRow.getCell(annualLastColumn).value = amount(display.summary.grossProfit)
@@ -370,40 +397,42 @@ export class ReportWorkbookService {
 
     const lines = reportLines(display.lineResults)
     let rowNumber = 5
-    const addCategory = (label: string, category: 'revenue' | 'cost', summaryValues: string[], summaryTotal: string) => {
-      const items = lines.filter((item) => item.category === category)
+    const addCategory = (label: string, groups: ReportMetricGroup[], summaryValues: string[], summaryTotal: string) => {
       const summaryRow = sheet.getRow(rowNumber++)
       summaryRow.getCell(1).value = label
       summaryValues.forEach((value, index) => {
-        const columnLetter = sheet.getColumn(index + 2).letter
-        const firstDetail = summaryRow.number + 1
-        const lastDetail = summaryRow.number + items.length
-        summaryRow.getCell(index + 2).value = items.length
-          ? formula(`SUM(${columnLetter}${firstDetail}:${columnLetter}${lastDetail})`, amount(value))
-          : amount(value)
+        summaryRow.getCell(index + 2).value = amount(value)
         summaryRow.getCell(index + 2).numFmt = TEMPLATE.numberFormats.amount
       })
-      summaryRow.getCell(lastColumn).value = formula(
-        `SUM(B${summaryRow.number}:${sheet.getColumn(lastColumn - 1).letter}${summaryRow.number})`,
-        amount(summaryTotal),
-      )
+      summaryRow.getCell(lastColumn).value = amount(summaryTotal)
       summaryRow.getCell(lastColumn).numFmt = TEMPLATE.numberFormats.amount
       styleSummaryRow(summaryRow, lastColumn)
-      items.forEach((item) => {
-        const row = sheet.getRow(rowNumber++)
-        row.getCell(1).value = `  ${item.name}`
-        const values = new Map(item.displayMonthly.map((value) => [value.period, value.value]))
+      const addMetricGroup = (metricGroup: ReportMetricGroup, indent: number) => {
+        const metricRow = sheet.getRow(rowNumber++)
+        metricRow.getCell(1).value = `${'  '.repeat(indent)}${metricGroup.name}`
         periods.forEach((period, index) => {
-          row.getCell(index + 2).value = amount(values.get(period))
-          row.getCell(index + 2).numFmt = TEMPLATE.numberFormats.amount
+          metricRow.getCell(index + 2).value = amount(metricGroupMonthly(metricGroup, period))
+          metricRow.getCell(index + 2).numFmt = TEMPLATE.numberFormats.amount
         })
-        row.getCell(lastColumn).value = formula(
-          `SUM(B${row.number}:${sheet.getColumn(lastColumn - 1).letter}${row.number})`,
-          amount(item.displayTotal),
-        )
-        row.getCell(lastColumn).numFmt = TEMPLATE.numberFormats.amount
-        styleDataRow(row, 1, lastColumn)
-      })
+        metricRow.getCell(lastColumn).value = amount(metricGroup.amount)
+        metricRow.getCell(lastColumn).numFmt = TEMPLATE.numberFormats.amount
+        styleSummaryRow(metricRow, lastColumn, indent === 1 ? TEMPLATE.colors.primarySoft : TEMPLATE.colors.header)
+        metricGroup.children.forEach((child) => addMetricGroup(child, indent + 1))
+        metricGroup.items.forEach((rawItem) => {
+          const item = rawItem as ReportDisplayLine
+          const row = sheet.getRow(rowNumber++)
+          row.getCell(1).value = `${'  '.repeat(indent + 1)}${item.name}`
+          const values = new Map(item.displayMonthly.map((value) => [value.period, value.value]))
+          periods.forEach((period, index) => {
+            row.getCell(index + 2).value = amount(values.get(period))
+            row.getCell(index + 2).numFmt = TEMPLATE.numberFormats.amount
+          })
+          row.getCell(lastColumn).value = amount(item.displayTotal)
+          row.getCell(lastColumn).numFmt = TEMPLATE.numberFormats.amount
+          styleDataRow(row, 1, lastColumn)
+        })
+      }
+      groups.forEach((metricGroup) => addMetricGroup(metricGroup, 1))
       return summaryRow.number
     }
 
@@ -411,8 +440,8 @@ export class ReportWorkbookService {
       .filter((item) => item.category === category)
       .reduce((sum, item) => sum.plus(item.displayMonthly.find((value) => value.period === period)?.value ?? 0), new Decimal(0))
       .toString())
-    const revenueRow = addCategory('收入', 'revenue', categoryMonthly('revenue'), display.summary.revenue)
-    const costRow = addCategory('成本', 'cost', categoryMonthly('cost'), display.summary.cost)
+    const revenueRow = addCategory('收入', display.revenueMetricGroups, categoryMonthly('revenue'), display.summary.revenue)
+    const costRow = addCategory('成本', display.costMetricGroups, categoryMonthly('cost'), display.summary.cost)
     const profitRow = sheet.getRow(rowNumber++)
     profitRow.getCell(1).value = '利润'
     periods.forEach((_, index) => {

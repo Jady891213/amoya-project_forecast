@@ -1,6 +1,7 @@
 import Decimal from 'decimal.js'
 import type { DatabaseClient } from '../../shared/database'
 import type {
+  BaseMetricCode,
   MetricCode,
   PivotAxisDimension,
   PivotDimension,
@@ -11,6 +12,7 @@ import type {
   PivotTuple,
   PivotTupleMember,
 } from '../../shared/domain/types'
+import { descendantProfitLeafCodes } from '../../config/profitMetricHierarchy'
 
 export const ALL_PROJECTS = '__all_projects__'
 export const ALL_DEPARTMENTS = '__all_departments__'
@@ -26,7 +28,7 @@ interface FactRow {
   department_id: string
   department_name: string
   period: string
-  metric_code: 'revenue' | 'cost' | 'cash_inflow' | 'cash_outflow'
+  metric_code: BaseMetricCode
   value_text: string
 }
 
@@ -74,7 +76,7 @@ export class PivotService {
       ),
       this.database.query<{ id: string; name: string; status: string }>('SELECT id, name, status FROM dim_department ORDER BY name'),
       this.database.query<{ period: string; sort_key: number }>("SELECT period, sort_key FROM dim_period WHERE period BETWEEN '2024-01' AND '2030-12' ORDER BY sort_key"),
-      this.database.query<{ code: string; name: string; sort_order: number }>('SELECT code, name, sort_order FROM dim_metric ORDER BY sort_order'),
+      this.database.query<{ code: string; name: string; sort_order: number; parent_code: string | null; hierarchy_level: number; is_leaf: number }>('SELECT code, name, sort_order, parent_code, hierarchy_level, is_leaf FROM dim_metric ORDER BY sort_order'),
     ])
     return {
       scenario: { id: 'baseline', label: '基准场景' },
@@ -83,7 +85,7 @@ export class PivotService {
         { dimension: 'plan', label: LABELS.plan, members: plans.map((item, index) => ({ id: item.id, label: item.name, parentId: item.project_id, sortKey: index, status: item.status })) },
         { dimension: 'department', label: LABELS.department, members: [{ id: ALL_DEPARTMENTS, label: '全部部门', sortKey: -1 }, ...departments.map((item, index) => ({ id: item.id, label: item.name, sortKey: index, status: item.status }))] },
         { dimension: 'period', label: LABELS.period, members: periods.map((item) => ({ id: item.period, label: item.period, sortKey: item.sort_key })) },
-        { dimension: 'metric', label: LABELS.metric, members: metrics.map((item) => ({ id: item.code, label: item.name, sortKey: item.sort_order })) },
+        { dimension: 'metric', label: LABELS.metric, members: metrics.map((item) => ({ id: item.code, label: item.name, parentId: item.parent_code ?? undefined, hierarchyLevel: item.hierarchy_level, isLeaf: Boolean(item.is_leaf), sortKey: item.sort_order })) },
       ],
     }
   }
@@ -174,7 +176,17 @@ export class PivotService {
     }
     const buildTuple = (axis: PivotAxisDimension[], coordinates: Coordinate, metricCode: MetricCode): PivotTuple => {
       const members = axis.map(({ dimension }) => {
-        if (dimension === 'metric') return { dimension, memberId: metricCode, label: metricById.get(metricCode)?.label ?? metricCode }
+        if (dimension === 'metric') {
+          const metadata = metricById.get(metricCode)
+          return {
+            dimension,
+            memberId: metricCode,
+            label: metadata?.label ?? metricCode,
+            parentId: metadata?.parentId,
+            hierarchyLevel: metadata?.hierarchyLevel,
+            isLeaf: metadata?.isLeaf,
+          }
+        }
         if (dimension === 'plan' && !axis.some((item) => item.dimension === 'project')) {
           return { ...coordinates.plan, label: `${coordinates.project.label}（${coordinates.plan.label}）` }
         }
@@ -185,18 +197,29 @@ export class PivotService {
 
     groups.forEach((group, groupKey) => {
       metricCodes.forEach((metricCode) => {
-        const revenue = group.metrics.get('revenue') ?? new Decimal(0)
-        const cost = group.metrics.get('cost') ?? new Decimal(0)
+        const sumProfit = (code: string) => descendantProfitLeafCodes(code)
+          .reduce((sum, leafCode) => sum.plus(group.metrics.get(leafCode) ?? 0), new Decimal(0))
+        const revenueLeaves = descendantProfitLeafCodes('revenue')
+        const costLeaves = descendantProfitLeafCodes('cost')
+        const revenue = sumProfit('revenue')
+        const cost = sumProfit('cost')
         const inflow = group.metrics.get('cash_inflow') ?? new Decimal(0)
         const outflow = group.metrics.get('cash_outflow') ?? new Decimal(0)
-        const hasProfit = group.metrics.has('revenue') || group.metrics.has('cost')
+        const hasRevenue = revenueLeaves.some((code) => group.metrics.has(code))
+        const hasCost = costLeaves.some((code) => group.metrics.has(code))
+        const hasProfit = hasRevenue || hasCost
         const hasCash = group.metrics.has('cash_inflow') || group.metrics.has('cash_outflow')
         let value: Decimal | null
         if (metricCode === 'gross_profit') value = hasProfit ? revenue.minus(cost) : null
-        else if (metricCode === 'gross_margin') value = !group.metrics.has('revenue') || revenue.isZero() ? null : revenue.minus(cost).div(revenue)
+        else if (metricCode === 'gross_margin') value = !hasRevenue || revenue.isZero() ? null : revenue.minus(cost).div(revenue)
         else if (metricCode === 'net_cash_flow') value = hasCash ? inflow.minus(outflow) : null
         else if (metricCode === 'cumulative_cash_flow') value = cumulativeByGroup.get(groupKey) ?? (hasCash ? inflow.minus(outflow) : null)
-        else value = group.metrics.get(metricCode) ?? null
+        else {
+          const leafCodes = descendantProfitLeafCodes(metricCode)
+          value = leafCodes.length
+            ? (leafCodes.some((code) => group.metrics.has(code)) ? sumProfit(metricCode) : null)
+            : group.metrics.get(metricCode) ?? null
+        }
         const row = buildTuple(request.rows, group.coordinates, metricCode)
         const column = buildTuple(request.columns, group.coordinates, metricCode)
         rowTuples.set(row.key, row)

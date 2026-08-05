@@ -1,4 +1,4 @@
-export const CURRENT_SCHEMA_VERSION = 14
+export const CURRENT_SCHEMA_VERSION = 15
 
 /** 当前开发库直接按最新结构创建，不承担旧 Schema 的升级兼容。 */
 export const CURRENT_SCHEMA = `
@@ -88,7 +88,10 @@ CREATE TABLE dim_metric (
   dependencies_json TEXT NOT NULL DEFAULT '[]',
   sort_order INTEGER NOT NULL,
   system_managed INTEGER NOT NULL DEFAULT 1 CHECK (system_managed IN (0, 1)),
-  origin TEXT NOT NULL DEFAULT 'system' CHECK (origin = 'system')
+  origin TEXT NOT NULL DEFAULT 'system' CHECK (origin = 'system'),
+  parent_code TEXT REFERENCES dim_metric(code),
+  hierarchy_level INTEGER NOT NULL DEFAULT 0 CHECK (hierarchy_level BETWEEN 0 AND 8),
+  is_leaf INTEGER NOT NULL DEFAULT 1 CHECK (is_leaf IN (0, 1))
 );
 
 CREATE TABLE sys_plan_calculation_state (
@@ -113,6 +116,7 @@ CREATE TABLE cfg_model_line (
   name TEXT NOT NULL,
   line_type TEXT NOT NULL CHECK (line_type IN ('parameter', 'profit', 'cash')),
   category TEXT CHECK (category IS NULL OR category IN ('revenue', 'cost', 'cash_inflow', 'cash_outflow')),
+  metric_code TEXT REFERENCES dim_metric(code),
   calculation_method TEXT NOT NULL CHECK (calculation_method IN ('fixed', 'monthly_input', 'fixed_monthly', 'formula')),
   start_period TEXT NOT NULL REFERENCES dim_period(period),
   end_period TEXT NOT NULL REFERENCES dim_period(period),
@@ -127,7 +131,7 @@ CREATE TABLE cfg_model_line (
   CHECK (
     (line_type = 'parameter' AND category IS NULL)
     OR (line_type = 'profit' AND category IN ('revenue', 'cost'))
-    OR (line_type = 'cash' AND category IN ('cash_inflow', 'cash_outflow'))
+    OR (line_type = 'cash' AND category IN ('cash_inflow', 'cash_outflow') AND metric_code = category)
   )
 );
 
@@ -144,7 +148,7 @@ CREATE TABLE fact_metric_adjustment (
   plan_id TEXT NOT NULL,
   forecast_line_id TEXT NOT NULL REFERENCES cfg_model_line(id) ON DELETE CASCADE,
   period TEXT NOT NULL REFERENCES dim_period(period),
-  metric_code TEXT NOT NULL CHECK (metric_code IN ('revenue', 'cost', 'cash_inflow', 'cash_outflow')),
+  metric_code TEXT NOT NULL REFERENCES dim_metric(code),
   adjusted_value_text TEXT NOT NULL,
   reason TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
@@ -164,7 +168,7 @@ CREATE TABLE fact_forecast_line_value (
   department_id TEXT NOT NULL REFERENCES dim_department(id),
   period TEXT NOT NULL REFERENCES dim_period(period),
   scenario_id TEXT NOT NULL REFERENCES dim_scenario(id),
-  metric_code TEXT NOT NULL CHECK (metric_code IN ('revenue', 'cost', 'cash_inflow', 'cash_outflow')),
+  metric_code TEXT NOT NULL REFERENCES dim_metric(code),
   value_text TEXT NOT NULL,
   created_at TEXT NOT NULL,
   UNIQUE (project_id, plan_id, forecast_line_id, period),

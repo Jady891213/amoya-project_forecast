@@ -8,6 +8,44 @@ import type {
   ParameterValueType,
   ProjectParameterDraft,
 } from '../../shared/domain/types'
+import type { ProfitLeafMetricCode } from '../../config/profitMetricHierarchy'
+
+export const HISTORICAL_LINE_METRICS: Record<string, ProfitLeafMetricCode> = {
+  '互联网电视会员收入': 'revenue_annual_subscription',
+  '中屏业务收入': 'revenue_value_added',
+  '云游戏收入': 'revenue_value_added',
+  '超高清收入': 'revenue_value_added',
+  '程序化广告平台净收入': 'revenue_project_service',
+  '云游戏业务收入': 'revenue_value_added',
+  '游戏手柄收入': 'revenue_other',
+  '微信支付手续费': 'cost_business_other',
+  '河北有线收入分成': 'cost_copyright_purchase',
+  '当贝收入分成': 'cost_copyright_purchase',
+  'CDN成本': 'cost_technical_cdn',
+  '爱奇艺APK成本': 'cost_copyright_purchase',
+  '专线成本': 'cost_technical_line',
+  '服务器成本': 'cost_technical_other',
+  '频道成本': 'cost_copyright_channel',
+  'FAST云成本': 'cost_technical_other',
+  '服务器租赁（利息费用+折旧）': 'cost_technical_other',
+  '云游戏技术服务费': 'cost_technical_other',
+  'IDC机柜租赁费': 'cost_technical_other',
+  '100M专线费': 'cost_technical_line',
+  '游戏CP分成（包盘收入口径）': 'cost_copyright_purchase',
+  '营业成本': 'cost_technical_other',
+  '销售费用': 'cost_marketing_channel',
+  '管理费用': 'cost_business_other',
+  '税金及附加': 'cost_business_other',
+  '当贝分成': 'cost_copyright_purchase',
+  '155M专线成本': 'cost_technical_line',
+  '游戏诉讼成本': 'cost_business_other',
+  '渠道成本': 'cost_marketing_channel',
+}
+
+export function historicalMetricCode(name: string, category: ForecastCategory) {
+  if (category === 'cash_inflow' || category === 'cash_outflow') return category
+  return HISTORICAL_LINE_METRICS[name] ?? (category === 'revenue' ? 'revenue_other' : 'cost_business_other')
+}
 
 interface HistoricalProjectConfig {
   projectId: string
@@ -99,6 +137,7 @@ function fixedLine(
     code: `LINE-${String(sequence).padStart(3, '0')}`,
     name,
     category,
+    metricCode: historicalMetricCode(name, category),
     forecastMethod: 'fixed_monthly',
     startPeriod,
     endPeriod,
@@ -123,6 +162,7 @@ function monthlyLine(
     code: `LINE-${String(sequence).padStart(3, '0')}`,
     name,
     category,
+    metricCode: historicalMetricCode(name, category),
     forecastMethod: 'monthly_input',
     startPeriod: periods[0],
     endPeriod: periods[periods.length - 1],
@@ -177,6 +217,7 @@ function formulaLine(
     code: `LINE-${String(sequence).padStart(3, '0')}`,
     name,
     category,
+    metricCode: historicalMetricCode(name, category),
     forecastMethod: 'formula',
     startPeriod,
     endPeriod,

@@ -62,7 +62,7 @@ describe('CashScheduleCompiler', () => {
   it('未税成本按税率生成含税延后付款', () => {
     const cost = line({
       category: 'cost',
-      metricCode: 'cost',
+      metricCode: 'cost_business_other',
       fixedMonthlyValue: '100',
       amountBasis: 'tax_exclusive',
       taxRate: '0.06',

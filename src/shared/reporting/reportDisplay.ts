@@ -4,6 +4,7 @@ import type {
   ReportAnnualResult,
   ReportCompositionItem,
   ReportLineResult,
+  ReportMetricGroup,
   ReportUnitEconomics,
 } from '../domain/types'
 
@@ -28,10 +29,33 @@ export interface ReportDisplayModel {
   lineResults: ReportDisplayLine[]
   revenueComposition: ReportCompositionItem[]
   costComposition: ReportCompositionItem[]
+  revenueMetricGroups: ReportMetricGroup[]
+  costMetricGroups: ReportMetricGroup[]
   annualResults: ReportAnnualResult[]
   unitEconomics?: ReportUnitEconomics
   conclusionTitle: string
   conclusionDescription: string
+}
+
+function displayMetricGroups(
+  source: ReportMetricGroup[],
+  lines: ReportDisplayLine[],
+  rootTotal: Decimal,
+): ReportMetricGroup[] {
+  return source.map((group) => {
+    const children = displayMetricGroups(group.children, lines, rootTotal)
+    const items = lines.filter((line) => line.metricCode === group.metricCode)
+    const amount = children.length
+      ? children.reduce((sum, child) => sum.plus(child.amount), new Decimal(0))
+      : items.reduce((sum, line) => sum.plus(line.displayTotal), new Decimal(0))
+    return {
+      ...group,
+      amount: amount.toString(),
+      share: rootTotal.isZero() ? null : amount.div(rootTotal).toString(),
+      items,
+      children,
+    }
+  })
 }
 
 function decimal(value: Decimal.Value | null | undefined): Decimal {
@@ -121,7 +145,9 @@ export function buildReportDisplay(
     costPerUnitPeriod: cost.div(totalBasis).toString(),
     profitPerUnitPeriod: profit.div(totalBasis).toString(),
   } : undefined
-  const topCost = composition(lineResults, 'cost', cost)[0]
+  const revenueMetricGroups = displayMetricGroups(report.presentation.revenueMetricGroups, lineResults, revenue)
+  const costMetricGroups = displayMetricGroups(report.presentation.costMetricGroups, lineResults, cost)
+  const topCost = [...costMetricGroups].sort((left, right) => decimal(right.amount).comparedTo(left.amount))[0]
   const basisLabel = taxBasis === 'tax_inclusive' ? '含税' : '不含税'
   const unitLabel = reportUnitLabel(displayUnit)
   const marginText = grossMargin ? `${grossMargin.times(100).toFixed(2)}%` : '—'
@@ -139,6 +165,8 @@ export function buildReportDisplay(
     lineResults,
     revenueComposition: composition(lineResults, 'revenue', revenue),
     costComposition: composition(lineResults, 'cost', cost),
+    revenueMetricGroups,
+    costMetricGroups,
     annualResults,
     unitEconomics,
     conclusionTitle: conclusionTitle(report.hasFacts, revenue, profit, grossMargin),
