@@ -745,7 +745,6 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
     <div className="workspace-head unified-workspace-head">
       <div className="workspace-heading project-inline-heading">
         <PageBreadcrumbs back={{ label: '返回', onClick: () => onNavigate('/projects') }} items={[{ label: projectDraft.name }]} />
-        <button className="workspace-guide-link" onClick={() => setGuideOpen(true)}><CircleHelp size={14} />指引</button>
       </div>
       <div className="workspace-plan-tools">
         <span className="project-plan-label">测算方案</span>
@@ -777,6 +776,8 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
           setPlanManageOpen(true)
         }}><Settings size={14} />方案管理</button>
         <button className="btn" onClick={() => onNavigate(`/multidimensional?compareProjectId=${encodeURIComponent(projectId)}`)}><ChartNoAxesCombined size={14} />方案对比</button>
+        <span className="workspace-guide-separator" aria-hidden="true" />
+        <button className="workspace-guide-link" onClick={() => setGuideOpen(true)}><CircleHelp size={14} />指引</button>
       </div>
     </div>
     <div className="project-plan-bar project-workspace-nav">
