@@ -9,6 +9,13 @@ import { V31_REPORT_TEMPLATE as TEMPLATE } from '../reportTemplates/v31ProjectRe
 
 const FONT = 'Microsoft YaHei'
 
+export interface ReportWorkbookOptions {
+  aiMaterial?: boolean
+  creator?: string
+  company?: string
+  note?: string
+}
+
 function numeric(value: Decimal.Value | null | undefined): number {
   try { return new Decimal(value ?? 0).toNumber() }
   catch { return 0 }
@@ -146,22 +153,22 @@ function annualLineAmount(item: ReportLineResult, year: number): number {
 }
 
 export class ReportWorkbookService {
-  async build(report: ProjectReportDto): Promise<Buffer> {
+  async build(report: ProjectReportDto, options: ReportWorkbookOptions = {}): Promise<Buffer> {
     const workbook = new ExcelJS.Workbook()
-    workbook.creator = '项目测算分析工具'
-    workbook.company = 'Amoya'
+    workbook.creator = options.creator ?? '项目测算分析工具'
+    workbook.company = options.company ?? 'Amoya'
     workbook.created = new Date(report.presentation.generatedAt)
     workbook.modified = new Date(report.presentation.generatedAt)
     workbook.calcProperties.fullCalcOnLoad = true
 
-    this.addReportSheet(workbook, report)
-    this.addMonthlySheet(workbook, report)
+    this.addReportSheet(workbook, report, options)
+    this.addMonthlySheet(workbook, report, options)
 
     const bytes = await workbook.xlsx.writeBuffer()
     return Buffer.from(bytes)
   }
 
-  private addReportSheet(workbook: ExcelJS.Workbook, report: ProjectReportDto) {
+  private addReportSheet(workbook: ExcelJS.Workbook, report: ProjectReportDto, options: ReportWorkbookOptions) {
     const sheet = workbook.addWorksheet(TEMPLATE.sheets.report)
     applyWorkbookDefaults(sheet)
     TEMPLATE.reportColumns.forEach((width, index) => { sheet.getColumn(index + 1).width = width })
@@ -317,7 +324,7 @@ export class ReportWorkbookService {
     const noteRow = conclusionSectionRow + 4
     sheet.mergeCells(noteRow, 1, noteRow, 10)
     const note = sheet.getCell(noteRow, 1)
-    note.value = '说明：本报告读取当前方案最后一次成功计算形成的最终事实。蓝色数字为可调整假设，黑色数字为计算结果；损益统一按不含税口径展示。'
+    note.value = options.note ?? '说明：本报告读取当前方案最后一次成功计算形成的最终事实。蓝色数字为可调整假设，黑色数字为计算结果；损益统一按不含税口径展示。'
     note.font = { name: FONT, size: 9, italic: true, color: { argb: TEMPLATE.colors.muted } }
     note.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true }
     sheet.getRow(noteRow).height = 26
@@ -325,8 +332,10 @@ export class ReportWorkbookService {
     sheet.pageSetup.printArea = `A1:J${noteRow}`
   }
 
-  private addMonthlySheet(workbook: ExcelJS.Workbook, report: ProjectReportDto) {
-    const periods = report.monthly.filter((item) => item.period <= report.operationEndPeriod).map((item) => item.period)
+  private addMonthlySheet(workbook: ExcelJS.Workbook, report: ProjectReportDto, options: ReportWorkbookOptions) {
+    const periods = report.monthly
+      .filter((item) => options.aiMaterial || item.period <= report.operationEndPeriod)
+      .map((item) => item.period)
     const lastColumn = periods.length + 2
     const sheet = workbook.addWorksheet(TEMPLATE.sheets.monthly)
     applyWorkbookDefaults(sheet)
@@ -424,9 +433,50 @@ export class ReportWorkbookService {
       row.getCell(lastColumn).value = parameter.total === null ? null : numeric(parameter.total)
       row.getCell(lastColumn).numFmt = this.parameterFormat(parameter)
       styleDataRow(row, 1, lastColumn)
-      row.eachCell((cell) => { cell.font = { name: FONT, size: 10, color: { argb: 'FFE27A17' } } })
-      row.fill = fill(TEMPLATE.colors.warning)
+      for (let column = 1; column <= lastColumn; column += 1) {
+        row.getCell(column).font = { name: FONT, size: 10, color: { argb: 'FFE27A17' } }
+        row.getCell(column).fill = fill(TEMPLATE.colors.warning)
+      }
     })
+
+    if (options.aiMaterial) {
+      const cashLines = report.presentation.lineResults
+        .filter((item) => item.category === 'cash_inflow' || item.category === 'cash_outflow')
+      const addCashMetric = (
+        label: string,
+        field: 'cashInflow' | 'cashOutflow' | 'netCashFlow' | 'cumulativeCashFlow',
+        total: string,
+        fillColor: string,
+        details: ReportLineResult[] = [],
+      ) => {
+        const row = sheet.getRow(rowNumber++)
+        row.getCell(1).value = label
+        periods.forEach((period, index) => {
+          const value = report.monthly.find((item) => item.period === period)?.[field]
+          row.getCell(index + 2).value = wan(value)
+          row.getCell(index + 2).numFmt = TEMPLATE.numberFormats.amount
+        })
+        row.getCell(lastColumn).value = wan(total)
+        row.getCell(lastColumn).numFmt = TEMPLATE.numberFormats.amount
+        styleSummaryRow(row, lastColumn, fillColor)
+        details.forEach((item) => {
+          const detail = sheet.getRow(rowNumber++)
+          detail.getCell(1).value = `  ${item.name}`
+          const values = new Map(item.monthly.map((value) => [value.period, value.value]))
+          periods.forEach((period, index) => {
+            detail.getCell(index + 2).value = wan(values.get(period))
+            detail.getCell(index + 2).numFmt = TEMPLATE.numberFormats.amount
+          })
+          detail.getCell(lastColumn).value = wan(item.netTotal)
+          detail.getCell(lastColumn).numFmt = TEMPLATE.numberFormats.amount
+          styleDataRow(detail, 1, lastColumn)
+        })
+      }
+      addCashMetric('现金流入', 'cashInflow', report.summary.cashInflow, TEMPLATE.colors.revenueTotal, cashLines.filter((item) => item.category === 'cash_inflow'))
+      addCashMetric('现金流出', 'cashOutflow', report.summary.cashOutflow, TEMPLATE.colors.warning, cashLines.filter((item) => item.category === 'cash_outflow'))
+      addCashMetric('净现金流', 'netCashFlow', report.summary.netCashFlow, TEMPLATE.colors.profitTotal)
+      addCashMetric('累计现金流', 'cumulativeCashFlow', report.summary.cumulativeCashFlow, TEMPLATE.colors.header)
+    }
 
     sheet.views = [{ state: 'frozen', xSplit: 1, ySplit: 4, showGridLines: false }]
     sheet.pageSetup.printArea = `A1:${sheet.getColumn(lastColumn).letter}${rowNumber - 1}`

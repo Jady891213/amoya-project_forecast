@@ -17,6 +17,7 @@ import type {
   SavePlanAdjustmentsRequest,
   SavePlanAdjustmentsResponse,
   CalculationResponse,
+  AiAnalysisPreviewDto,
 } from '../../shared/api'
 import type { AppSnapshot } from '../state/types'
 
@@ -177,6 +178,13 @@ export class ApiClient {
     return this.request(`/api/projects/${encodeURIComponent(projectId)}/report${suffix}`)
   }
 
+  aiAnalysisPreview(projectId: string, planId?: string): Promise<AiAnalysisPreviewDto> {
+    const query = new URLSearchParams()
+    if (planId) query.set('planId', planId)
+    const suffix = query.size ? `?${query}` : ''
+    return this.request(`/api/projects/${encodeURIComponent(projectId)}/ai-analysis/preview${suffix}`)
+  }
+
   async backup(): Promise<void> {
     const response = await fetch('/api/database/backup', {
       headers: { 'x-amoya-token': this.token },
@@ -207,6 +215,27 @@ export class ApiClient {
     const link = document.createElement('a')
     link.href = URL.createObjectURL(blob)
     link.download = encoded ? decodeURIComponent(encoded) : '项目测算报告.xlsx'
+    link.click()
+    URL.revokeObjectURL(link.href)
+  }
+
+  async exportAiAnalysis(projectId: string, planId?: string): Promise<void> {
+    const params = new URLSearchParams()
+    if (planId) params.set('planId', planId)
+    const query = params.size ? `?${params}` : ''
+    const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/ai-analysis.xlsx${query}`, {
+      headers: { 'x-amoya-token': this.token },
+    })
+    if (!response.ok) {
+      const detail = await response.json() as ApiError
+      throw new Error(detail.message)
+    }
+    const disposition = response.headers.get('content-disposition') ?? ''
+    const encoded = /filename\*=UTF-8''([^;]+)/.exec(disposition)?.[1]
+    const blob = await response.blob()
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = encoded ? decodeURIComponent(encoded) : 'AI分析脱敏数据.xlsx'
     link.click()
     URL.revokeObjectURL(link.href)
   }

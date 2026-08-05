@@ -35,6 +35,16 @@ import type {
   Scenario,
 } from './domain/types'
 
+export type AiAnalysisMaterialStatus = 'ready' | 'not_calculated' | 'stale'
+
+export interface AiAnalysisPreviewDto {
+  prompt: string
+  dataSourceName: string
+  status: AiAnalysisMaterialStatus
+  redactionSummary: string[]
+  warning: string
+}
+
 export type StorageMode = 'persistent' | 'portable' | 'transient'
 
 export interface StorageRuntimeInfo {

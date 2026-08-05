@@ -9,6 +9,7 @@ import { ProjectPlanRepository } from './repositories/projectPlanRepository'
 import { isCreateProjectInput, isSaveProjectWorkspaceRequest } from '../shared/api'
 import { ProjectWorkspaceService } from './projectWorkspaceService'
 import { ReportWorkbookService } from './services/reportWorkbookService'
+import { AiAnalysisMaterialService } from './services/aiAnalysisMaterialService'
 import { PivotService } from './services/pivotService'
 import { initializeSqliteDatabase } from '../app/storage/sqlite/initialize'
 
@@ -209,6 +210,32 @@ export class SemanticApiRouter {
           decodeURIComponent(report[1]),
           url.searchParams.get('planId') ?? undefined,
         ))
+        return true
+      }
+      const aiAnalysisPreview = pathname.match(/^\/api\/projects\/([^/]+)\/ai-analysis\/preview$/)
+      if (aiAnalysisPreview && request.method === 'GET') {
+        const reportDto = await this.service.buildReport(
+          decodeURIComponent(aiAnalysisPreview[1]),
+          url.searchParams.get('planId') ?? undefined,
+        )
+        sendJson(response, 200, new AiAnalysisMaterialService().preview(reportDto))
+        return true
+      }
+      const aiAnalysisExport = pathname.match(/^\/api\/projects\/([^/]+)\/ai-analysis\.xlsx$/)
+      if (aiAnalysisExport && request.method === 'GET') {
+        const reportDto = await this.service.buildReport(
+          decodeURIComponent(aiAnalysisExport[1]),
+          url.searchParams.get('planId') ?? undefined,
+        )
+        const service = new AiAnalysisMaterialService()
+        const preview = service.preview(reportDto)
+        const bytes = await service.buildWorkbook(reportDto)
+        response.writeHead(200, {
+          'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(preview.dataSourceName)}`,
+          'cache-control': 'no-store',
+        })
+        response.end(bytes)
         return true
       }
       const exportReport = pathname.match(/^\/api\/projects\/([^/]+)\/export\.xlsx$/)

@@ -17,6 +17,7 @@ import {
   Printer,
   Save,
   Settings,
+  Sparkles,
   TableProperties,
   Trash2,
   Users,
@@ -42,6 +43,7 @@ import { CalculationBaseGrid } from '../components/CalculationBaseGrid'
 import { PageBreadcrumbs } from '../components/PageBreadcrumbs'
 import { formatPercent, formatWan } from '../ui/formatters'
 import { useAppDialog } from '../ui/AppDialog'
+import { AiAnalysisMaterialModal } from '../ui/AiAnalysisMaterialModal'
 import {
   ForecastSchemeFields,
   forecastScheme,
@@ -192,6 +194,7 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
   const [message, setMessage] = useState('')
   const [report, setReport] = useState<ProjectReportDto>()
   const [guideOpen, setGuideOpen] = useState(false)
+  const [aiMaterialOpen, setAiMaterialOpen] = useState(false)
   const [editingProjectHeader, setEditingProjectHeader] = useState(false)
   const [createMenu, setCreateMenu] = useState<'profit' | 'cash' | ''>('')
   const [versionMenuOpen, setVersionMenuOpen] = useState(false)
@@ -902,8 +905,10 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
     {view === 'report' && <ProjectReportView
       report={report}
       onExport={() => void api.exportReport(projectId, workspace.currentPlan.planId).catch((reason) => setMessage(reason instanceof Error ? reason.message : 'Excel 导出失败'))}
+      onOpenAi={() => setAiMaterialOpen(true)}
     />}
     {guideOpen && <ProjectGuideModal onClose={() => setGuideOpen(false)} />}
+    {aiMaterialOpen && <AiAnalysisMaterialModal api={api} projectId={projectId} planId={workspace.currentPlan.planId} onClose={() => setAiMaterialOpen(false)} />}
   </main>
 }
 
@@ -1033,8 +1038,9 @@ function BusinessParameterSection({ project, parameters, selectedId, periods, li
   </section>
 }
 
-function ProjectReportView({ report, onExport }: { report?: ProjectReportDto; onExport: () => void }) {
-  if (!report?.hasFacts) return <div className="empty-report-card"><h2>当前项目尚无报告结果</h2><p>请先保存配置并完成一次计算。</p></div>
+function ProjectReportView({ report, onExport, onOpenAi }: { report?: ProjectReportDto; onExport: () => void; onOpenAi: () => void }) {
+  const toolbar = <div className="formal-report-toolbar no-print"><div><b>项目测算分析报告</b><span>不含税口径 · 金额单位：万元</span></div><span className="spacer" />{report?.isBehindDraft && <span className="report-stale-tag">配置已变更，当前为最近成功结果</span>}<div className="report-toolbar-actions"><button className="btn" disabled={!report?.hasFacts} onClick={onExport}><Download size={14} />导出 Excel</button><button className="btn" disabled={!report?.hasFacts} onClick={() => window.print()}><Printer size={14} />打印 / PDF</button><button className="btn ai-material-button" onClick={onOpenAi}><Sparkles size={14} />AI 分析素材</button></div></div>
+  if (!report?.hasFacts) return <div className="workspace-view formal-report">{toolbar}<div className="empty-report-card"><h2>当前项目尚无报告结果</h2><p>请先保存配置并完成一次计算；AI 分析提示词仍可预览。</p></div></div>
   const { presentation } = report
   const numberText = (value: string, digits = 2) => Number(value).toLocaleString('zh-CN', { minimumFractionDigits: digits, maximumFractionDigits: digits })
   const shareText = (value: string | null) => value === null ? '—' : `${new Decimal(value).times(100).toFixed(2)}%`
@@ -1046,7 +1052,7 @@ function ProjectReportView({ report, onExport }: { report?: ProjectReportDto; on
     return item.methodDescription
   }
   return <div className="workspace-view formal-report">
-    <div className="formal-report-toolbar no-print"><div><b>项目测算分析报告</b><span>不含税口径 · 金额单位：万元</span></div><span className="spacer" />{report.isBehindDraft && <span className="report-stale-tag">配置已变更，当前为最近成功结果</span>}<button className="btn" onClick={onExport}><Download size={14} />导出 Excel</button><button className="btn" onClick={() => window.print()}><Printer size={14} />打印 / PDF</button></div>
+    {toolbar}
     <section className="report-cover v31-report-cover"><div><span>PROJECT FORECAST REPORT</span><h1>{report.project.name}</h1><p>{report.project.code || '无项目编码'} · {report.department?.name || '未指定申报部门'}</p></div><dl><div><dt>项目周期</dt><dd>{report.plan.startPeriod} 至 {report.operationEndPeriod}</dd></div><div><dt>测算方案</dt><dd>{report.plan.name}</dd></div><div><dt>结果口径</dt><dd>不含税 · 万元</dd></div></dl></section>
 
     <section className="v31-kpi-grid" aria-label="核心指标">
