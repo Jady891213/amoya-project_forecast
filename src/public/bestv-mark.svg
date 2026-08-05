@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="BesTV B">
+  <rect width="64" height="64" rx="15" fill="#E22424"/>
+  <path fill="#fff" fill-rule="evenodd" d="M17 11h17c9 0 15 4.4 15 11.4 0 4.5-2.4 7.8-6.2 9.6 5.1 1.6 8.2 5.3 8.2 10.3C51 50 44.7 54 35 54H17V11Zm9 7v10.5h7.5c4.2 0 6.6-1.8 6.6-5.3 0-3.4-2.4-5.2-6.6-5.2H26Zm0 17.5V47h8.4c4.7 0 7.2-1.9 7.2-5.8 0-3.8-2.5-5.7-7.2-5.7H26Z"/>
+</svg>

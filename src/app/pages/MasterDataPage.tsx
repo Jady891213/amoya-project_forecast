@@ -12,8 +12,38 @@ import type { AppSnapshot } from '../state/types'
 import { DepartmentDialog } from '../ui/DepartmentDialog'
 import { formatDateTime } from '../ui/formatters'
 import { PageBreadcrumbs } from '../components/PageBreadcrumbs'
+import { ResizableTable, type ResizableColumn } from '../components/ResizableTable'
 
 const PERIOD_LEVEL_LABELS: Record<PivotPeriodLevel, string> = { month: '月度', quarter: '季度', year: '年度' }
+
+const MASTER_TABLE_COLUMNS: Record<MasterDataTab, ResizableColumn[]> = {
+  projects: [
+    { key: 'code', label: '项目编码', width: 132 }, { key: 'name', label: '项目名称', width: 220, minWidth: 150 },
+    { key: 'department', label: '申报部门', width: 160 }, { key: 'start', label: '开始期间', width: 96 },
+    { key: 'end', label: '结束期间', width: 96 }, { key: 'status', label: '状态', width: 82 },
+    { key: 'action', label: '操作', width: 86 },
+  ],
+  plans: [
+    { key: 'id', label: '方案ID', width: 240, minWidth: 160 }, { key: 'project', label: '所属项目', width: 240, minWidth: 160 },
+    { key: 'name', label: '方案名称', width: 160 }, { key: 'period', label: '期间', width: 190 },
+    { key: 'status', label: '状态', width: 86 },
+  ],
+  departments: [
+    { key: 'code', label: '部门编码', width: 150 }, { key: 'name', label: '部门名称', width: 240, minWidth: 150 },
+    { key: 'status', label: '状态', width: 90 }, { key: 'updatedAt', label: '更新时间', width: 180 },
+    { key: 'action', label: '操作', width: 86 },
+  ],
+  periods: [
+    { key: 'member', label: '期间成员', width: 150 }, { key: 'name', label: '显示名称', width: 180 },
+    { key: 'level', label: '层级', width: 86 }, { key: 'year', label: '年度', width: 86 },
+    { key: 'quarter', label: '季度', width: 86 }, { key: 'months', label: '包含月份', width: 96 },
+    { key: 'sort', label: '排序键', width: 100 },
+  ],
+  scenarios: [
+    { key: 'code', label: '场景编码', width: 180 }, { key: 'name', label: '场景名称', width: 220, minWidth: 150 },
+    { key: 'default', label: '默认场景', width: 110 }, { key: 'maintenance', label: '维护方式', width: 160 },
+  ],
+}
 
 export type MasterDataTab =
   | 'projects'
@@ -122,8 +152,7 @@ export function MasterDataPage({
 
             <div className="table-wrap tall-table">
               {activeTab === 'projects' && (
-                <table>
-                  <thead><tr><th>项目编码</th><th>项目名称</th><th>申报部门</th><th>开始期间</th><th>结束期间</th><th>状态</th><th>操作</th></tr></thead>
+                <ResizableTable columns={MASTER_TABLE_COLUMNS.projects} storageKey="amoya-table-widths-master-projects-v1">
                   <tbody>{snapshot.projects.map((project) => (
                     <tr key={project.id}>
                       <td>{project.code ?? '—'}</td>
@@ -135,12 +164,11 @@ export function MasterDataPage({
                       <td><button className="text-button" onClick={() => onOpenProject(project.id)}>进入项目</button></td>
                     </tr>
                   ))}</tbody>
-                </table>
+                </ResizableTable>
               )}
 
               {activeTab === 'departments' && (
-                <table>
-                  <thead><tr><th>部门编码</th><th>部门名称</th><th>状态</th><th>更新时间</th><th>操作</th></tr></thead>
+                <ResizableTable columns={MASTER_TABLE_COLUMNS.departments} storageKey="amoya-table-widths-master-departments-v1">
                   <tbody>{snapshot.departments.map((department) => (
                     <tr key={department.id}>
                       <td>{department.code}</td>
@@ -150,12 +178,11 @@ export function MasterDataPage({
                       <td><button className="text-button" onClick={() => editDepartment(department)}>编辑</button></td>
                     </tr>
                   ))}</tbody>
-                </table>
+                </ResizableTable>
               )}
 
               {activeTab === 'periods' && (
-                <table>
-                  <thead><tr><th>期间成员</th><th>显示名称</th><th>层级</th><th>年度</th><th>季度</th><th>包含月份</th><th>排序键</th></tr></thead>
+                <ResizableTable columns={MASTER_TABLE_COLUMNS.periods} storageKey="amoya-table-widths-master-periods-v1">
                   <tbody>{periodHierarchyRows.map((period) => (
                     <tr key={period.id}>
                       <td><code>{period.id}</code></td>
@@ -167,12 +194,11 @@ export function MasterDataPage({
                       <td>{period.sortKey}</td>
                     </tr>
                   ))}</tbody>
-                </table>
+                </ResizableTable>
               )}
 
               {activeTab === 'scenarios' && (
-                <table>
-                  <thead><tr><th>场景编码</th><th>场景名称</th><th>默认场景</th><th>维护方式</th></tr></thead>
+                <ResizableTable columns={MASTER_TABLE_COLUMNS.scenarios} storageKey="amoya-table-widths-master-scenarios-v1">
                   <tbody>{snapshot.scenarios.map((scenario) => (
                     <tr key={scenario.id}>
                       <td>{scenario.code}</td>
@@ -181,12 +207,11 @@ export function MasterDataPage({
                       <td>系统内置</td>
                     </tr>
                   ))}</tbody>
-                </table>
+                </ResizableTable>
               )}
 
               {activeTab === 'plans' && (
-                <table>
-                  <thead><tr><th>方案ID</th><th>所属项目</th><th>方案名称</th><th>期间</th><th>状态</th></tr></thead>
+                <ResizableTable columns={MASTER_TABLE_COLUMNS.plans} storageKey="amoya-table-widths-master-plans-v1">
                   <tbody>{snapshot.plans.map((plan) => (
                     <tr key={plan.planId}>
                       <td><code>{plan.planId}</code></td>
@@ -196,7 +221,7 @@ export function MasterDataPage({
                       <td>{plan.status === 'active' ? '有效' : '已归档'}</td>
                     </tr>
                   ))}</tbody>
-                </table>
+                </ResizableTable>
               )}
             </div>
           </div>

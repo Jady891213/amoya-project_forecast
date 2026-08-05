@@ -11,7 +11,6 @@ import {
   Info,
   Layers3,
   PanelLeftClose,
-  PanelLeftOpen,
   Plus,
   Save,
   Sigma,
@@ -30,6 +29,7 @@ import { MultidimensionalViewPage } from './pages/MultidimensionalViewPage'
 import { APP_VERSION } from './version'
 import { nextProjectCode } from '../shared/domain/projectCode'
 import { DatabaseRestoreModal } from './ui/DatabaseRestoreModal'
+import { ResizableTable, type ResizableColumn } from './components/ResizableTable'
 
 type Route =
   | { type: 'projects'; archived: boolean }
@@ -43,6 +43,18 @@ const emptySnapshot: AppSnapshot = {
   departments: [], projects: [], periods: [], scenarios: [], plans: [], metrics: [], facts: [],
   storage: { mode: 'transient', label: '连接中', detail: '', sqliteVersion: '', schemaVersion: 0, persistent: false },
 }
+
+const METRIC_TABLE_COLUMNS: ResizableColumn[] = [
+  { key: 'metric', label: '指标', width: 220, minWidth: 150 },
+  { key: 'code', label: '编码', width: 200, minWidth: 140 },
+  { key: 'parent', label: '父级', width: 100, minWidth: 76 },
+  { key: 'level', label: '级次', width: 66, minWidth: 58 },
+  { key: 'nature', label: '性质', width: 96, minWidth: 82 },
+  { key: 'category', label: '分类', width: 78, minWidth: 68 },
+  { key: 'definition', label: '计算定义', width: 190, minWidth: 120 },
+  { key: 'aggregation', label: '期间汇总', width: 86, minWidth: 76 },
+  { key: 'description', label: '说明', width: 270, minWidth: 160 },
+]
 
 function parseRoute(): Route {
   const path = window.location.pathname.replace(/\/+$/, '') || '/projects'
@@ -159,7 +171,7 @@ export default function App() {
   return <div className={`app semantic-app ${navCollapsed ? 'nav-collapsed' : ''}`}>
     <div className="shell">
       <aside className="global-nav">
-        <div className="sidebar-header"><div className="sidebar-brand"><div className="brand-mark"><BarChart3 size={17} /></div><div className="sidebar-brand-copy"><b>项目测算分析工具</b><div className="sidebar-brand-meta"><span title={`软件版本 v${APP_VERSION}`}>v{APP_VERSION}</span><a href="https://github.com/Jady891213/amoya-project_forecast" target="_blank" rel="noreferrer" aria-label="打开 GitHub 项目主页" title="GitHub 项目主页"><svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.64 0 8.13c0 3.59 2.29 6.64 5.47 7.71.4.08.55-.18.55-.39 0-.19-.01-.83-.01-1.51-2.01.38-2.53-.5-2.69-.96-.09-.23-.48-.96-.82-1.15-.28-.15-.68-.53-.01-.54.63-.01 1.08.59 1.23.83.72 1.23 1.87.88 2.33.67.07-.53.28-.88.51-1.08-1.78-.21-3.64-.91-3.64-4.02 0-.89.31-1.62.82-2.19-.08-.2-.36-1.04.08-2.16 0 0 .67-.22 2.2.84A7.4 7.4 0 0 1 8 3.91a7.4 7.4 0 0 1 2 .27c1.53-1.06 2.2-.84 2.2-.84.44 1.12.16 1.96.08 2.16.51.57.82 1.3.82 2.19 0 3.12-1.87 3.81-3.65 4.02.29.25.54.74.54 1.51 0 1.09-.01 1.97-.01 2.24 0 .22.15.47.55.39A8.13 8.13 0 0 0 16 8.13C16 3.64 12.42 0 8 0Z" /></svg></a></div></div></div><button type="button" className="sidebar-collapse" aria-label={navCollapsed ? '展开侧边栏' : '收起侧边栏'} title={navCollapsed ? '展开侧边栏' : '收起侧边栏'} onClick={toggleNavigation}>{navCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}</button></div>
+        <div className="sidebar-header"><div className="sidebar-brand"><button type="button" className="brand-mark bestv-brand-mark" aria-label={navCollapsed ? '展开侧边栏' : '收起侧边栏'} title={navCollapsed ? '展开侧边栏' : '百视通 · 收起侧边栏'} onClick={toggleNavigation}><img src="/bestv-mark.svg" alt="" aria-hidden="true" /></button><div className="sidebar-brand-copy"><b>项目测算</b><div className="sidebar-brand-meta"><span title={`软件版本 v${APP_VERSION}`}>v{APP_VERSION}</span><a href="https://github.com/Jady891213/amoya-project_forecast" target="_blank" rel="noreferrer" aria-label="打开 GitHub 项目主页" title="GitHub 项目主页"><svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.64 0 8.13c0 3.59 2.29 6.64 5.47 7.71.4.08.55-.18.55-.39 0-.19-.01-.83-.01-1.51-2.01.38-2.53-.5-2.69-.96-.09-.23-.48-.96-.82-1.15-.28-.15-.68-.53-.01-.54.63-.01 1.08.59 1.23.83.72 1.23 1.87.88 2.33.67.07-.53.28-.88.51-1.08-1.78-.21-3.64-.91-3.64-4.02 0-.89.31-1.62.82-2.19-.08-.2-.36-1.04.08-2.16 0 0 .67-.22 2.2.84A7.4 7.4 0 0 1 8 3.91a7.4 7.4 0 0 1 2 .27c1.53-1.06 2.2-.84 2.2-.84.44 1.12.16 1.96.08 2.16.51.57.82 1.3.82 2.19 0 3.12-1.87 3.81-3.65 4.02.29.25.54.74.54 1.51 0 1.09-.01 1.97-.01 2.24 0 .22.15.47.55.39A8.13 8.13 0 0 0 16 8.13C16 3.64 12.42 0 8 0Z" /></svg></a></div></div></div>{!navCollapsed && <button type="button" className="sidebar-collapse" aria-label="收起侧边栏" title="收起侧边栏" onClick={toggleNavigation}><PanelLeftClose size={16} /></button>}</div>
         <div className="nav-section"><div className="nav-title">项目数据</div><button title="项目列表" className={`nav-item ${route.type === 'projects' || route.type === 'new' || route.type === 'workspace' ? 'active' : ''}`} onClick={openProjectArea}><BriefcaseBusiness size={16} /><span className="nav-label">项目列表</span></button><button title="项目报表" className={`nav-item ${route.type === 'multidimensional' ? 'active' : ''}`} onClick={() => navigate('/multidimensional')}><Table2 size={16} /><span className="nav-label">项目报表</span></button></div>
         <div className="nav-section"><div className="nav-title">平台配置</div><button title="主数据管理" className={`nav-item ${route.type === 'master-data' ? 'active' : ''}`} onClick={() => navigate('/master-data')}><Database size={16} /><span className="nav-label">主数据管理</span></button><button title="指标管理" className={`nav-item ${route.type === 'metrics' ? 'active' : ''}`} onClick={() => navigate('/metrics')}><Sigma size={16} /><span className="nav-label">指标管理</span></button></div>
         <div className="sidebar-footer">
@@ -305,19 +317,19 @@ function MetricPage({ snapshot }: { snapshot: AppSnapshot }) {
         <article className="project-kpi-card"><span className="project-kpi-icon amber"><Layers3 size={18} /></span><div><span>汇总指标</span><b>{summaryCount}</b><small>损益 {profitCount} · 现金流 {cashCount}</small></div></article>
       </section>
       <div className="project-list-context"><b>指标定义</b><span>共 {snapshot.metrics.length} 个</span></div>
-      <div className="data-panel"><table className="data-table metric-management-table"><thead><tr><th>编码</th><th>指标</th><th>父级</th><th>级次</th><th>性质</th><th>分类</th><th>计算定义</th><th>期间汇总</th><th>说明</th></tr></thead><tbody>{snapshot.metrics.map((metric) => {
+      <div className="data-panel resizable-table-panel"><ResizableTable className="data-table metric-management-table" storageKey="amoya-table-widths-metrics-v1" columns={METRIC_TABLE_COLUMNS}><tbody>{snapshot.metrics.map((metric) => {
         const parent = metric.parentCode ? snapshot.metrics.find((item) => item.code === metric.parentCode) : undefined
         const nature = metric.metricType === 'calculated' ? '计算指标' : metric.isLeaf ? '明细指标' : '汇总指标'
         return <tr key={metric.code}>
-        <td><code>{metric.code}</code></td>
         <td><b className="metric-name-cell" style={{ paddingLeft: `${metric.hierarchyLevel * 18}px` }}>{metric.hierarchyLevel > 0 ? '└ ' : ''}{metric.name}</b></td>
+        <td><code>{metric.code}</code></td>
         <td>{parent?.name ?? '—'}</td><td>{metric.hierarchyLevel + 1} 级</td>
         <td><span className={`metric-pill ${metric.metricType === 'calculated' ? 'calculated' : metric.isLeaf ? 'base' : 'profit'}`}>{nature}</span></td>
         <td><span className={`metric-pill ${metric.category === 'profit' ? 'profit' : 'cash'}`}>{metric.category === 'profit' ? '损益' : '现金流'}</span></td>
         <td>{metric.expression ? <span className="metric-expression"><Sigma size={13} />{metric.expression}</span> : <span className="metric-fact-label">事实录入</span>}</td>
         <td><span className="metric-aggregation-pill">{aggregationLabel[metric.periodAggregation] ?? metric.periodAggregation}</span></td>
         <td className="metric-description-cell">{metric.description}</td>
-      </tr>})}</tbody></table></div>
+      </tr>})}</tbody></ResizableTable></div>
     </div>
   </main>
 }

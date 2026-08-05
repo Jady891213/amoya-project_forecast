@@ -280,12 +280,6 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .project-list-context span { color: var(--muted); }
 .metric-management-page { min-width: 0; }
 .metric-kpi-grid .project-kpi-card { min-height: 82px; }
-.metric-management-table th:nth-child(1) { width: 180px; }
-.metric-management-table th:nth-child(2) { width: 120px; }
-.metric-management-table th:nth-child(3),
-.metric-management-table th:nth-child(4) { width: 88px; }
-.metric-management-table th:nth-child(5) { width: 245px; }
-.metric-management-table th:nth-child(6) { width: 108px; }
 .metric-management-table td { color: #526078; }
 .metric-name-cell { color: #2f3b4e; font-weight: 700; }
 .metric-pill,
@@ -390,6 +384,30 @@ input:focus, select:focus, textarea:focus { border-color: #96abe7; box-shadow: 0
   white-space: nowrap;
 }
 .data-table tbody tr:hover, .master-detail tbody tr:hover { background: #f8faff; }
+.resizable-table-panel { overflow: auto; }
+.resizable-data-table { table-layout: fixed; }
+.resizable-data-table th { position: relative; overflow: visible; white-space: nowrap; }
+.resizable-header-label { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.data-column-resizer {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  z-index: 4;
+  width: 9px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+}
+.data-column-resizer::after {
+  content: '';
+  position: absolute;
+  top: 7px;
+  bottom: 7px;
+  left: 4px;
+  width: 1px;
+  background: transparent;
+}
+.data-column-resizer:hover::after { background: #9fb0d2; }
 .clickable-project-row { cursor: pointer; }
 .clickable-project-row:hover { background: #f3f7ff !important; }
 .project-name-button {
@@ -2320,10 +2338,26 @@ body {
   background: linear-gradient(135deg, var(--brand), var(--brand-2));
   box-shadow: 0 6px 14px rgba(47, 107, 255, .23);
 }
+.sidebar-brand .bestv-brand-mark {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  flex: 0 0 32px;
+  color: #fff;
+  border: 0;
+  border-radius: 9px;
+  overflow: hidden;
+  background: #e22424;
+  box-shadow: 0 5px 13px rgba(226, 36, 36, .22);
+}
+.bestv-brand-mark img { display: block; width: 32px; height: 32px; }
+.bestv-brand-mark:hover { background: #c91e1e; box-shadow: 0 6px 15px rgba(226, 36, 36, .28); }
 .sidebar-brand-copy b { color: var(--text); font-size: 13px; font-weight: 750; }
 .sidebar-brand-copy span { color: #98a2b3; font-size: 12px; }
 .sidebar-collapse { border-radius: 8px; }
 .sidebar-collapse:hover { color: var(--brand); background: var(--brand-soft); }
+.nav-collapsed .sidebar-header { height: 56px; flex-basis: 56px; flex-direction: row; }
+.nav-collapsed .sidebar-brand { flex: 1; }
 .nav-title { color: #98a2b3; font-weight: 700; }
 .nav-item { border-radius: 9px; color: #596579; font-weight: 600; }
 .nav-item:hover { color: var(--brand); background: #f0f4ff; }

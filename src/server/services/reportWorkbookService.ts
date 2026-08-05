@@ -121,7 +121,7 @@ function applyWorkbookDefaults(sheet: ExcelJS.Worksheet) {
     fitToHeight: 0,
     margins: { left: 0.25, right: 0.25, top: 0.4, bottom: 0.45, header: 0.15, footer: 0.15 },
   }
-  sheet.headerFooter.oddFooter = '&L项目测算分析工具&R第 &P / &N 页'
+  sheet.headerFooter.oddFooter = '&L项目测算&R第 &P / &N 页'
 }
 
 function reportLines(lines: ReportDisplayLine[]): ReportDisplayLine[] {
@@ -178,7 +178,7 @@ function metricGroupMonthly(group: ReportMetricGroup, period: string): Decimal {
 export class ReportWorkbookService {
   async build(report: ProjectReportDto, options: ReportWorkbookOptions = {}): Promise<Buffer> {
     const workbook = new ExcelJS.Workbook()
-    workbook.creator = options.creator ?? '项目测算分析工具'
+    workbook.creator = options.creator ?? '项目测算'
     workbook.company = options.company ?? 'Amoya'
     workbook.created = new Date(report.presentation.generatedAt)
     workbook.modified = new Date(report.presentation.generatedAt)
