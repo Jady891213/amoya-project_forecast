@@ -1,4 +1,4 @@
-import type { PivotTuple } from '../domain/types'
+import type { PivotMetadata, PivotPlanLabelMode, PivotTuple } from '../domain/types'
 
 export interface PivotHeaderCell {
   tupleIndex: number
@@ -40,6 +40,28 @@ export function buildPivotHeaderRows(tuples: PivotTuple[], levelCount: number): 
     }
     return cells
   })
+}
+
+/**
+ * 方案编码在不同项目下允许同名。结果表默认带出项目名称，也可按页面显示设置只显示方案名。
+ * 页面与 Excel 共用该转换，原始查询元组和稳定成员 ID 不变。
+ */
+export function displayPivotTuples(tuples: PivotTuple[], metadata: PivotMetadata, planLabelMode: PivotPlanLabelMode): PivotTuple[] {
+  const plans = new Map(metadata.dimensions.find((item) => item.dimension === 'plan')?.members.map((item) => [item.id, item]) ?? [])
+  const projects = new Map(metadata.dimensions.find((item) => item.dimension === 'project')?.members.map((item) => [item.id, item]) ?? [])
+  return tuples.map((tuple) => ({
+    ...tuple,
+    members: tuple.members.map((member) => {
+      if (member.dimension !== 'plan') return member
+      const plan = plans.get(member.memberId)
+      const planName = plan?.label ?? member.label
+      const projectName = projects.get(plan?.parentId ?? member.parentId ?? '')?.label
+      return {
+        ...member,
+        label: planLabelMode === 'project_plan' && projectName ? `${projectName}（${planName}）` : planName,
+      }
+    }),
+  }))
 }
 
 export function visiblePivotRows(

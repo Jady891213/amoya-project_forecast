@@ -1,6 +1,6 @@
 import ExcelJS from 'exceljs'
 import type { PivotExportRequest, PivotMetadata, PivotResponse } from '../../shared/domain/types'
-import { buildPivotHeaderRows, visiblePivotRows } from '../../shared/reporting/pivotLayout'
+import { buildPivotHeaderRows, displayPivotTuples, visiblePivotRows } from '../../shared/reporting/pivotLayout'
 
 const FONT = 'Microsoft YaHei'
 const BORDER_COLOR = 'FFD9E0EA'
@@ -35,8 +35,10 @@ export class PivotWorkbookService {
       : availableRows
     const rowAxisCount = input.request.rows.length
     const columnAxisCount = input.request.columns.length
-    const columnHeaders = buildPivotHeaderRows(result.columnTuples, columnAxisCount)
-    const rowHeaders = buildPivotHeaderRows(rows, rowAxisCount)
+    const displayColumns = displayPivotTuples(result.columnTuples, metadata, input.planLabelMode ?? 'project_plan')
+    const displayRows = displayPivotTuples(rows, metadata, input.planLabelMode ?? 'project_plan')
+    const columnHeaders = buildPivotHeaderRows(displayColumns, columnAxisCount)
+    const rowHeaders = buildPivotHeaderRows(displayRows, rowAxisCount)
 
     input.request.rows.forEach((axis, index) => {
       const cell = sheet.getCell(1, index + 1)

@@ -8,8 +8,8 @@ describe('PivotWorkbookService', () => {
     const metadata: PivotMetadata = {
       scenario: { id: 'baseline', label: '基准场景' },
       dimensions: [
-        { dimension: 'project', label: '项目', members: [] },
-        { dimension: 'plan', label: '方案', members: [] },
+        { dimension: 'project', label: '项目', members: [{ id: 'project-a', label: '项目A', sortKey: 1 }] },
+        { dimension: 'plan', label: '方案', members: [{ id: 'a', label: '方案A', parentId: 'project-a', sortKey: 1 }] },
         { dimension: 'department', label: '申报部门', members: [] },
         { dimension: 'period', label: '期间', members: [] },
         { dimension: 'metric', label: '指标', members: [] },
@@ -40,7 +40,7 @@ describe('PivotWorkbookService', () => {
     const workbook = new ExcelJS.Workbook()
     await workbook.xlsx.load(bytes)
     const sheet = workbook.getWorksheet('项目报表')!
-    expect(sheet.getCell('B1').value).toBe('方案A')
+    expect(sheet.getCell('B1').value).toBe('项目A（方案A）')
     expect(sheet.getCell('B3').value).toBe(12345.67)
     expect(sheet.model.merges).toContain('B1:C1')
   })

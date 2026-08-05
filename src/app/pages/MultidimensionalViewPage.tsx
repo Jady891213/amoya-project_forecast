@@ -1,16 +1,17 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { ArrowLeftRight, BarChart3, Download, GripVertical, PanelRightClose, PanelRightOpen, Search } from 'lucide-react'
-import type { PivotAxisDimension, PivotDimension, PivotMetadata, PivotPeriodLevel, PivotRequest, PivotResponse, PivotTuple } from '../../shared/domain/types'
+import type { PivotAxisDimension, PivotDimension, PivotMetadata, PivotPeriodLevel, PivotPlanLabelMode, PivotRequest, PivotResponse, PivotTuple } from '../../shared/domain/types'
 import type { ApiClient } from '../api/client'
 import { gridSelectionText, useGridSelection, type GridCellPosition } from '../components/useGridSelection'
 import type { AppSnapshot } from '../state/types'
-import { buildPivotHeaderRows, visiblePivotRows } from '../../shared/reporting/pivotLayout'
+import { buildPivotHeaderRows, displayPivotTuples, visiblePivotRows } from '../../shared/reporting/pivotLayout'
 
 const LABELS: Record<PivotDimension, string> = { project: '项目', plan: '方案', department: '申报部门', period: '期间', metric: '指标' }
 const ALL_PROJECTS = '__all_projects__'
 const ALL_DEPARTMENTS = '__all_departments__'
 const PIVOT_PAGE_CACHE_KEY = 'amoya-project-report-pivot-v3'
+const PIVOT_PLAN_LABEL_MODE_KEY = 'amoya-project-report-plan-label-mode'
 const PERIOD_LEVEL_LABELS: Record<PivotPeriodLevel, string> = { month: '月度', quarter: '季度', year: '年度' }
 
 interface Props { api: ApiClient; snapshot: AppSnapshot }
@@ -75,19 +76,17 @@ function defaultRequest(metadata: PivotMetadata): PivotRequest {
   }
 }
 
-function projectPlanComparisonRequest(metadata: PivotMetadata, snapshot: AppSnapshot, projectId: string): PivotRequest | undefined {
+export function projectPlanComparisonRequest(metadata: PivotMetadata, snapshot: AppSnapshot, projectId: string): PivotRequest | undefined {
   const plans = plansForProject(metadata, projectId).filter((item) => item.status !== 'archived')
   if (!plans.length) return undefined
   const projectPlans = snapshot.plans.filter((item) => item.projectId === projectId && item.status === 'active')
   const years = periodMembers(metadata, 'year').filter((member) => projectPlans.some((plan) => member.id >= plan.startPeriod.slice(0, 4) && member.id <= plan.endPeriod.slice(0, 4)))
   const metricMembers = metadata.dimensions.find((item) => item.dimension === 'metric')?.members ?? []
-  const coreMetrics = ['revenue', 'cost', 'gross_profit', 'gross_margin', 'cash_inflow', 'cash_outflow', 'net_cash_flow', 'cumulative_cash_flow']
-    .filter((code) => metricMembers.some((item) => item.id === code))
   return {
-    rows: [{ dimension: 'metric', memberIds: coreMetrics.length ? coreMetrics : metricMembers.map((item) => item.id) }],
+    rows: [{ dimension: 'metric', memberIds: metricMembers.filter((item) => !item.id.startsWith('__all_')).map((item) => item.id) }],
     columns: [
-      { dimension: 'plan', memberIds: plans.map((item) => item.id) },
       { dimension: 'period', memberIds: years.length ? years.map((item) => item.id) : periodMembers(metadata, 'year').map((item) => item.id) },
+      { dimension: 'plan', memberIds: plans.map((item) => item.id) },
     ],
     pov: [
       { dimension: 'project', memberId: projectId },
@@ -163,6 +162,7 @@ export function MultidimensionalViewPage({ api, snapshot }: Props) {
   const [error, setError] = useState('')
   const [configurationOpen, setConfigurationOpen] = useState(!comparisonProjectId)
   const [hideNoDataRows, setHideNoDataRows] = useState(false)
+  const [planLabelMode, setPlanLabelMode] = useState<PivotPlanLabelMode>(() => window.localStorage.getItem(PIVOT_PLAN_LABEL_MODE_KEY) === 'plan' ? 'plan' : 'project_plan')
   const [visibleRowKeys, setVisibleRowKeys] = useState<string[]>([])
   const [exporting, setExporting] = useState(false)
   const [pointerDrag, setPointerDrag] = useState<PivotDragState>()
@@ -203,6 +203,7 @@ export function MultidimensionalViewPage({ api, snapshot }: Props) {
       && [...draft.rows, ...draft.columns].every((item) => item.memberIds.length > 0),
   )
   useEffect(() => () => pointerDragCleanupRef.current?.(), [])
+  useEffect(() => window.localStorage.setItem(PIVOT_PLAN_LABEL_MODE_KEY, planLabelMode), [planLabelMode])
 
   function startPointerDrag(event: ReactPointerEvent<HTMLButtonElement>, dimension: PivotDimension) {
     if (event.button !== 0 || !draft || !metadata) return
@@ -289,7 +290,7 @@ export function MultidimensionalViewPage({ api, snapshot }: Props) {
     setExporting(true)
     setError('')
     try {
-      await api.exportPivot({ request: executed, hideNoDataRows, visibleRowKeys })
+      await api.exportPivot({ request: executed, hideNoDataRows, visibleRowKeys, planLabelMode })
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '项目报表下载失败')
     } finally {
@@ -325,7 +326,7 @@ export function MultidimensionalViewPage({ api, snapshot }: Props) {
       <section className="pivot-table-panel"><div className="pivot-table-head"><div className="pivot-background-controls">{executed && metadata && visibleBackgroundPov.length ? visibleBackgroundPov.map((item) => {
         const members = item.dimension === 'plan' ? plansForProject(metadata, ALL_PROJECTS) : item.dimension === 'period' ? periodMembers(metadata, executed?.periodLevel ?? 'month') : metadata.dimensions.find((dimension) => dimension.dimension === item.dimension)?.members ?? []
         return <label key={item.dimension}><span>{LABELS[item.dimension]}</span><select value={item.memberId} onChange={(event) => updateBackground(item.dimension, event.target.value)}>{members.map((member) => <option key={member.id} value={member.id}>{displayMemberLabel(metadata, item.dimension, member)}</option>)}</select></label>
-      }) : <span className="pivot-no-background">无背景筛选</span>}</div><div className="pivot-table-head-actions">{executed && <><label className="pivot-display-toggle"><input type="checkbox" checked={hideNoDataRows} onChange={(event) => setHideNoDataRows(event.target.checked)} />隐藏无数据行</label><button className="btn" disabled={loading || exporting || !result?.rowTuples.length} onClick={() => void exportCurrentView()}><Download size={14} />{exporting ? '生成中' : '下载'}</button><span className="pivot-query-status">{backgroundChanged ? '条件已调整' : ''}</span><button className="btn primary" disabled={loading || !backgroundChanged} onClick={queryBackground}><Search size={14} />{loading ? '查询中' : '查询'}</button><button className="btn pivot-drawer-toggle" onClick={() => setConfigurationOpen((current) => !current)}>{configurationOpen ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}{configurationOpen ? '收起配置' : '展开配置'}</button></>}</div></div>{error && <div className="page-alert error">{error}</div>}{!error && executed && metadata && <PivotGrid request={executed} result={result} metadata={metadata} hideNoDataRows={hideNoDataRows} onVisibleRowsChange={setVisibleRowKeys} />}</section>
+      }) : <span className="pivot-no-background">无背景筛选</span>}</div><div className="pivot-table-head-actions">{executed && <><label className="pivot-display-toggle"><input type="checkbox" checked={hideNoDataRows} onChange={(event) => setHideNoDataRows(event.target.checked)} />隐藏无数据行</label><button className="btn" disabled={loading || exporting || !result?.rowTuples.length} onClick={() => void exportCurrentView()}><Download size={14} />{exporting ? '生成中' : '下载'}</button><span className="pivot-query-status">{backgroundChanged ? '条件已调整' : ''}</span><button className="btn primary" disabled={loading || !backgroundChanged} onClick={queryBackground}><Search size={14} />{loading ? '查询中' : '查询'}</button><button className="btn pivot-drawer-toggle" onClick={() => setConfigurationOpen((current) => !current)}>{configurationOpen ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}{configurationOpen ? '收起配置' : '展开配置'}</button></>}</div></div>{error && <div className="page-alert error">{error}</div>}{!error && executed && metadata && <PivotGrid request={executed} result={result} metadata={metadata} hideNoDataRows={hideNoDataRows} onVisibleRowsChange={setVisibleRowKeys} planLabelMode={planLabelMode} onPlanLabelModeChange={setPlanLabelMode} />}</section>
       {draft && metadata && <aside className="pivot-config-drawer" aria-hidden={!configurationOpen}>
         <div className="pivot-config-drawer-head"><div><b>报表配置</b><span>设置背景、行轴和列轴</span></div><button type="button" aria-label="收起报表配置" onClick={() => setConfigurationOpen(false)}><PanelRightClose size={15} /></button></div>
         <div className="pivot-config-drawer-body">
@@ -438,7 +439,7 @@ function AxisDimensionChip({ dimension, axis, metadata, periodLevel, onMembers, 
   return <div className="pivot-dimension-chip"><button ref={triggerRef} type="button" className="pivot-dimension-chip-trigger" aria-expanded={open} onClick={() => setOpen((current) => !current)}><span>{LABELS[dimension]}</span><small>{summary}</small></button>{popover}</div>
 }
 
-function PivotGrid({ request, result, metadata, hideNoDataRows, onVisibleRowsChange }: { request: PivotRequest; result?: PivotResponse; metadata: PivotMetadata; hideNoDataRows: boolean; onVisibleRowsChange: (keys: string[]) => void }) {
+function PivotGrid({ request, result, metadata, hideNoDataRows, onVisibleRowsChange, planLabelMode, onPlanLabelModeChange }: { request: PivotRequest; result?: PivotResponse; metadata: PivotMetadata; hideNoDataRows: boolean; onVisibleRowsChange: (keys: string[]) => void; planLabelMode: PivotPlanLabelMode; onPlanLabelModeChange: (mode: PivotPlanLabelMode) => void }) {
   const [unit, setUnit] = useState(10_000)
   const [decimals, setDecimals] = useState(2)
   const [grouping, setGrouping] = useState(true)
@@ -478,8 +479,10 @@ function PivotGrid({ request, result, metadata, hideNoDataRows, onVisibleRowsCha
     [allRows, cells, columns, hideNoDataRows, collapsedMetrics, metricById],
   )
   useEffect(() => onVisibleRowsChange(rows.map((row) => row.key)), [onVisibleRowsChange, rows])
-  const columnHeaderRows = useMemo(() => buildPivotHeaderRows(columns, request.columns.length), [columns, request.columns.length])
-  const rowHeaderRows = useMemo(() => buildPivotHeaderRows(rows, request.rows.length), [rows, request.rows.length])
+  const displayColumns = useMemo(() => displayPivotTuples(columns, metadata, planLabelMode), [columns, metadata, planLabelMode])
+  const displayRows = useMemo(() => displayPivotTuples(rows, metadata, planLabelMode), [rows, metadata, planLabelMode])
+  const columnHeaderRows = useMemo(() => buildPivotHeaderRows(displayColumns, request.columns.length), [displayColumns, request.columns.length])
+  const rowHeaderRows = useMemo(() => buildPivotHeaderRows(displayRows, request.rows.length), [displayRows, request.rows.length])
   const rowHeaderByPosition = useMemo(() => new Map(rowHeaderRows.flat().map((header) => [`${header.tupleIndex}:${header.level}`, header])), [rowHeaderRows])
   const selection = useGridSelection(rows.length, columns.length, { initialSelection: false })
 
@@ -522,7 +525,7 @@ function PivotGrid({ request, result, metadata, hideNoDataRows, onVisibleRowsCha
   }
 
   if (!result || !allRows.length || !columns.length) return <div className="pivot-empty">当前条件下没有已计算事实。</div>
-  return <><div className="pivot-format-toolbar"><label>单位<select value={unit} onChange={(event) => setUnit(Number(event.target.value))}><option value={1}>元</option><option value={1000}>千元</option><option value={10000}>万元</option></select></label><label>小数<select value={decimals} onChange={(event) => setDecimals(Number(event.target.value))}><option value={0}>0 位</option><option value={1}>1 位</option><option value={2}>2 位</option><option value={4}>4 位</option></select></label><label><input type="checkbox" checked={grouping} onChange={(event) => setGrouping(event.target.checked)} />千分位</label><label>负数<select value={negativeStyle} onChange={(event) => setNegativeStyle(event.target.value as 'minus' | 'parentheses')}><option value="minus">-1,234.56</option><option value="parentheses">(1,234.56)</option></select></label><span>{hideNoDataRows ? `显示 ${rows.length} 行 · ` : ''}{result.sourceFactCount} 条数据</span></div>{rows.length ? <div
+  return <><div className="pivot-format-toolbar"><label>方案显示<select value={planLabelMode} onChange={(event) => onPlanLabelModeChange(event.target.value as PivotPlanLabelMode)}><option value="project_plan">项目（方案）</option><option value="plan">仅方案</option></select></label><label>单位<select value={unit} onChange={(event) => setUnit(Number(event.target.value))}><option value={1}>元</option><option value={1000}>千元</option><option value={10000}>万元</option></select></label><label>小数<select value={decimals} onChange={(event) => setDecimals(Number(event.target.value))}><option value={0}>0 位</option><option value={1}>1 位</option><option value={2}>2 位</option><option value={4}>4 位</option></select></label><label><input type="checkbox" checked={grouping} onChange={(event) => setGrouping(event.target.checked)} />千分位</label><label>负数<select value={negativeStyle} onChange={(event) => setNegativeStyle(event.target.value as 'minus' | 'parentheses')}><option value="minus">-1,234.56</option><option value="parentheses">(1,234.56)</option></select></label><span>{hideNoDataRows ? `显示 ${rows.length} 行 · ` : ''}{result.sourceFactCount} 条数据</span></div>{rows.length ? <div
     className="pivot-table-scroll unified-grid-selection"
     ref={root}
     role="grid"
@@ -538,7 +541,7 @@ function PivotGrid({ request, result, metadata, hideNoDataRows, onVisibleRowsCha
   ><table className="pivot-table pivot-grid"><thead>{request.columns.map((axis, level) => <tr key={axis.dimension}>{level === 0 && request.rows.map((rowAxis) => <th key={rowAxis.dimension} rowSpan={request.columns.length} className="pivot-corner" onMouseDown={() => { selection.selectAll(); root.current?.focus() }}>{LABELS[rowAxis.dimension]}</th>)}{columnHeaderRows[level].map((header) => <th key={`${header.memberId}:${level}:${header.tupleIndex}`} colSpan={header.span} onMouseDown={() => { selection.selectColumns(header.tupleIndex, header.tupleIndex + header.span - 1); root.current?.focus() }}>{header.label}</th>)}</tr>)}</thead><tbody>{rows.map((row, rowIndex) => <tr key={row.key}>{request.rows.map((axis, level) => {
     const header = rowHeaderByPosition.get(`${rowIndex}:${level}`)
     if (!header) return null
-    const member = row.members[level]
+    const member = displayRows[rowIndex]?.members[level]
     const isMetric = axis.dimension === 'metric'
     const canCollapse = isMetric && member && hasSelectedDescendant(member.memberId)
     return <th key={axis.dimension} rowSpan={header.span} className={isMetric ? 'pivot-metric-row-head' : undefined} onMouseDown={() => { selection.selectRows(rowIndex, rowIndex + header.span - 1); root.current?.focus() }}><div style={isMetric ? { paddingLeft: (member?.hierarchyLevel ?? 0) * 14 } : undefined}>{canCollapse && <button type="button" className="pivot-tree-toggle" aria-label={`${collapsedMetrics.has(member.memberId) ? '展开' : '收起'}${member.label}`} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); setCollapsedMetrics((current) => { const next = new Set(current); if (next.has(member.memberId)) next.delete(member.memberId); else next.add(member.memberId); return next }) }}>{collapsedMetrics.has(member.memberId) ? '›' : '⌄'}</button>}<span>{member?.label}</span></div></th>

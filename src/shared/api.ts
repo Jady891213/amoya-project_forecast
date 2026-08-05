@@ -23,6 +23,7 @@ export type {
   PivotRequest,
   PivotResponse,
   PivotExportRequest,
+  PivotPlanLabelMode,
   CreateProjectPlanRequest,
 } from './domain/types'
 

@@ -551,10 +551,13 @@ export interface PivotResponse {
   sourceFactCount: number
 }
 
+export type PivotPlanLabelMode = 'project_plan' | 'plan'
+
 export interface PivotExportRequest {
   request: PivotRequest
   hideNoDataRows: boolean
   visibleRowKeys?: string[]
+  planLabelMode?: PivotPlanLabelMode
 }
 
 export interface FieldError {
