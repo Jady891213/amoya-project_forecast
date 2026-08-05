@@ -12,7 +12,7 @@ import type {
   DatabaseClient,
   SqlStatement,
   StorageRuntimeInfo,
-} from '../app/storage/types'
+} from '../shared/database'
 import { CURRENT_SCHEMA_VERSION } from '../app/storage/sqlite/migrations'
 
 const SQLITE_HEADER = 'SQLite format 3\u0000'

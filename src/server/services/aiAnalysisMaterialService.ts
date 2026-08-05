@@ -1,4 +1,5 @@
 import Decimal from 'decimal.js'
+import { readFileSync } from 'node:fs'
 import type { AiAnalysisMaterialStatus, AiAnalysisPreviewDto } from '../../shared/api'
 import type {
   ForecastCategory,
@@ -11,6 +12,12 @@ import { ReportWorkbookService } from './reportWorkbookService'
 
 const PROJECT_ALIAS = '项目 A'
 const PLAN_ALIAS = '方案 A'
+const PROMPT_FILE_NAME = 'ai-analysis-prompt-v1.md'
+const PROMPT_VERSION = PROMPT_FILE_NAME.match(/[-_](v\d+)\.md$/)?.[1] ?? 'unknown'
+const PROMPT_TEMPLATE = readFileSync(
+  new URL(`../../config/prompts/${PROMPT_FILE_NAME}`, import.meta.url),
+  'utf8',
+).trim()
 
 function dataSourceName(date = new Date()): string {
   const dateText = [
@@ -40,17 +47,12 @@ function warningOf(status: AiAnalysisMaterialStatus): string {
 }
 
 function promptFor(report: ProjectReportDto, attachmentName: string): string {
-  const period = `${report.plan.startPeriod} 至 ${report.operationEndPeriod}`
-  return `你是一名项目财务测算分析助手。请基于随附的《${attachmentName}》完成 ${PROJECT_ALIAS}、${PLAN_ALIAS} 的财务分析。项目经营期间为 ${period}，损益采用不含税口径，金额单位为万元。附件已经隐藏项目、方案、部门、客户、产品和人员等身份信息，但保留了真实财务金额、数量、比例、期间、测算方式和计算关系；请勿尝试反推项目主体，也不要将脱敏别名解释为真实业务名称。
-
-请按以下结构输出：
-1. 用一段话给出总体结论，概括收入、成本、利润、利润率、ROI 和现金流表现；
-2. 分析收入结构、成本结构及主要贡献项，指出占比较高或变化明显的项目；
-3. 分析月度及年度趋势，说明增长、波动、亏损、现金缺口和现金转正情况；
-4. 识别关键业务参数、敏感假设、税口径和收付款安排对结果的影响；
-5. 列出主要风险、需要复核的数据以及 3—5 条可执行建议。
-
-分析时只能使用附件中的信息。缺少数据时请明确写“附件未提供”，不要补造事实。引用重要结论时尽量注明工作表、指标和期间；区分不含税损益与实际现金流，不要把收入、利润或累计现金流混为一谈。`
+  return PROMPT_TEMPLATE
+    .replaceAll('{{ATTACHMENT_NAME}}', attachmentName)
+    .replaceAll('{{PROJECT_ALIAS}}', PROJECT_ALIAS)
+    .replaceAll('{{PLAN_ALIAS}}', PLAN_ALIAS)
+    .replaceAll('{{START_PERIOD}}', report.plan.startPeriod)
+    .replaceAll('{{END_PERIOD}}', report.operationEndPeriod)
 }
 
 function stableAliasMap<T extends { code: string; category: ForecastCategory }>(items: T[]) {
@@ -103,6 +105,7 @@ export class AiAnalysisMaterialService {
     const status = statusOf(report)
     const attachmentName = dataSourceName()
     return {
+      promptVersion: PROMPT_VERSION,
       prompt: promptFor(report, attachmentName),
       dataSourceName: attachmentName,
       status,

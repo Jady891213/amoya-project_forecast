@@ -20,6 +20,8 @@ import type {
   AiAnalysisPreviewDto,
 } from '../../shared/api'
 import type { AppSnapshot } from '../state/types'
+import type { ReportDisplayUnit, ReportTaxBasis } from '../../shared/reporting/reportDisplay'
+import { DATABASE_FILE_NAME } from '../../shared/database'
 
 interface RuntimeResponse {
   token: string
@@ -193,14 +195,21 @@ export class ApiClient {
     const blob = await response.blob()
     const link = document.createElement('a')
     link.href = URL.createObjectURL(blob)
-    link.download = 'amoya_project_forecast.db'
+    link.download = DATABASE_FILE_NAME
     link.click()
     URL.revokeObjectURL(link.href)
   }
 
-  async exportReport(projectId: string, planId?: string): Promise<void> {
+  async exportReport(
+    projectId: string,
+    planId?: string,
+    taxBasis: ReportTaxBasis = 'tax_exclusive',
+    displayUnit: ReportDisplayUnit = 'wan',
+  ): Promise<void> {
     const params = new URLSearchParams()
     if (planId) params.set('planId', planId)
+    params.set('taxBasis', taxBasis)
+    params.set('displayUnit', displayUnit)
     const query = params.size ? `?${params}` : ''
     const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/export.xlsx${query}`, {
       headers: { 'x-amoya-token': this.token },
@@ -245,6 +254,7 @@ export class ApiClient {
       method: 'POST',
       headers: {
         'x-amoya-token': this.token,
+        'x-amoya-file-name': file.name,
         'content-type': 'application/octet-stream',
       },
       body: file,

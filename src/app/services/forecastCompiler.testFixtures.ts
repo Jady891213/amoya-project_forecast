@@ -1,4 +1,4 @@
-import type { ForecastLine, Project } from '../domain/types'
+import type { ForecastLine, Project } from '../../shared/domain/types'
 
 export const project: Project = {
   id: 'project-forecast',

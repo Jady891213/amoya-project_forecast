@@ -1,4 +1,4 @@
-import type { DatabaseClient, SqlStatement } from '../../app/storage/types'
+import type { DatabaseClient, SqlStatement } from '../../shared/database'
 import type { CreateProjectPlanRequest, ProjectPlan, ProjectPlanInput } from '../../shared/domain/types'
 
 interface PlanRow {

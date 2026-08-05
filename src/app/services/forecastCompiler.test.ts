@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type {
   ForecastMonthlyValue,
-} from '../domain/types'
-import { buildForecastConfigHash, compileForecast } from './forecastCompiler'
+} from '../../shared/domain/types'
+import { buildForecastConfigHash, compileForecast } from '../../shared/calculation/forecastCompiler'
 import { line, project } from './forecastCompiler.testFixtures'
 
 describe('ForecastCompiler', () => {

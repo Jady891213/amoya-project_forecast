@@ -38,6 +38,7 @@ import type {
 export type AiAnalysisMaterialStatus = 'ready' | 'not_calculated' | 'stale'
 
 export interface AiAnalysisPreviewDto {
+  promptVersion: string
   prompt: string
   dataSourceName: string
   status: AiAnalysisMaterialStatus

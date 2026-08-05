@@ -1,4 +1,4 @@
-import type { DatabaseClient } from '../../app/storage/types'
+import type { DatabaseClient } from '../../shared/database'
 
 export class MetadataRepository {
   constructor(private readonly database: DatabaseClient) {}

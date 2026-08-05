@@ -11,7 +11,7 @@ import type {
   ReportLineResult,
   ReportParameterResult,
 } from '../../shared/domain/types'
-import { countPeriods, generatePeriodRange } from '../../app/domain/periods'
+import { countPeriods, generatePeriodRange } from '../../shared/domain/periods'
 
 function decimal(value: Decimal.Value | null | undefined): Decimal {
   try { return new Decimal(value ?? 0) }

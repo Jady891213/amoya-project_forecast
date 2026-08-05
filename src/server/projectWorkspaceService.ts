@@ -10,7 +10,7 @@ import type {
   ProjectWorkspace,
   SaveProjectWorkspaceRequest,
 } from '../shared/domain/types'
-import type { DatabaseClient } from '../app/storage/types'
+import type { DatabaseClient } from '../shared/database'
 import { DepartmentRepository } from './repositories/departmentRepository'
 import { DimensionRepository } from './repositories/dimensionRepository'
 import { FactRepository } from './repositories/factRepository'
@@ -24,7 +24,7 @@ import { FactAdjustmentRepository } from './repositories/factAdjustmentRepositor
 import { CalculationService } from './services/calculationService'
 import { ProjectReportService } from './services/projectReportService'
 import { ProjectPlanRepository } from './repositories/projectPlanRepository'
-import { countPeriods, generatePeriods } from '../app/domain/periods'
+import { countPeriods, generatePeriods } from '../shared/domain/periods'
 import { buildProjectReportPresentation } from './services/reportPresentationService'
 
 const reportAmountFormatter = new Intl.NumberFormat('zh-CN', {

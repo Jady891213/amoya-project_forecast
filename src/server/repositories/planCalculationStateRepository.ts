@@ -1,5 +1,5 @@
 import type { CalculationIssue, PlanCalculationState } from '../../shared/domain/types'
-import type { DatabaseClient, SqlStatement } from '../../app/storage/types'
+import type { DatabaseClient, SqlStatement } from '../../shared/database'
 
 interface StateRow {
   project_id: string

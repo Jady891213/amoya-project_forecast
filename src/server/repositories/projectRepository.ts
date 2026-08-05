@@ -1,4 +1,4 @@
-import type { DatabaseClient } from '../../app/storage/types'
+import type { DatabaseClient } from '../../shared/database'
 import type { Project, ProjectInput, Scenario } from '../../shared/domain/types'
 import { nextProjectCode } from '../../shared/domain/projectCode'
 

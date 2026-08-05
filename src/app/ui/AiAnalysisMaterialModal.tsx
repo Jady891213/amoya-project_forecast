@@ -81,7 +81,7 @@ export function AiAnalysisMaterialModal({ api, projectId, planId, onClose }: Pro
       {!preview && !message && <div className="ai-material-loading">正在准备分析素材…</div>}
       {preview && <div className="ai-material-body">
         <section className="ai-prompt-panel">
-          <div className="ai-material-section-head"><div><b>分析提示词</b><span>将下面内容连同脱敏 Excel 一起发送给 AI</span></div><button className="btn" onClick={() => void handleCopy()}>{copied ? <Check size={14} /> : <Copy size={14} />}{copied ? '已复制' : '复制提示词'}</button></div>
+          <div className="ai-material-section-head"><div><b>分析提示词 {preview.promptVersion}</b><span>将下面内容连同脱敏 Excel 一起发送给 AI</span></div><button className="btn" onClick={() => void handleCopy()}>{copied ? <Check size={14} /> : <Copy size={14} />}{copied ? '已复制' : '复制提示词'}</button></div>
           <textarea readOnly value={preview.prompt} aria-label="AI 分析提示词" />
         </section>
         <aside className="ai-data-source-panel">

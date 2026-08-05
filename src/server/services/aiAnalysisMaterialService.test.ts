@@ -44,7 +44,10 @@ describe('AI 分析素材', () => {
     const service = new AiAnalysisMaterialService()
     const ready = service.preview(report)
     expect(ready.status).toBe('ready')
+    expect(ready.promptVersion).toBe('v1')
     expect(ready.prompt).toContain('总体结论')
+    expect(ready.prompt).toContain('家庭大屏与互联网视听服务')
+    expect(ready.prompt).not.toContain('{{ATTACHMENT_NAME}}')
     expect(ready.prompt).toContain('请勿尝试反推项目主体')
     expect(ready.dataSourceName).toMatch(/^AI分析脱敏数据_项目A_方案A_\d{8}\.xlsx$/)
 

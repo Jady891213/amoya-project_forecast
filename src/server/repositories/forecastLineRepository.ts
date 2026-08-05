@@ -1,5 +1,5 @@
 import type { ForecastLine, ForecastLineDraft } from '../../shared/domain/types'
-import type { DatabaseClient, SqlStatement } from '../../app/storage/types'
+import type { DatabaseClient, SqlStatement } from '../../shared/database'
 
 export interface ForecastConfig {
   fixedMonthlyValueText?: string

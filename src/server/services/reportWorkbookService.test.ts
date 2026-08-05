@@ -1,4 +1,5 @@
 import ExcelJS from 'exceljs'
+import Decimal from 'decimal.js'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { initializeSqliteDatabase } from '../../app/storage/sqlite/initialize'
 import { NodeSqliteClient } from '../../app/test/nodeSqliteClient'
@@ -43,5 +44,34 @@ describe('统一 Excel 报告', () => {
       ySplit: 4,
       showGridLines: false,
     })
+  })
+
+  it('按报告当前选择导出含税元口径', async () => {
+    const report = await new ProjectWorkspaceService(database).buildReport(
+      'project-hebei-cable-iptv',
+    )
+    const firstRevenue = report.presentation.lineResults.find((item) => item.category === 'revenue')
+    expect(firstRevenue).toBeTruthy()
+    if (!firstRevenue) return
+    firstRevenue.amountBasis = 'tax_exclusive'
+    firstRevenue.taxRate = '0.06'
+    firstRevenue.grossTotal = new Decimal(firstRevenue.netTotal).times('1.06').toString()
+
+    const bytes = await new ReportWorkbookService().build(report, {
+      taxBasis: 'tax_inclusive',
+      displayUnit: 'yuan',
+    })
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(Uint8Array.from(bytes).buffer)
+    const reportSheet = workbook.getWorksheet('测算报告')
+    const monthlySheet = workbook.getWorksheet('月度明细')
+    expect(reportSheet?.getCell('A2').value).toContain('含税口径 · 单位：元')
+    expect(monthlySheet?.getCell('A2').value).toContain('含税口径 · 单位：元')
+    expect(reportSheet?.getCell('B6').value).toMatchObject({
+      formula: expect.stringContaining('G'),
+      result: expect.any(Number),
+    })
+    const firstMonthNet = new Decimal(firstRevenue.monthly[0]?.value ?? 0)
+    expect(monthlySheet?.getCell('B6').value).toBeCloseTo(firstMonthNet.times('1.06').toNumber(), 6)
   })
 })

@@ -1,4 +1,4 @@
-import type { DatabaseClient, SqlStatement } from '../../app/storage/types'
+import type { DatabaseClient, SqlStatement } from '../../shared/database'
 import { REFERENCE_DATASET_ID } from '../../shared/domain/types'
 import {
   REFERENCE_DEPARTMENTS,

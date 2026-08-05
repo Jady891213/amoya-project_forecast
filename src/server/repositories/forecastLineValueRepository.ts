@@ -3,7 +3,7 @@ import type {
   ForecastCategory,
   ForecastLineBreakdown,
 } from '../../shared/domain/types'
-import type { DatabaseClient } from '../../app/storage/types'
+import type { DatabaseClient } from '../../shared/database'
 import { humanizeFormula, parseFormula } from '../../shared/calculation/formulaEngine'
 import { ForecastLineRepository } from './forecastLineRepository'
 import { ParameterRepository } from './parameterRepository'

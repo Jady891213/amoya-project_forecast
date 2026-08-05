@@ -1,6 +1,6 @@
 import Decimal from 'decimal.js'
 import type { BaseMetricCode, FactAdjustment, FactAdjustmentDraft } from '../../shared/domain/types'
-import type { DatabaseClient, SqlStatement } from '../../app/storage/types'
+import type { DatabaseClient, SqlStatement } from '../../shared/database'
 
 interface AdjustmentRow {
   id: string

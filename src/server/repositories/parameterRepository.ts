@@ -4,7 +4,7 @@ import type {
   ProjectParameterDraft,
   ProjectParameterValue,
 } from '../../shared/domain/types'
-import type { DatabaseClient, SqlStatement } from '../../app/storage/types'
+import type { DatabaseClient, SqlStatement } from '../../shared/database'
 
 interface ModelLineRow {
   id: string

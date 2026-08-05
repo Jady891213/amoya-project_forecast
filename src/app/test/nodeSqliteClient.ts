@@ -1,5 +1,5 @@
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm'
-import type { DatabaseClient, SqlStatement, StorageRuntimeInfo } from '../storage/types'
+import type { DatabaseClient, SqlStatement, StorageRuntimeInfo } from '../../shared/database'
 
 export class NodeSqliteClient implements DatabaseClient {
   private constructor(

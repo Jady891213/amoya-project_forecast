@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import type { CashRule, ForecastLine } from '../domain/types'
-import { compileCashSchedule } from './cashScheduleCompiler'
-import { compileForecast } from './forecastCompiler'
+import type { CashRule, ForecastLine } from '../../shared/domain/types'
+import { compileCashSchedule } from '../../shared/calculation/cashScheduleCompiler'
+import { compileForecast } from '../../shared/calculation/forecastCompiler'
 import { line, project } from './forecastCompiler.testFixtures'
 
 function rule(

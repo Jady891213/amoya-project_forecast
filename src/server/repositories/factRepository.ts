@@ -1,4 +1,4 @@
-import type { DatabaseClient } from '../../app/storage/types'
+import type { DatabaseClient } from '../../shared/database'
 import type { BaseFact, ReportQuery } from '../../shared/domain/types'
 
 interface FactRow {

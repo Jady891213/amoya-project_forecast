@@ -5,15 +5,16 @@ import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { FileBackedSqliteClient } from './fileBackedSqliteClient'
+import { DATABASE_FILE_NAME } from '../shared/database'
 import { initializeSqliteDatabase } from '../app/storage/sqlite/initialize'
 import { ReferenceDatasetService } from './services/referenceDatasetService'
 import { SemanticApiRouter } from './semanticApiRouter'
 
 const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const workspaceRoot = resolve(sourceRoot, '..')
-const staticRoot = resolve(workspaceRoot, 'output/web')
+const staticRoot = resolve(workspaceRoot, 'dist')
 const databasePath = resolve(
-  process.env.AMOYA_DB_PATH || resolve(workspaceRoot, 'data/amoya_project_forecast.db'),
+  process.env.AMOYA_DB_PATH || resolve(workspaceRoot, `data/${DATABASE_FILE_NAME}`),
 )
 const host = '127.0.0.1'
 const port = Number(process.env.AMOYA_PORT || 4173)

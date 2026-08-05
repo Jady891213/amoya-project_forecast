@@ -1,6 +1,5 @@
 node_modules/
-output/*
-!output/README.md
+dist/
 .playwright-cli/
 coverage/
 *.tsbuildinfo

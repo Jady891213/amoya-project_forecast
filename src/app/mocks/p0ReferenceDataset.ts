@@ -3,7 +3,7 @@ import {
   type Department,
   type Project,
   type ProjectPlan,
-} from '../domain/types'
+} from '../../shared/domain/types'
 
 const CREATED_AT = '2026-07-28T00:00:00.000Z'
 

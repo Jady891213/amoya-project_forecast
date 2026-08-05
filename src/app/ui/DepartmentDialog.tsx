@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { X } from 'lucide-react'
-import type { Department } from '../domain/types'
+import type { Department } from '../../shared/domain/types'
 
 interface DepartmentDialogProps {
   department?: Department

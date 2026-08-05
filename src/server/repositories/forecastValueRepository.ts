@@ -1,7 +1,7 @@
 import type {
   ForecastMonthlyValue,
 } from '../../shared/domain/types'
-import type { DatabaseClient } from '../../app/storage/types'
+import type { DatabaseClient } from '../../shared/database'
 
 interface ForecastValueRow {
   line_id: string

@@ -1,5 +1,5 @@
 import Decimal from 'decimal.js'
-import { generatePeriods } from '../domain/periods'
+import { generatePeriods } from '../../shared/domain/periods'
 import type {
   ForecastCategory,
   ForecastCalculationConfig,
@@ -7,7 +7,7 @@ import type {
   ForecastLineDraft,
   ParameterValueType,
   ProjectParameterDraft,
-} from '../domain/types'
+} from '../../shared/domain/types'
 
 interface HistoricalProjectConfig {
   projectId: string

@@ -11,7 +11,7 @@ import type {
   PlanCalculationState,
   Project,
 } from '../../shared/domain/types'
-import type { DatabaseClient, SqlStatement } from '../../app/storage/types'
+import type { DatabaseClient, SqlStatement } from '../../shared/database'
 import { ForecastLineRepository } from '../repositories/forecastLineRepository'
 import { ForecastValueRepository } from '../repositories/forecastValueRepository'
 import { ProjectRepository } from '../repositories/projectRepository'
@@ -20,7 +20,7 @@ import { CashRuleRepository } from '../repositories/cashRuleRepository'
 import { FactAdjustmentRepository } from '../repositories/factAdjustmentRepository'
 import { ProjectPlanRepository } from '../repositories/projectPlanRepository'
 import { PlanCalculationStateRepository, calculationStateUpsert } from '../repositories/planCalculationStateRepository'
-import { countPeriods, generatePeriodRange, generatePeriods } from '../../app/domain/periods'
+import { countPeriods, generatePeriodRange, generatePeriods } from '../../shared/domain/periods'
 import { buildForecastConfigHash, compileForecast } from '../../shared/calculation/forecastCompiler'
 import { compileCashSchedule } from '../../shared/calculation/cashScheduleCompiler'
 export { previewForecastDraft } from '../../shared/calculation/previewForecastDraft'

@@ -1,4 +1,4 @@
-import type { DatabaseClient } from '../../app/storage/types'
+import type { DatabaseClient } from '../../shared/database'
 import type { PeriodDimension, Scenario } from '../../shared/domain/types'
 import { ProjectRepository } from './projectRepository'
 

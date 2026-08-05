@@ -1,6 +1,6 @@
-import { SYSTEM_METRICS } from '../../domain/metrics'
-import { formatPeriod } from '../../domain/periods'
-import type { DatabaseClient, SqlStatement } from '../types'
+import { SYSTEM_METRICS } from '../../../shared/domain/metrics'
+import { formatPeriod } from '../../../shared/domain/periods'
+import type { DatabaseClient, SqlStatement } from '../../../shared/database'
 import {
   CURRENT_SCHEMA_VERSION,
   CURRENT_SCHEMA,

@@ -1,4 +1,4 @@
-import type { DatabaseClient } from '../../app/storage/types'
+import type { DatabaseClient } from '../../shared/database'
 import type { BaseFact, Project, ProjectPlan, ProjectReport, ReportQuery } from '../../shared/domain/types'
 import { DepartmentRepository } from '../repositories/departmentRepository'
 import { FactRepository } from '../repositories/factRepository'

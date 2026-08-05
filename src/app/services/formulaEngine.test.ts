@@ -4,14 +4,14 @@ import type {
   ForecastLine,
   ProjectParameter,
   ProjectParameterValue,
-} from '../domain/types'
+} from '../../shared/domain/types'
 import {
   evaluateFormula,
   humanizeFormula,
   parseFormula,
-} from './formulaEngine'
-import { resolveFormulaDependencies } from './formulaDependencyGraph'
-import { compileForecast } from './forecastCompiler'
+} from '../../shared/calculation/formulaEngine'
+import { resolveFormulaDependencies } from '../../shared/calculation/formulaDependencyGraph'
+import { compileForecast } from '../../shared/calculation/forecastCompiler'
 import { project, line } from './forecastCompiler.testFixtures'
 
 function parameter(

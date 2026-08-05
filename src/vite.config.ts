@@ -3,13 +3,9 @@ import { defineConfig } from 'vite'
 
 export default defineConfig({
   base: '/',
-  define: {
-    __PORTABLE_MODE__: false,
-    __SERVICE_MODE__: true,
-  },
   plugins: [react()],
   build: {
-    outDir: '../output/web',
+    outDir: '../dist',
     emptyOutDir: true,
     sourcemap: false,
   },

@@ -5,6 +5,14 @@ import type {
   ReportLineResult,
   ReportParameterResult,
 } from '../../shared/domain/types'
+import {
+  buildReportDisplay,
+  reportUnitLabel,
+  scaleReportAmount,
+  type ReportDisplayLine,
+  type ReportDisplayUnit,
+  type ReportTaxBasis,
+} from '../../shared/reporting/reportDisplay'
 import { V31_REPORT_TEMPLATE as TEMPLATE } from '../reportTemplates/v31ProjectReportTemplate'
 
 const FONT = 'Microsoft YaHei'
@@ -14,6 +22,8 @@ export interface ReportWorkbookOptions {
   creator?: string
   company?: string
   note?: string
+  taxBasis?: ReportTaxBasis
+  displayUnit?: ReportDisplayUnit
 }
 
 function numeric(value: Decimal.Value | null | undefined): number {
@@ -112,17 +122,17 @@ function applyWorkbookDefaults(sheet: ExcelJS.Worksheet) {
   sheet.headerFooter.oddFooter = '&L项目测算分析工具&R第 &P / &N 页'
 }
 
-function reportLines(report: ProjectReportDto): ReportLineResult[] {
+function reportLines(lines: ReportDisplayLine[]): ReportDisplayLine[] {
   const order = { revenue: 0, cost: 1, cash_inflow: 2, cash_outflow: 3 }
-  return report.presentation.lineResults
+  return lines
     .filter((item) => item.category === 'revenue' || item.category === 'cost')
     .sort((a, b) => order[a.category] - order[b.category] || a.code.localeCompare(b.code))
 }
 
-function assumptionValue(item: ReportLineResult): number | null {
+function assumptionValue(item: ReportLineResult, displayUnit: ReportDisplayUnit): number | null {
   if (!item.priceOrRatio) return null
   if (item.method === '按收入比例') return numeric(item.priceOrRatio) / 100
-  if (item.method === '单价 × 数量') return numeric(item.priceOrRatio) / 10_000
+  if (item.method === '单价 × 数量') return scaleReportAmount(item.priceOrRatio, displayUnit)
   return numeric(item.priceOrRatio)
 }
 
@@ -146,10 +156,10 @@ function sumFormula(column: string, rows: number[], fallback = 0): string {
   return `=SUM(${column}${rows[0]}:${column}${rows.at(-1)})`
 }
 
-function annualLineAmount(item: ReportLineResult, year: number): number {
-  return wan(item.monthly
+function annualLineAmount(item: ReportDisplayLine, year: number, displayUnit: ReportDisplayUnit): number {
+  return scaleReportAmount(item.displayMonthly
     .filter((value) => Number(value.period.slice(0, 4)) === year)
-    .reduce((sum, value) => sum.plus(value.value), new Decimal(0)))
+    .reduce((sum, value) => sum.plus(value.value), new Decimal(0)), displayUnit)
 }
 
 export class ReportWorkbookService {
@@ -169,12 +179,17 @@ export class ReportWorkbookService {
   }
 
   private addReportSheet(workbook: ExcelJS.Workbook, report: ProjectReportDto, options: ReportWorkbookOptions) {
+    const taxBasis = options.taxBasis ?? 'tax_exclusive'
+    const displayUnit = options.displayUnit ?? 'wan'
+    const display = buildReportDisplay(report, taxBasis, displayUnit)
+    const unitLabel = reportUnitLabel(displayUnit)
+    const amount = (value: Decimal.Value | null | undefined) => scaleReportAmount(value, displayUnit)
     const sheet = workbook.addWorksheet(TEMPLATE.sheets.report)
     applyWorkbookDefaults(sheet)
     TEMPLATE.reportColumns.forEach((width, index) => { sheet.getColumn(index + 1).width = width })
     const generatedDate = report.presentation.generatedAt.slice(0, 10)
     styleTitle(sheet, `${report.project.name}｜项目测算分析报告`, 10)
-    styleSubtitle(sheet, `${report.plan.name} · 不含税口径 · 单位：万元 · 生成日期：${generatedDate}`, 10)
+    styleSubtitle(sheet, `${report.plan.name} · ${display.basisLabel}口径 · 单位：${unitLabel} · 生成日期：${generatedDate}`, 10)
 
     styleSection(sheet, 4, '一、核心指标')
     const coreHeader = sheet.getRow(5)
@@ -183,11 +198,11 @@ export class ReportWorkbookService {
     const core = sheet.getRow(6)
     core.values = [
       '结果',
-      wan(report.summary.revenue),
-      wan(report.summary.cost),
-      wan(report.summary.grossProfit),
-      numeric(report.summary.grossMargin),
-      numeric(report.presentation.roi),
+      amount(display.summary.revenue),
+      amount(display.summary.cost),
+      amount(display.summary.grossProfit),
+      numeric(display.summary.grossMargin),
+      numeric(display.summary.roi),
       null,
       `${report.plan.startPeriod} 至 ${report.operationEndPeriod}`,
       report.department?.name ?? '—',
@@ -201,7 +216,7 @@ export class ReportWorkbookService {
     }
     for (let column = 8; column <= 10; column += 1) core.getCell(column).alignment = { vertical: 'middle', horizontal: 'center' }
 
-    const lines = reportLines(report)
+    const lines = reportLines(display.lineResults)
     const assumptionSectionRow = 8
     const assumptionHeaderRow = 9
     styleSection(sheet, assumptionSectionRow, '二、测算假设与输入')
@@ -217,12 +232,12 @@ export class ReportWorkbookService {
         item.category === 'revenue' ? '收入' : '成本',
         item.name,
         item.method,
-        assumptionValue(item),
+        assumptionValue(item, displayUnit),
         item.quantity ? numeric(item.quantity) : null,
         item.months ?? null,
-        wan(item.grossTotal),
+        amount(item.grossTotal),
         numeric(item.taxRate),
-        formula(`G${rowNumber}/(1+H${rowNumber})`, wan(item.netTotal)),
+        formula(`G${rowNumber}/(1+H${rowNumber})`, amount(item.netTotal)),
         lineExplanation(item),
       ]
       styleDataRow(row, 1, 10)
@@ -243,19 +258,20 @@ export class ReportWorkbookService {
       ;(item.category === 'revenue' ? revenueRows : costRows).push(rowNumber)
     })
 
-    core.getCell(2).value = formula(sumFormula('I', revenueRows).slice(1), wan(report.summary.revenue))
-    core.getCell(3).value = formula(sumFormula('I', costRows).slice(1), wan(report.summary.cost))
-    core.getCell(4).value = formula('B6-C6', wan(report.summary.grossProfit))
-    core.getCell(5).value = formula('IF(B6=0,0,D6/B6)', numeric(report.summary.grossMargin))
-    core.getCell(6).value = formula('IF(C6=0,0,D6/C6)', numeric(report.presentation.roi))
+    const basisColumn = taxBasis === 'tax_inclusive' ? 'G' : 'I'
+    core.getCell(2).value = formula(sumFormula(basisColumn, revenueRows).slice(1), amount(display.summary.revenue))
+    core.getCell(3).value = formula(sumFormula(basisColumn, costRows).slice(1), amount(display.summary.cost))
+    core.getCell(4).value = formula('B6-C6', amount(display.summary.grossProfit))
+    core.getCell(5).value = formula('IF(B6=0,0,D6/B6)', numeric(display.summary.grossMargin))
+    core.getCell(6).value = formula('IF(C6=0,0,D6/C6)', numeric(display.summary.roi))
 
     const annualSectionRow = assumptionHeaderRow + lines.length + 2
     styleSection(sheet, annualSectionRow, '三、年度利润情况')
     const annualHeaderRow = annualSectionRow + 1
-    const years = report.presentation.annualResults.map((item) => item.year)
+    const years = display.annualResults.map((item) => item.year)
     const annualLastColumn = Math.min(10, years.length + 2)
     const annualHeader = sheet.getRow(annualHeaderRow)
-    annualHeader.values = ['明细项目（不含税）', ...years.map((year) => `${year}年`), '合计']
+    annualHeader.values = [`明细项目（${display.basisLabel}）`, ...years.map((year) => `${year}年`), '合计']
     styleHeader(annualHeader, 1, annualLastColumn)
     const yearColumnByYear = new Map(years.map((year, index) => [year, index + 2]))
     let annualRow = annualHeaderRow + 1
@@ -264,10 +280,10 @@ export class ReportWorkbookService {
       const groupRow = sheet.getRow(annualRow++)
       groupRow.getCell(1).value = label
       years.forEach((year, index) => {
-        const annual = report.presentation.annualResults.find((item) => item.year === year)
-        groupRow.getCell(index + 2).value = wan(category === 'revenue' ? annual?.revenue : annual?.cost)
+        const annual = display.annualResults.find((item) => item.year === year)
+        groupRow.getCell(index + 2).value = amount(category === 'revenue' ? annual?.revenue : annual?.cost)
       })
-      groupRow.getCell(annualLastColumn).value = wan(category === 'revenue' ? report.summary.revenue : report.summary.cost)
+      groupRow.getCell(annualLastColumn).value = amount(category === 'revenue' ? display.summary.revenue : display.summary.cost)
       styleSummaryRow(groupRow, annualLastColumn)
       for (let column = 2; column <= annualLastColumn; column += 1) groupRow.getCell(column).numFmt = TEMPLATE.numberFormats.amount
       items.forEach((item) => {
@@ -275,14 +291,14 @@ export class ReportWorkbookService {
         row.getCell(1).value = `  ${item.name}`
         years.forEach((year) => {
           const column = yearColumnByYear.get(year) ?? 2
-          row.getCell(column).value = annualLineAmount(item, year)
+          row.getCell(column).value = annualLineAmount(item, year, displayUnit)
           row.getCell(column).numFmt = TEMPLATE.numberFormats.amount
         })
         const firstYearColumn = years.length ? 2 : annualLastColumn
         const lastYearColumn = Math.max(firstYearColumn, years.length + 1)
         row.getCell(annualLastColumn).value = formula(
           `SUM(${sheet.getColumn(firstYearColumn).letter}${row.number}:${sheet.getColumn(lastYearColumn).letter}${row.number})`,
-          wan(item.netTotal),
+          amount(item.displayTotal),
         )
         row.getCell(annualLastColumn).numFmt = TEMPLATE.numberFormats.amount
         styleDataRow(row, 1, annualLastColumn)
@@ -292,21 +308,21 @@ export class ReportWorkbookService {
     addAnnualGroup('成本', 'cost')
     const profitRow = sheet.getRow(annualRow++)
     profitRow.getCell(1).value = '利润'
-    report.presentation.annualResults.forEach((item, index) => {
+    display.annualResults.forEach((item, index) => {
       const column = index + 2
-      profitRow.getCell(column).value = formula(`${sheet.getColumn(column).letter}${annualHeaderRow + 1}-${sheet.getColumn(column).letter}${annualHeaderRow + 2 + lines.filter((line) => line.category === 'revenue').length}`, wan(item.grossProfit))
+      profitRow.getCell(column).value = formula(`${sheet.getColumn(column).letter}${annualHeaderRow + 1}-${sheet.getColumn(column).letter}${annualHeaderRow + 2 + lines.filter((line) => line.category === 'revenue').length}`, amount(item.grossProfit))
       profitRow.getCell(column).numFmt = TEMPLATE.numberFormats.amount
     })
-    profitRow.getCell(annualLastColumn).value = wan(report.summary.grossProfit)
+    profitRow.getCell(annualLastColumn).value = amount(display.summary.grossProfit)
     profitRow.getCell(annualLastColumn).numFmt = TEMPLATE.numberFormats.amount
     styleSummaryRow(profitRow, annualLastColumn, TEMPLATE.colors.profitTotal)
     const marginRow = sheet.getRow(annualRow++)
     marginRow.getCell(1).value = '利润率'
-    report.presentation.annualResults.forEach((item, index) => {
+    display.annualResults.forEach((item, index) => {
       marginRow.getCell(index + 2).value = numeric(item.grossMargin)
       marginRow.getCell(index + 2).numFmt = TEMPLATE.numberFormats.percentage
     })
-    marginRow.getCell(annualLastColumn).value = numeric(report.summary.grossMargin)
+    marginRow.getCell(annualLastColumn).value = numeric(display.summary.grossMargin)
     marginRow.getCell(annualLastColumn).numFmt = TEMPLATE.numberFormats.percentage
     styleSummaryRow(marginRow, annualLastColumn, TEMPLATE.colors.header)
 
@@ -314,7 +330,7 @@ export class ReportWorkbookService {
     styleSection(sheet, conclusionSectionRow, '四、主要结论与提示')
     sheet.mergeCells(conclusionSectionRow + 1, 1, conclusionSectionRow + 2, 10)
     const conclusion = sheet.getCell(conclusionSectionRow + 1, 1)
-    conclusion.value = report.presentation.conclusionDescription
+    conclusion.value = display.conclusionDescription
     conclusion.fill = fill(TEMPLATE.colors.note)
     conclusion.font = { name: FONT, size: 10, color: { argb: TEMPLATE.colors.noteText } }
     conclusion.border = border()
@@ -324,7 +340,7 @@ export class ReportWorkbookService {
     const noteRow = conclusionSectionRow + 4
     sheet.mergeCells(noteRow, 1, noteRow, 10)
     const note = sheet.getCell(noteRow, 1)
-    note.value = options.note ?? '说明：本报告读取当前方案最后一次成功计算形成的最终事实。蓝色数字为可调整假设，黑色数字为计算结果；损益统一按不含税口径展示。'
+    note.value = options.note ?? `说明：本报告读取当前方案最后一次成功计算形成的最终事实。蓝色数字为可调整假设，黑色数字为计算结果；损益按${display.basisLabel}口径、${unitLabel}展示。`
     note.font = { name: FONT, size: 9, italic: true, color: { argb: TEMPLATE.colors.muted } }
     note.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true }
     sheet.getRow(noteRow).height = 26
@@ -333,6 +349,11 @@ export class ReportWorkbookService {
   }
 
   private addMonthlySheet(workbook: ExcelJS.Workbook, report: ProjectReportDto, options: ReportWorkbookOptions) {
+    const taxBasis = options.taxBasis ?? 'tax_exclusive'
+    const displayUnit = options.displayUnit ?? 'wan'
+    const display = buildReportDisplay(report, taxBasis, displayUnit)
+    const unitLabel = reportUnitLabel(displayUnit)
+    const amount = (value: Decimal.Value | null | undefined) => scaleReportAmount(value, displayUnit)
     const periods = report.monthly
       .filter((item) => options.aiMaterial || item.period <= report.operationEndPeriod)
       .map((item) => item.period)
@@ -342,12 +363,12 @@ export class ReportWorkbookService {
     sheet.getColumn(1).width = TEMPLATE.monthlyLabelWidth
     for (let column = 2; column <= lastColumn; column += 1) sheet.getColumn(column).width = TEMPLATE.monthlyValueWidth
     styleTitle(sheet, `${report.project.name}｜月度明细`, lastColumn)
-    styleSubtitle(sheet, `${report.plan.name} · 不含税口径 · 单位：万元`, lastColumn)
+    styleSubtitle(sheet, `${report.plan.name} · ${display.basisLabel}口径 · 单位：${unitLabel}`, lastColumn)
     const header = sheet.getRow(4)
     header.values = ['指标 / 测算项', ...periods, '合计']
     styleHeader(header, 1, lastColumn)
 
-    const lines = reportLines(report)
+    const lines = reportLines(display.lineResults)
     let rowNumber = 5
     const addCategory = (label: string, category: 'revenue' | 'cost', summaryValues: string[], summaryTotal: string) => {
       const items = lines.filter((item) => item.category === category)
@@ -358,27 +379,27 @@ export class ReportWorkbookService {
         const firstDetail = summaryRow.number + 1
         const lastDetail = summaryRow.number + items.length
         summaryRow.getCell(index + 2).value = items.length
-          ? formula(`SUM(${columnLetter}${firstDetail}:${columnLetter}${lastDetail})`, wan(value))
-          : wan(value)
+          ? formula(`SUM(${columnLetter}${firstDetail}:${columnLetter}${lastDetail})`, amount(value))
+          : amount(value)
         summaryRow.getCell(index + 2).numFmt = TEMPLATE.numberFormats.amount
       })
       summaryRow.getCell(lastColumn).value = formula(
         `SUM(B${summaryRow.number}:${sheet.getColumn(lastColumn - 1).letter}${summaryRow.number})`,
-        wan(summaryTotal),
+        amount(summaryTotal),
       )
       summaryRow.getCell(lastColumn).numFmt = TEMPLATE.numberFormats.amount
       styleSummaryRow(summaryRow, lastColumn)
       items.forEach((item) => {
         const row = sheet.getRow(rowNumber++)
         row.getCell(1).value = `  ${item.name}`
-        const values = new Map(item.monthly.map((value) => [value.period, value.value]))
+        const values = new Map(item.displayMonthly.map((value) => [value.period, value.value]))
         periods.forEach((period, index) => {
-          row.getCell(index + 2).value = wan(values.get(period))
+          row.getCell(index + 2).value = amount(values.get(period))
           row.getCell(index + 2).numFmt = TEMPLATE.numberFormats.amount
         })
         row.getCell(lastColumn).value = formula(
           `SUM(B${row.number}:${sheet.getColumn(lastColumn - 1).letter}${row.number})`,
-          wan(item.netTotal),
+          amount(item.displayTotal),
         )
         row.getCell(lastColumn).numFmt = TEMPLATE.numberFormats.amount
         styleDataRow(row, 1, lastColumn)
@@ -386,20 +407,24 @@ export class ReportWorkbookService {
       return summaryRow.number
     }
 
-    const revenueRow = addCategory('收入', 'revenue', report.monthly.filter((item) => item.period <= report.operationEndPeriod).map((item) => item.revenue), report.summary.revenue)
-    const costRow = addCategory('成本', 'cost', report.monthly.filter((item) => item.period <= report.operationEndPeriod).map((item) => item.cost), report.summary.cost)
+    const categoryMonthly = (category: 'revenue' | 'cost') => periods.map((period) => lines
+      .filter((item) => item.category === category)
+      .reduce((sum, item) => sum.plus(item.displayMonthly.find((value) => value.period === period)?.value ?? 0), new Decimal(0))
+      .toString())
+    const revenueRow = addCategory('收入', 'revenue', categoryMonthly('revenue'), display.summary.revenue)
+    const costRow = addCategory('成本', 'cost', categoryMonthly('cost'), display.summary.cost)
     const profitRow = sheet.getRow(rowNumber++)
     profitRow.getCell(1).value = '利润'
     periods.forEach((_, index) => {
       const column = index + 2
       const letter = sheet.getColumn(column).letter
-      const result = numeric(report.monthly.find((item) => item.period === periods[index])?.grossProfit) / 10_000
+      const result = amount(new Decimal(categoryMonthly('revenue')[index] ?? 0).minus(categoryMonthly('cost')[index] ?? 0))
       profitRow.getCell(column).value = formula(`${letter}${revenueRow}-${letter}${costRow}`, result)
       profitRow.getCell(column).numFmt = TEMPLATE.numberFormats.amount
     })
     profitRow.getCell(lastColumn).value = formula(
       `SUM(B${profitRow.number}:${sheet.getColumn(lastColumn - 1).letter}${profitRow.number})`,
-      wan(report.summary.grossProfit),
+      amount(display.summary.grossProfit),
     )
     profitRow.getCell(lastColumn).numFmt = TEMPLATE.numberFormats.amount
     styleSummaryRow(profitRow, lastColumn, TEMPLATE.colors.profitTotal)
@@ -410,13 +435,17 @@ export class ReportWorkbookService {
       const letter = sheet.getColumn(column).letter
       marginRow.getCell(column).value = formula(
         `IF(${letter}${revenueRow}=0,0,${letter}${profitRow.number}/${letter}${revenueRow})`,
-        numeric(report.monthly.find((item) => item.period === period)?.grossMargin),
+        (() => {
+          const revenue = new Decimal(categoryMonthly('revenue')[index] ?? 0)
+          const cost = new Decimal(categoryMonthly('cost')[index] ?? 0)
+          return revenue.isZero() ? 0 : revenue.minus(cost).div(revenue).toNumber()
+        })(),
       )
       marginRow.getCell(column).numFmt = TEMPLATE.numberFormats.percentage
     })
     marginRow.getCell(lastColumn).value = formula(
       `IF(${sheet.getColumn(lastColumn).letter}${revenueRow}=0,0,${sheet.getColumn(lastColumn).letter}${profitRow.number}/${sheet.getColumn(lastColumn).letter}${revenueRow})`,
-      numeric(report.summary.grossMargin),
+      numeric(display.summary.grossMargin),
     )
     marginRow.getCell(lastColumn).numFmt = TEMPLATE.numberFormats.percentage
     styleSummaryRow(marginRow, lastColumn, TEMPLATE.colors.header)

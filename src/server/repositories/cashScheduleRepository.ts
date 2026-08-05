@@ -3,7 +3,7 @@ import type {
   CashRuleMethod,
   TaxAmountBasis,
 } from '../../shared/domain/types'
-import type { DatabaseClient } from '../../app/storage/types'
+import type { DatabaseClient } from '../../shared/database'
 
 interface CashScheduleRow {
   source_line_id: string

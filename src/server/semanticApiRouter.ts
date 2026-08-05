@@ -1,6 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { basename } from 'node:path'
-import type { DatabaseClient } from '../app/storage/types'
+import { DATABASE_FILE_NAME, type DatabaseClient } from '../shared/database'
 import type { ApiError, CreateProjectInput, CreateProjectPlanRequest, DepartmentInput, PivotRequest, SaveProjectWorkspaceRequest } from '../shared/domain/types'
 import type { SavePlanAdjustmentsRequest } from '../shared/api'
 import { MetricRepository } from './repositories/metricRepository'
@@ -248,7 +247,13 @@ export class SemanticApiRouter {
         if (!reportDto.calculationState?.lastSuccessAt) {
           throw Object.assign(new Error('当前方案尚无可导出的成功计算结果'), { code: 'NOT_FOUND' })
         }
-        const bytes = await new ReportWorkbookService().build(reportDto)
+        const taxBasis = url.searchParams.get('taxBasis') === 'tax_inclusive'
+          ? 'tax_inclusive'
+          : 'tax_exclusive'
+        const displayUnit = url.searchParams.get('displayUnit') === 'yuan'
+          ? 'yuan'
+          : 'wan'
+        const bytes = await new ReportWorkbookService().build(reportDto, { taxBasis, displayUnit })
         const exportDate = new Date().toISOString().slice(0, 10).replaceAll('-', '')
         const safeProject = reportDto.project.name.replace(/[\\/:*?"<>|]/g, '_')
         const safePlan = reportDto.plan.name.replace(/[\\/:*?"<>|]/g, '_')
@@ -300,13 +305,16 @@ export class SemanticApiRouter {
         const bytes = await this.database.exportDatabase()
         response.writeHead(200, {
           'content-type': 'application/vnd.sqlite3',
-          'content-disposition': `attachment; filename="${basename(this.databasePath)}"`,
+          'content-disposition': `attachment; filename="${DATABASE_FILE_NAME}"`,
           'cache-control': 'no-store',
         })
         response.end(Buffer.from(bytes))
         return true
       }
       if (pathname === '/api/database/restore' && request.method === 'POST') {
+        if (request.headers['x-amoya-file-name'] !== DATABASE_FILE_NAME) {
+          invalidRequest(`请选择名为 ${DATABASE_FILE_NAME} 的本地数据文件`)
+        }
         const bytes = await readBody(request, MAX_DATABASE_BODY)
         await this.exclusive(async () => {
           const previous = await this.database.exportDatabase()

@@ -1,13 +1,12 @@
 {
   "name": "project-forecast-analysis-tool",
   "private": true,
-  "version": "0.5.12",
+  "version": "0.6.0",
   "type": "module",
   "scripts": {
     "dev": "pnpm start:local",
     "dev:web": "vite",
     "build": "tsc -b && vite build",
-    "build:legacy-singlefile": "tsc -b && vite build --config vite.singlefile.config.ts",
     "serve:local": "tsx server/index.ts",
     "start:local": "pnpm build && pnpm serve:local",
     "test": "vitest run",
@@ -30,7 +29,6 @@
     "tsx": "^4.20.6",
     "typescript": "^7.0.2",
     "vite": "^8.1.5",
-    "vite-plugin-singlefile": "^2.3.3",
     "vitest": "^4.1.10"
   }
 }

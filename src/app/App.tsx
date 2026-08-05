@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   Archive,
   BarChart3,
@@ -29,6 +29,7 @@ import { useAppDialog } from './ui/AppDialog'
 import { MultidimensionalViewPage } from './pages/MultidimensionalViewPage'
 import { APP_VERSION } from './version'
 import { nextProjectCode } from '../shared/domain/projectCode'
+import { DatabaseRestoreModal } from './ui/DatabaseRestoreModal'
 
 type Route =
   | { type: 'projects'; archived: boolean }
@@ -75,7 +76,7 @@ export default function App() {
   const [dirty, setDirty] = useState(false)
   const [navCollapsed, setNavCollapsed] = useState(() => window.localStorage.getItem('amoya-nav-collapsed') === '1')
   const [lastProjectPath, setLastProjectPath] = useState(() => window.sessionStorage.getItem('amoya-last-project-path') || '/projects')
-  const restoreInput = useRef<HTMLInputElement>(null)
+  const [restoreOpen, setRestoreOpen] = useState(false)
 
   const refresh = useCallback(async (client = api) => {
     if (!client) return
@@ -136,29 +137,6 @@ export default function App() {
     setRoute(parseRoute())
   }
 
-  async function restoreDatabase(file?: File) {
-    if (!file) return
-    try {
-      const confirmed = await dialog.confirm({
-        title: '恢复本地数据？',
-        message: `将从“${file.name}”恢复全部项目，当前数据库内容会被替换。建议先备份现有数据。`,
-        tone: 'danger',
-        confirmLabel: '确认恢复',
-      })
-      if (!confirmed) return
-      await api?.restoreDatabase(file)
-      await refresh()
-      setNotice('项目数据恢复成功')
-    } catch (reason) {
-      await dialog.alert(reason instanceof Error ? reason.message : '项目数据恢复失败', {
-        title: '恢复失败',
-        tone: 'danger',
-      })
-    } finally {
-      if (restoreInput.current) restoreInput.current.value = ''
-    }
-  }
-
   function toggleNavigation() {
     setNavCollapsed((current) => {
       const next = !current
@@ -176,7 +154,7 @@ export default function App() {
   }
 
   if (loading) return <div className="app-loading"><Database size={30} /><h1>正在打开本地项目数据</h1><p>正在准备项目和测算内容…</p></div>
-  if (!api || fatalError) return <div className="app-loading error-state"><Database size={30} /><h1>本地服务连接失败</h1><p>{fatalError}</p><small>请使用根目录启动文件，不要直接双击 output/web/index.html。</small><button className="btn primary" onClick={() => window.location.reload()}>重新连接</button></div>
+  if (!api || fatalError) return <div className="app-loading error-state"><Database size={30} /><h1>本地服务连接失败</h1><p>{fatalError}</p><small>请使用根目录启动文件，不要直接双击 dist/index.html。</small><button className="btn primary" onClick={() => window.location.reload()}>重新连接</button></div>
 
   return <div className={`app semantic-app ${navCollapsed ? 'nav-collapsed' : ''}`}>
     <div className="shell">
@@ -185,9 +163,8 @@ export default function App() {
         <div className="nav-section"><div className="nav-title">项目数据</div><button title="项目列表" className={`nav-item ${route.type === 'projects' || route.type === 'new' || route.type === 'workspace' ? 'active' : ''}`} onClick={openProjectArea}><BriefcaseBusiness size={16} /><span className="nav-label">项目列表</span></button><button title="项目报表" className={`nav-item ${route.type === 'multidimensional' ? 'active' : ''}`} onClick={() => navigate('/multidimensional')}><Table2 size={16} /><span className="nav-label">项目报表</span></button></div>
         <div className="nav-section"><div className="nav-title">平台配置</div><button title="主数据管理" className={`nav-item ${route.type === 'master-data' ? 'active' : ''}`} onClick={() => navigate('/master-data')}><Database size={16} /><span className="nav-label">主数据管理</span></button><button title="指标管理" className={`nav-item ${route.type === 'metrics' ? 'active' : ''}`} onClick={() => navigate('/metrics')}><Sigma size={16} /><span className="nav-label">指标管理</span></button></div>
         <div className="sidebar-footer">
-          <div className="db-box"><b><HardDrive size={14} /><span className="db-box-label">本地数据库</span><span className="db-info" tabIndex={0} aria-label="查看本地数据库说明"><Info size={13} /><span className="db-info-tooltip" role="tooltip">数据自动保存在本机<br />SQLite {snapshot.storage.sqliteVersion}<br />数据结构版本 {snapshot.storage.schemaVersion}</span></span></b><div className="db-box-details"><span>{snapshot.storage.detail.split(' · ')[0] || 'amoya_project_forecast.db'}</span><span>共 {snapshot.projects.length} 个项目</span></div><div className="sidebar-db-actions"><button type="button" title="导出完整数据备份" aria-label="导出完整数据备份" onClick={() => void api.backup()}><Download size={14} /><span>备份</span></button><button type="button" title="从备份恢复全部项目" aria-label="从备份恢复全部项目" onClick={() => restoreInput.current?.click()}><Upload size={14} /><span>恢复</span></button></div></div>
+          <div className="db-box"><b><HardDrive size={14} /><span className="db-box-label">本地数据库</span><span className="db-info" tabIndex={0} aria-label="查看本地数据库说明"><Info size={13} /><span className="db-info-tooltip" role="tooltip">数据自动保存在本机<br />SQLite {snapshot.storage.sqliteVersion}<br />数据结构版本 {snapshot.storage.schemaVersion}</span></span></b><div className="db-box-details"><span>{snapshot.storage.detail.split(' · ')[0] || 'amoya_project_forecast.db'}</span><span>共 {snapshot.projects.length} 个项目</span></div><div className="sidebar-db-actions"><button type="button" title="导出完整数据备份" aria-label="导出完整数据备份" onClick={() => void api.backup()}><Download size={14} /><span>备份</span></button><button type="button" title="从备份恢复全部项目" aria-label="从备份恢复全部项目" onClick={() => setRestoreOpen(true)}><Upload size={14} /><span>恢复</span></button></div></div>
         </div>
-        <input hidden ref={restoreInput} type="file" accept=".db,application/vnd.sqlite3" onChange={(event) => void restoreDatabase(event.target.files?.[0])} />
       </aside>
       {route.type === 'projects' && <ProjectList snapshot={snapshot} archived={route.archived} onNavigate={navigate} onArchive={async (id, archived) => { if (archived) await api.restore(id); else await api.archive(id); await refresh() }} onCopy={async (id) => { const copied = await api.copyProject(id); await refresh(); setNotice('项目已复制'); navigate(`/projects/${copied.project.id}/config`) }} onDelete={async (id) => { await api.deleteProject(id); await refresh(); setNotice('项目已删除') }} />}
       {route.type === 'new' && <NewProjectPage snapshot={snapshot} onCancel={() => navigate('/projects')} onCreate={async (input) => { const workspace = await api.createProject(input); await refresh(); navigate(`/projects/${workspace.project.id}/config`) }} />}
@@ -204,6 +181,15 @@ export default function App() {
       {route.type === 'workspace' && <ProjectWorkspacePage key={`${route.projectId}:${route.view}:${route.planId ?? 'default'}`} api={api} snapshot={snapshot} projectId={route.projectId} planId={route.planId} view={route.view} onNavigate={navigate} onRefresh={refresh} onDirtyChange={setDirty} />}
     </div>
     {notice && <div className="toast-success">{notice}<button onClick={() => setNotice('')}>关闭</button></div>}
+    <DatabaseRestoreModal
+      open={restoreOpen}
+      onClose={() => setRestoreOpen(false)}
+      onRestore={async (file) => {
+        await api.restoreDatabase(file)
+        await refresh()
+        setNotice('项目数据恢复成功')
+      }}
+    />
   </div>
 }
 
@@ -303,5 +289,30 @@ function NewProjectPage({ snapshot, onCancel, onCreate }: { snapshot: AppSnapsho
 }
 
 function MetricPage({ snapshot }: { snapshot: AppSnapshot }) {
-  return <main className="page"><div className="page-head"><div className="page-head-main"><PageBreadcrumbs items={[{ label: '平台配置' }, { label: '指标管理' }]} /><h1>指标管理</h1><p>基础指标与系统计算指标统一管理；项目特有公式不进入全局指标。</p></div></div><div className="page-body"><div className="data-panel"><table className="data-table"><thead><tr><th>编码</th><th>指标</th><th>类型</th><th>分类</th><th>表达式</th><th>期间汇总</th><th>说明</th></tr></thead><tbody>{snapshot.metrics.map((metric) => <tr key={metric.code}><td><code>{metric.code}</code></td><td>{metric.name}</td><td>{metric.metricType === 'base' ? '基础指标' : '系统计算'}</td><td>{metric.category === 'profit' ? '损益' : '现金流'}</td><td>{metric.expression || '事实写入'}</td><td>{metric.periodAggregation}</td><td>{metric.description}</td></tr>)}</tbody></table></div></div></main>
+  const baseCount = snapshot.metrics.filter((item) => item.metricType === 'base').length
+  const calculatedCount = snapshot.metrics.length - baseCount
+  const profitCount = snapshot.metrics.filter((item) => item.category === 'profit').length
+  const cashCount = snapshot.metrics.length - profitCount
+  const aggregationLabel: Record<string, string> = { sum: '求和', recompute: '重新计算', ending: '期末值' }
+  return <main className="page">
+    <div className="page-head"><div className="page-head-main"><PageBreadcrumbs items={[{ label: '平台配置' }, { label: '指标管理' }]} /><h1>指标管理</h1><p>基础指标与系统计算指标统一管理；项目特有公式不进入全局指标。</p></div></div>
+    <div className="page-body metric-management-page">
+      <section className="project-kpi-grid metric-kpi-grid" aria-label="指标概览">
+        <article className="project-kpi-card"><span className="project-kpi-icon"><BarChart3 size={18} /></span><div><span>指标总数</span><b>{snapshot.metrics.length}</b><small>统一指标维度成员</small></div></article>
+        <article className="project-kpi-card"><span className="project-kpi-icon green"><Database size={18} /></span><div><span>基础指标</span><b>{baseCount}</b><small>由项目事实直接写入</small></div></article>
+        <article className="project-kpi-card"><span className="project-kpi-icon purple"><Sigma size={18} /></span><div><span>系统计算</span><b>{calculatedCount}</b><small>按统一公式动态计算</small></div></article>
+        <article className="project-kpi-card"><span className="project-kpi-icon amber"><Layers3 size={18} /></span><div><span>指标分类</span><b>2</b><small>损益 {profitCount} · 现金流 {cashCount}</small></div></article>
+      </section>
+      <div className="project-list-context"><b>指标定义</b><span>共 {snapshot.metrics.length} 个</span></div>
+      <div className="data-panel"><table className="data-table metric-management-table"><thead><tr><th>编码</th><th>指标</th><th>类型</th><th>分类</th><th>计算定义</th><th>期间汇总</th><th>说明</th></tr></thead><tbody>{snapshot.metrics.map((metric) => <tr key={metric.code}>
+        <td><code>{metric.code}</code></td>
+        <td><b className="metric-name-cell">{metric.name}</b></td>
+        <td><span className={`metric-pill ${metric.metricType === 'base' ? 'base' : 'calculated'}`}>{metric.metricType === 'base' ? '基础' : '计算'}</span></td>
+        <td><span className={`metric-pill ${metric.category === 'profit' ? 'profit' : 'cash'}`}>{metric.category === 'profit' ? '损益' : '现金流'}</span></td>
+        <td>{metric.expression ? <span className="metric-expression"><Sigma size={13} />{metric.expression}</span> : <span className="metric-fact-label">事实录入</span>}</td>
+        <td><span className="metric-aggregation-pill">{aggregationLabel[metric.periodAggregation] ?? metric.periodAggregation}</span></td>
+        <td className="metric-description-cell">{metric.description}</td>
+      </tr>)}</tbody></table></div>
+    </div>
+  </main>
 }

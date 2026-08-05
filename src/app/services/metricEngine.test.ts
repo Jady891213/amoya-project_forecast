@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { SYSTEM_METRICS } from '../domain/metrics'
+import { SYSTEM_METRICS } from '../../shared/domain/metrics'
 import {
   BASELINE_SCENARIO_CODE,
   type BaseFact,
   type BaseMetricCode,
   type Project,
-} from '../domain/types'
-import { calculateMetrics } from './metricEngine'
+} from '../../shared/domain/types'
+import { calculateMetrics } from '../../shared/calculation/metricEngine'
 
 const project: Project = {
   id: 'project-test',

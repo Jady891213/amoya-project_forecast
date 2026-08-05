@@ -5,7 +5,6 @@ import type { FactAdjustmentDraft, MetricCode, ProjectReportDto } from '../../sh
 import { SYSTEM_METRICS } from '../../shared/domain/metrics'
 import { FinancialGrid, type FinancialGridChange, type FinancialGridRow } from './FinancialGrid'
 
-type BaseView = 'all' | 'profit' | 'cash'
 type BaseGroup = '收入' | '成本' | '损益指标' | '项目收款' | '项目付款' | '现金指标'
 
 interface CalculationBaseRow extends FinancialGridRow {
@@ -45,7 +44,6 @@ export function CalculationBaseGrid({
   onChange: (changes: FinancialGridChange[]) => void
   onClearOverride: (rowId: string, period: string) => void
 }) {
-  const [view, setView] = useState<BaseView>('all')
   const [collapsedGroups, setCollapsedGroups] = useState<Set<BaseGroup>>(new Set())
   const periods = report.monthly.map((item) => item.period)
   const rows = useMemo<CalculationBaseRow[]>(() => {
@@ -156,10 +154,7 @@ export function CalculationBaseGrid({
     ]
   }, [adjustments, periods, report])
 
-  const visibleRows = rows.filter((row) => {
-    if (view !== 'all' && row.section !== view) return false
-    return row.rowKind !== 'detail' || !collapsedGroups.has(row.group)
-  })
+  const visibleRows = rows.filter((row) => row.rowKind !== 'detail' || !collapsedGroups.has(row.group))
 
   function toggleGroup(group: BaseGroup) {
     setCollapsedGroups((current) => {
@@ -169,12 +164,6 @@ export function CalculationBaseGrid({
       return next
     })
   }
-
-  const viewSwitch = <div className="calculation-view-switch" role="group" aria-label="计算底表视图">
-    <button className={view === 'all' ? 'active' : ''} onClick={() => setView('all')}>全部底表</button>
-    <button className={view === 'profit' ? 'active' : ''} onClick={() => setView('profit')}>损益视图</button>
-    <button className={view === 'cash' ? 'active' : ''} onClick={() => setView('cash')}>现金流视图</button>
-  </div>
 
   return <section className="calculation-base-stage">
     <FinancialGrid
@@ -199,7 +188,7 @@ export function CalculationBaseGrid({
       onChange={onChange}
       onClearOverride={onClearOverride}
       toolbarPlacement="top"
-      toolbarLeading={viewSwitch}
+      toolbarLeading={<span className="calculation-adjustment-note">可直接覆盖基础指标数据；保存调整后，作为最终报表和报告数据。</span>}
       toolbarMeta={`${visibleRows.length} 行`}
     />
   </section>

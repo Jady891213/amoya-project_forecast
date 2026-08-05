@@ -37,11 +37,11 @@ import type {
 } from '../../shared/domain/types'
 import type { AppSnapshot } from '../state/types'
 import { ApiClient, SemanticApiError } from '../api/client'
-import { countPeriods, generatePeriodRange, generatePeriods } from '../domain/periods'
+import { countPeriods, generatePeriodRange, generatePeriods } from '../../shared/domain/periods'
 import { FinancialGrid, type FinancialGridChange, type FinancialGridRow } from '../components/FinancialGrid'
 import { CalculationBaseGrid } from '../components/CalculationBaseGrid'
 import { PageBreadcrumbs } from '../components/PageBreadcrumbs'
-import { formatPercent, formatWan } from '../ui/formatters'
+import { formatPercent } from '../ui/formatters'
 import { useAppDialog } from '../ui/AppDialog'
 import { AiAnalysisMaterialModal } from '../ui/AiAnalysisMaterialModal'
 import {
@@ -52,12 +52,20 @@ import {
   type ForecastScheme,
 } from '../ui/ForecastSchemeFields'
 import { previewForecastDraft } from '../../shared/calculation/previewForecastDraft'
+import {
+  buildReportDisplay,
+  formatReportAmount,
+  reportUnitLabel,
+  type ReportDisplayUnit,
+  type ReportTaxBasis,
+} from '../../shared/reporting/reportDisplay'
 import guideProjectConfig from '../assets/guide/01_project_config.png'
 import guideProjectInfo from '../assets/guide/02_project_info.png'
 import guideForecastRule from '../assets/guide/03_forecast_rule.png'
 import guideSaveCalculate from '../assets/guide/04_save_calculate.png'
 import guideAdjustmentReport from '../assets/guide/05_adjustment_report.png'
 import guideReportExport from '../assets/guide/06_report_export.png'
+import guideAiAnalysisMaterial from '../assets/guide/07_ai_analysis_material.png'
 
 type WorkspaceView = 'config' | 'calculation' | 'report'
 interface Props {
@@ -741,6 +749,7 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
       </div>
       <div className="workspace-head-actions">
         <button className="btn" onClick={() => setGuideOpen(true)}>操作指引</button>
+        <span className="workspace-guide-separator" aria-hidden="true" />
         <span className={`workspace-save-state ${dirty || adjustmentsDirty ? 'dirty' : ''}`}>{view === 'calculation' && adjustmentsDirty ? '调整未保存' : statusText}</span>
         {view === 'config' && <><button className="btn" disabled={busy || !dirty} onClick={() => void saveFromToolbar()}><Save size={14} />保存</button><button className="btn primary" disabled={busy} onClick={() => void calculate()}><Calculator size={14} />计算</button></>}
         {view === 'calculation' && <button className="btn primary" disabled={busy || !adjustmentsDirty} onClick={() => void saveAdjustments()}><Save size={14} />保存调整</button>}
@@ -896,7 +905,6 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
 
     {view === 'calculation' && <div className="workspace-view calculation-sheet-view">
       {!report?.hasFacts ? <div className="empty-report-card"><h2>当前项目尚无成功计算结果</h2><p>请先在项目配置中维护预测行并点击“计算”。</p></div> : <>
-        <div className="calculation-sheet-head"><div><h2>项目计算底稿</h2><p>原始预测结果与人工调整分层保存；调整只影响最终事实和派生指标。</p></div></div>
         {adjustmentsDirty && <div className="page-alert">人工调整尚未保存；保存后会立即更新汇总和报告，无需重新计算。</div>}
         <CalculationBaseGrid report={report} adjustments={adjustments} onChange={editCalculation} onClearOverride={(rowId, period) => { setAdjustments((current) => current.filter((item) => !(item.forecastLineId === rowId && item.period === period))); setAdjustmentsDirty(true); onDirtyChange(true) }} />
       </>}
@@ -904,7 +912,7 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
 
     {view === 'report' && <ProjectReportView
       report={report}
-      onExport={() => void api.exportReport(projectId, workspace.currentPlan.planId).catch((reason) => setMessage(reason instanceof Error ? reason.message : 'Excel 导出失败'))}
+      onExport={(taxBasis, displayUnit) => void api.exportReport(projectId, workspace.currentPlan.planId, taxBasis, displayUnit).catch((reason) => setMessage(reason instanceof Error ? reason.message : 'Excel 导出失败'))}
       onOpenAi={() => setAiMaterialOpen(true)}
     />}
     {guideOpen && <ProjectGuideModal onClose={() => setGuideOpen(false)} />}
@@ -1038,13 +1046,29 @@ function BusinessParameterSection({ project, parameters, selectedId, periods, li
   </section>
 }
 
-function ProjectReportView({ report, onExport, onOpenAi }: { report?: ProjectReportDto; onExport: () => void; onOpenAi: () => void }) {
-  const toolbar = <div className="formal-report-toolbar no-print"><div><b>项目测算分析报告</b><span>不含税口径 · 金额单位：万元</span></div><span className="spacer" />{report?.isBehindDraft && <span className="report-stale-tag">配置已变更，当前为最近成功结果</span>}<div className="report-toolbar-actions"><button className="btn" disabled={!report?.hasFacts} onClick={onExport}><Download size={14} />导出 Excel</button><button className="btn" disabled={!report?.hasFacts} onClick={() => window.print()}><Printer size={14} />打印 / PDF</button><button className="btn ai-material-button" onClick={onOpenAi}><Sparkles size={14} />AI 分析素材</button></div></div>
+function ProjectReportView({ report, onExport, onOpenAi }: { report?: ProjectReportDto; onExport: (taxBasis: ReportTaxBasis, displayUnit: ReportDisplayUnit) => void; onOpenAi: () => void }) {
+  const [taxBasis, setTaxBasis] = useState<ReportTaxBasis>('tax_exclusive')
+  const [displayUnit, setDisplayUnit] = useState<ReportDisplayUnit>('wan')
+  const display = useMemo(() => report ? buildReportDisplay(report, taxBasis, displayUnit) : undefined, [report, taxBasis, displayUnit])
+  const unitLabel = reportUnitLabel(displayUnit)
+  const amountText = (value: string) => formatReportAmount(value, displayUnit)
+  const toolbar = <div className="formal-report-toolbar no-print">
+    <div className="report-toolbar-title"><b>项目测算分析报告</b></div>
+    <div className="report-view-controls">
+      <span>结果口径</span><div className="report-toggle-group"><button className={taxBasis === 'tax_inclusive' ? 'active' : ''} onClick={() => setTaxBasis('tax_inclusive')}>含税</button><button className={taxBasis === 'tax_exclusive' ? 'active' : ''} onClick={() => setTaxBasis('tax_exclusive')}>不含税</button></div>
+      <span>展示单位</span><div className="report-toggle-group"><button className={displayUnit === 'yuan' ? 'active' : ''} onClick={() => setDisplayUnit('yuan')}>元</button><button className={displayUnit === 'wan' ? 'active' : ''} onClick={() => setDisplayUnit('wan')}>万元</button></div>
+    </div>
+    <span className="spacer" />{report?.isBehindDraft && <span className="report-stale-tag">配置已变更，当前为最近成功结果</span>}<div className="report-toolbar-actions"><button className="btn" disabled={!report?.hasFacts} onClick={() => onExport(taxBasis, displayUnit)}><Download size={14} />导出 Excel</button><button className="btn" disabled={!report?.hasFacts} onClick={() => window.print()}><Printer size={14} />打印 / PDF</button><button className="btn ai-material-button" onClick={onOpenAi}><Sparkles size={14} />AI 分析素材</button></div>
+  </div>
   if (!report?.hasFacts) return <div className="workspace-view formal-report">{toolbar}<div className="empty-report-card"><h2>当前项目尚无报告结果</h2><p>请先保存配置并完成一次计算；AI 分析提示词仍可预览。</p></div></div>
   const { presentation } = report
+  if (!display) return null
   const numberText = (value: string, digits = 2) => Number(value).toLocaleString('zh-CN', { minimumFractionDigits: digits, maximumFractionDigits: digits })
   const shareText = (value: string | null) => value === null ? '—' : `${new Decimal(value).times(100).toFixed(2)}%`
-  const largestAnnual = Math.max(1, ...presentation.annualResults.flatMap((item) => [Math.abs(Number(item.revenue)), Math.abs(Number(item.cost))]))
+  const riskNotes = report.riskNotes.map((item) => item.startsWith('预测期内最大垫资')
+    ? `预测期内最大垫资为 ${amountText(report.summary.maximumFunding)} ${unitLabel}。`
+    : item)
+  const largestAnnual = Math.max(1, ...display.annualResults.flatMap((item) => [Math.abs(Number(item.revenue)), Math.abs(Number(item.cost))]))
   const assumptionConfig = (item: ProjectReportDto['presentation']['lineResults'][number]) => {
     if (item.priceOrRatio && item.method === '按收入比例') return `${item.priceOrRatio}% · ${item.months ?? 0} 个月`
     if (item.priceOrRatio && item.quantity) return `${item.priceOrRatio} × ${Number(item.quantity).toLocaleString('zh-CN')} · ${item.months ?? 0} 个月`
@@ -1053,50 +1077,51 @@ function ProjectReportView({ report, onExport, onOpenAi }: { report?: ProjectRep
   }
   return <div className="workspace-view formal-report">
     {toolbar}
-    <section className="report-cover v31-report-cover"><div><span>PROJECT FORECAST REPORT</span><h1>{report.project.name}</h1><p>{report.project.code || '无项目编码'} · {report.department?.name || '未指定申报部门'}</p></div><dl><div><dt>项目周期</dt><dd>{report.plan.startPeriod} 至 {report.operationEndPeriod}</dd></div><div><dt>测算方案</dt><dd>{report.plan.name}</dd></div><div><dt>结果口径</dt><dd>不含税 · 万元</dd></div></dl></section>
+    <section className="report-cover v31-report-cover"><div><span>PROJECT FORECAST REPORT</span><h1>{report.project.name}</h1><p>{report.project.code || '无项目编码'} · {report.department?.name || '未指定申报部门'}</p></div><dl><div><dt>项目周期</dt><dd>{report.plan.startPeriod} 至 {report.operationEndPeriod}</dd></div><div><dt>测算方案</dt><dd>{report.plan.name}</dd></div><div><dt>结果口径</dt><dd>{display.basisLabel} · {unitLabel}</dd></div></dl></section>
 
     <section className="v31-kpi-grid" aria-label="核心指标">
-      <article className="revenue"><span className="v31-kpi-icon"><CircleDollarSign size={17} /></span><div><span>收入</span><strong>{formatWan(report.summary.revenue)} <small>万元</small></strong><p>项目不含税收入</p></div></article>
-      <article className="cost"><span className="v31-kpi-icon"><WalletCards size={17} /></span><div><span>成本</span><strong>{formatWan(report.summary.cost)} <small>万元</small></strong><p>项目不含税成本</p></div></article>
-      <article className="profit"><span className="v31-kpi-icon"><ChartNoAxesCombined size={17} /></span><div><span>利润</span><strong>{formatWan(report.summary.grossProfit)} <small>万元</small></strong><p>收入减成本</p></div></article>
-      <article className="margin"><span className="v31-kpi-icon"><BadgePercent size={17} /></span><div><span>利润率</span><strong>{formatPercent(report.summary.grossMargin)}</strong><p>利润除以收入</p></div></article>
-      <article className="roi"><span className="v31-kpi-icon"><ChartNoAxesCombined size={17} /></span><div><span>ROI</span><strong>{formatPercent(presentation.roi)}</strong><p>利润除以成本</p></div></article>
+      <article className="revenue"><span className="v31-kpi-icon"><CircleDollarSign size={17} /></span><div><span>收入</span><strong>{amountText(display.summary.revenue)} <small>{unitLabel}</small></strong><p>项目{display.basisLabel}收入</p></div></article>
+      <article className="cost"><span className="v31-kpi-icon"><WalletCards size={17} /></span><div><span>成本</span><strong>{amountText(display.summary.cost)} <small>{unitLabel}</small></strong><p>项目{display.basisLabel}成本</p></div></article>
+      <article className="profit"><span className="v31-kpi-icon"><ChartNoAxesCombined size={17} /></span><div><span>利润</span><strong>{amountText(display.summary.grossProfit)} <small>{unitLabel}</small></strong><p>收入减成本</p></div></article>
+      <article className="margin"><span className="v31-kpi-icon"><BadgePercent size={17} /></span><div><span>利润率</span><strong>{formatPercent(display.summary.grossMargin)}</strong><p>利润除以收入</p></div></article>
+      <article className="roi"><span className="v31-kpi-icon"><ChartNoAxesCombined size={17} /></span><div><span>ROI</span><strong>{formatPercent(display.summary.roi)}</strong><p>利润除以成本</p></div></article>
     </section>
 
-    {presentation.unitEconomics && <section className="report-section v31-report-section unit-economics-section"><header><div><h2><Users size={16} />单用户单月经营指标</h2><p>按总额除以“{presentation.unitEconomics.basisName}”的各月合计计算</p></div></header><div className="unit-economics-grid"><article><span>单用户单月收入</span><b>{numberText(presentation.unitEconomics.revenuePerUnitPeriod)} 元</b></article><article><span>单用户单月成本</span><b>{numberText(presentation.unitEconomics.costPerUnitPeriod)} 元</b></article><article><span>单用户单月利润</span><b>{numberText(presentation.unitEconomics.profitPerUnitPeriod)} 元</b></article></div></section>}
+    {display.unitEconomics && <section className="report-section v31-report-section unit-economics-section"><header><div><h2><Users size={16} />单用户单月经营指标</h2><p>按总额除以“{display.unitEconomics.basisName}”的各月合计计算</p></div></header><div className="unit-economics-grid"><article><span>单用户单月收入</span><b>{numberText(display.unitEconomics.revenuePerUnitPeriod)} 元</b></article><article><span>单用户单月成本</span><b>{numberText(display.unitEconomics.costPerUnitPeriod)} 元</b></article><article><span>单用户单月利润</span><b>{numberText(display.unitEconomics.profitPerUnitPeriod)} 元</b></article></div></section>}
 
     <section className="report-section v31-report-section"><header><div><h2>测算假设</h2><p>关键参数、测算方式与税口径，供审阅复核</p></div></header>
       {presentation.parameterResults.length > 0 && <div className="report-assumption-chips">{presentation.parameterResults.map((item) => <article key={item.code}><span>{item.name}</span><b>{item.inputMode === '全期固定' ? `${item.monthly[0]?.value ?? '—'} ${item.unit}` : `${item.monthly.filter((value) => value.value !== null).length} 个月已填`}</b><small>{item.code} · {item.inputMode}</small></article>)}</div>}
-      <div className="report-assumption-table-wrap"><table className="report-assumption-table"><thead><tr><th>类型</th><th>测算项</th><th>测算方式</th><th>主要配置</th><th>税率</th><th>不含税合计</th></tr></thead><tbody>{presentation.lineResults.filter((item) => item.category === 'revenue' || item.category === 'cost').map((item) => <tr key={item.lineId}><td><span className={`report-line-type ${item.category}`}>{item.category === 'revenue' ? '收入' : '成本'}</span></td><td><b>{item.name}</b><small>{item.code}</small></td><td>{item.method}</td><td title={item.methodDescription}>{assumptionConfig(item)}</td><td>{new Decimal(item.taxRate).times(100).toFixed(2)}%</td><td>{formatWan(item.netTotal)}</td></tr>)}</tbody></table></div>
+      <div className="report-assumption-table-wrap"><table className="report-assumption-table"><thead><tr><th>类型</th><th>测算项</th><th>测算方式</th><th>主要配置</th><th>税率</th><th>{display.basisLabel}合计（{unitLabel}）</th></tr></thead><tbody>{display.lineResults.filter((item) => item.category === 'revenue' || item.category === 'cost').map((item) => <tr key={item.lineId}><td><span className={`report-line-type ${item.category}`}>{item.category === 'revenue' ? '收入' : '成本'}</span></td><td><b>{item.name}</b><small>{item.code}</small></td><td>{item.method}</td><td title={item.methodDescription}>{assumptionConfig(item)}</td><td>{new Decimal(item.taxRate).times(100).toFixed(2)}%</td><td>{amountText(item.displayTotal)}</td></tr>)}</tbody></table></div>
     </section>
 
     <div className="report-composition-grid">
-      <section className="report-section v31-report-section"><header><div><h2>收入结构</h2><p>各项收入占收入合计的比重</p></div></header><div className="v31-bar-list">{presentation.revenueComposition.map((item) => <article key={item.code}><div><b>{item.name}</b><span>{formatWan(item.amount)} 万元 · {shareText(item.share)}</span></div><div className="v31-bar-track"><i className="income" style={{ width: `${Math.max(0, Number(item.share ?? 0) * 100)}%` }} /></div><small>{item.description}</small></article>)}</div></section>
-      <section className="report-section v31-report-section"><header><div><h2>成本结构</h2><p>按成本项展示金额、占比与测算来源</p></div></header><div className="v31-bar-list">{presentation.costComposition.map((item) => <article key={item.code}><div><b>{item.name}</b><span>{formatWan(item.amount)} 万元 · {shareText(item.share)}</span></div><div className="v31-bar-track"><i className="cost" style={{ width: `${Math.max(0, Number(item.share ?? 0) * 100)}%` }} /></div><small>{item.description}</small></article>)}</div></section>
+      <section className="report-section v31-report-section"><header><div><h2>收入结构</h2><p>各项收入占收入合计的比重</p></div></header><div className="v31-bar-list">{display.revenueComposition.map((item) => <article key={item.code}><div><b>{item.name}</b><span>{amountText(item.amount)} {unitLabel} · {shareText(item.share)}</span></div><div className="v31-bar-track"><i className="income" style={{ width: `${Math.max(0, Number(item.share ?? 0) * 100)}%` }} /></div><small>{item.description}</small></article>)}</div></section>
+      <section className="report-section v31-report-section"><header><div><h2>成本结构</h2><p>按成本项展示金额、占比与测算来源</p></div></header><div className="v31-bar-list">{display.costComposition.map((item) => <article key={item.code}><div><b>{item.name}</b><span>{amountText(item.amount)} {unitLabel} · {shareText(item.share)}</span></div><div className="v31-bar-track"><i className="cost" style={{ width: `${Math.max(0, Number(item.share ?? 0) * 100)}%` }} /></div><small>{item.description}</small></article>)}</div></section>
     </div>
 
-    <section className="report-section v31-report-section"><header><div><h2>年度收入、成本和利润分布</h2><p>按自然年汇总当前方案的损益结果</p></div></header><div className="annual-report-list">{presentation.annualResults.map((item) => <article key={item.year}><b>{item.year}<small>年</small></b><div><p><span>收入</span><i className="income" style={{ width: `${Math.abs(Number(item.revenue)) / largestAnnual * 100}%` }} /><em>{formatWan(item.revenue)} 万元</em></p><p><span>成本</span><i className="cost" style={{ width: `${Math.abs(Number(item.cost)) / largestAnnual * 100}%` }} /><em>{formatWan(item.cost)} 万元</em></p></div><aside><strong>{formatWan(item.grossProfit)} 万元</strong><span>利润率 {formatPercent(item.grossMargin)}</span></aside></article>)}</div></section>
+    <section className="report-section v31-report-section"><header><div><h2>年度收入、成本和利润分布</h2><p>按自然年汇总当前方案的{display.basisLabel}损益结果</p></div></header><div className="annual-report-list">{display.annualResults.map((item) => <article key={item.year}><b>{item.year}<small>年</small></b><div><p><span>收入</span><i className="income" style={{ width: `${Math.abs(Number(item.revenue)) / largestAnnual * 100}%` }} /><em>{amountText(item.revenue)} {unitLabel}</em></p><p><span>成本</span><i className="cost" style={{ width: `${Math.abs(Number(item.cost)) / largestAnnual * 100}%` }} /><em>{amountText(item.cost)} {unitLabel}</em></p></div><aside><strong>{amountText(item.grossProfit)} {unitLabel}</strong><span>利润率 {formatPercent(item.grossMargin)}</span></aside></article>)}</div></section>
 
-    <section className={`report-verdict ${Number(report.summary.grossProfit) < 0 ? 'risk' : 'good'}`}><span>{Number(report.summary.grossProfit) < 0 ? '!' : '✓'}</span><div><h2>{presentation.conclusionTitle}</h2><p>{presentation.conclusionDescription}</p>{report.riskNotes.map((item) => <small key={item}>提示：{item}</small>)}</div></section>
-    <section className="report-section v31-report-section report-source-note"><header><div><h2>口径与数据来源</h2></div></header><p>本报告读取当前方案最后一次成功计算形成的最终事实；损益统一使用不含税口径，金额默认按万元展示。人工底稿调整已计入最终事实，但不会反向改变预测项公式或自动收付款计划。</p></section>
+    <section className={`report-verdict ${Number(display.summary.grossProfit) < 0 ? 'risk' : 'good'}`}><span>{Number(display.summary.grossProfit) < 0 ? '!' : '✓'}</span><div><h2>{display.conclusionTitle}</h2><p>{display.conclusionDescription}</p>{riskNotes.map((item) => <small key={item}>提示：{item}</small>)}</div></section>
+    <section className="report-section v31-report-section report-source-note"><header><div><h2>口径与数据来源</h2></div></header><p>本报告读取当前方案最后一次成功计算形成的最终事实；当前按{display.basisLabel}口径、{unitLabel}展示。人工底稿调整已计入最终事实，但不会反向改变预测项公式或自动收付款计划。</p></section>
   </div>
 }
 
 function ProjectGuideModal({ onClose }: { onClose: () => void }) {
   const [step, setStep] = useState(0)
   const steps = [
-    { title: '选择测算方案', copy: '在工作区上方切换方案，也可以新建空白方案或复制当前方案。', image: guideProjectConfig },
-    { title: '维护项目信息', copy: '编辑项目名称、申报部门和方案的起止期间，再维护业务参数。', image: guideProjectInfo },
-    { title: '设置测算规则', copy: '选择预测项后，在右侧配置测算方式、税口径和收付款规则，左侧会实时预览。', image: guideForecastRule },
-    { title: '保存并计算', copy: '先保存项目配置，再点击计算，生成当前方案最新的原始计算底稿。', image: guideSaveCalculate },
-    { title: '调整与查看结果', copy: '在计算底稿中调整叶子单元格并保存调整，报告和项目报表会立即更新。', image: guideAdjustmentReport },
-    { title: '查看与下载报告', copy: '进入“项目报告”查看当前方案的完整测算结果，点击“导出 Excel”下载测算报告，也可打印为 PDF。', image: guideReportExport },
+    { title: '选择测算方案', copy: '先选择要维护的测算方案。每个方案拥有独立的期间、参数、预测项和结果；也可以在方案管理中新增、复制、重命名或归档方案。', image: guideProjectConfig, focus: { left: 13.2, top: 6.2, width: 26, height: 5.8 } },
+    { title: '维护项目信息', copy: '点击编辑，维护项目名称、申报部门以及当前方案的开始和结束期间。项目编码由系统生成，不需要手工填写。', image: guideProjectInfo, focus: { left: 13.7, top: 12.5, width: 85.8, height: 14.5 } },
+    { title: '设置参数与测算规则', copy: '在行项目表中新增参数、收入、成本或其他现金事项。选中预测项后，在右侧配置测算方式、税口径和收付款规则，左侧分月表会实时预览。', image: guideForecastRule, focus: { left: 70.4, top: 11.2, width: 29, height: 87.8 } },
+    { title: '保存并计算', copy: '“保存”只保存项目和预测配置；“计算”会在需要时先保存，再生成当前方案最新的计算底稿和报告结果。', image: guideSaveCalculate, focus: { left: 74.9, top: 1.1, width: 24.3, height: 5.2 } },
+    { title: '复核并调整底稿', copy: '计算底稿展示最终采用的分月基础数据。黄色叶子单元格可直接修改或从 Excel 粘贴；保存调整后，项目报告和跨项目报表立即更新，不需要再次计算。', image: guideAdjustmentReport, focus: { left: 35.3, top: 28.3, width: 58.2, height: 6.2 } },
+    { title: '查看与下载报告', copy: '进入“项目报告”查看核心指标、结构和年度趋势。报告可切换含税或不含税、元或万元，并按当前视图导出 Excel 或打印为 PDF。', image: guideReportExport, focus: { left: 46.9, top: 13.2, width: 23.2, height: 4.8 } },
+    { title: '准备 AI 分析素材', copy: '点击“AI 分析素材”查看并复制固定提示词，下载仅隐藏身份信息的脱敏 Excel，再交给可信的 AI 服务分析。财务金额仍为真实数据，请注意发送范围。', image: guideAiAnalysisMaterial, focus: { left: 16.4, top: 26.9, width: 67.2, height: 55.2 } },
   ]
   const current = steps[step]
   return <div className="modal-backdrop guide-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
     <section className="modal-card project-guide-modal" role="dialog" aria-modal="true" aria-label="项目操作指引">
       <header className="modal-header"><div><h2>项目操作指引</h2><p>{step + 1} / {steps.length}</p></div><button className="icon-button" aria-label="关闭操作指引" onClick={onClose}><X size={16} /></button></header>
-      <div className="project-guide-content"><div className={`guide-illustration guide-step-${step + 1}`}><img src={current.image} alt={`${current.title}页面示例`} /><span>{step + 1}</span></div><div className="guide-copy"><span>第 {step + 1} 步</span><h3>{current.title}</h3><p>{current.copy}</p></div></div>
+      <div className="project-guide-content"><div className="guide-illustration"><img src={current.image} alt={`${current.title}页面示例`} /><span className="guide-focus-box" style={{ left: `${current.focus.left}%`, top: `${current.focus.top}%`, width: `${current.focus.width}%`, height: `${current.focus.height}%` }}><b>{step + 1}</b></span></div><div className="guide-copy"><span>第 {step + 1} 步</span><h3>{current.title}</h3><p>{current.copy}</p></div></div>
       <footer className="modal-actions"><button className="btn" disabled={step === 0} onClick={() => setStep((value) => value - 1)}>上一步</button><span className="guide-progress">{steps.map((_, index) => <i key={index} className={index === step ? 'active' : ''} />)}</span>{step < steps.length - 1 ? <button className="btn primary" onClick={() => setStep((value) => value + 1)}>下一步</button> : <button className="btn primary" onClick={onClose}>完成</button>}</footer>
     </section>
   </div>

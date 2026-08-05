@@ -1,5 +1,5 @@
 import Decimal from 'decimal.js'
-import { formatPeriod } from '../domain/periods'
+import { formatPeriod } from '../../shared/domain/periods'
 
 const numberFormatter = new Intl.NumberFormat('zh-CN', {
   minimumFractionDigits: 2,
@@ -32,4 +32,3 @@ export function formatDateTime(value: string): string {
     hour12: false,
   }).format(new Date(value))
 }
-
