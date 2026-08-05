@@ -596,7 +596,8 @@ code { color: #3e5aa1; font-family: ui-monospace, SFMono-Regular, Menlo, monospa
 .workspace-tab.disabled { color: #a5adba; }
 .workspace-tab small { margin-left: 4px; color: #9ba4b3; font-size: 12px; }
 .workspace-head-actions { margin-left: auto; display: flex; gap: 7px; }
-.workspace-guide-separator { width: 1px; height: 20px; margin: 0 2px; flex: 0 0 1px; background: #dce2ec; }
+.workspace-guide-link { flex: 0 0 auto; height: 28px; display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; color: #7b8799; background: transparent; font-size: 12px; white-space: nowrap; }
+.workspace-guide-link:hover { color: var(--brand); text-decoration: underline; text-underline-offset: 3px; }
 .workspace-view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .report-toolbar {
   height: 48px;
@@ -3196,6 +3197,12 @@ textarea:focus {
 .calculation-note.stale-note { border-color: #f1d59f; color: #a36a08; background: #fff8e8; }
 .workspace-message { color: #315bc5; background: #f3f7ff; border-bottom-color: #dce5ff; }
 .project-plan-bar { position: relative; display: flex; min-height: 38px; align-items: center; gap: 10px; padding: 4px 12px; border-bottom: 1px solid var(--line); background: #fff; white-space: nowrap; }
+.workspace-plan-tools { min-width: 0; margin-left: auto; display: flex; align-items: center; justify-content: flex-end; gap: 7px; white-space: nowrap; }
+.workspace-plan-tools > .btn { height: 30px; }
+.project-inline-heading .page-breadcrumbs { flex: 1; min-width: 0; width: auto; }
+.project-workspace-nav { min-height: 42px; height: 42px; padding-top: 0; padding-bottom: 0; display: flex; gap: 0; }
+.project-workspace-nav .workspace-tabs { height: 100%; margin-left: 0; }
+.project-workspace-nav .workspace-head-actions { margin-left: auto; padding-left: 12px; align-self: center; }
 .project-plan-label { flex: 0 0 auto; color: #667085; font-weight: 700; }
 .project-plan-select-wrap { position: relative; flex: 0 0 auto; }
 .project-plan-select-wrap > select { width: 196px; height: 30px; padding: 0 30px 0 9px; border: 1px solid #cfd7e6; border-radius: 7px; color: #344054; background: #fff; font-weight: 650; }
@@ -3302,6 +3309,7 @@ textarea:focus {
   body { color: #111; background: #fff; }
   .semantic-app .global-nav,
   .unified-workspace-head,
+  .project-workspace-nav,
   .workspace-message,
   .no-print { display: none !important; }
   .semantic-app,

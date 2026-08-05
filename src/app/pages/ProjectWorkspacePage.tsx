@@ -12,6 +12,7 @@ import {
   BadgePercent,
   ChartNoAxesCombined,
   CircleDollarSign,
+  CircleHelp,
   Pencil,
   Plus,
   Printer,
@@ -744,44 +745,31 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
     <div className="workspace-head unified-workspace-head">
       <div className="workspace-heading project-inline-heading">
         <PageBreadcrumbs back={{ label: '返回', onClick: () => onNavigate('/projects') }} items={[{ label: projectDraft.name }]} />
+        <button className="workspace-guide-link" onClick={() => setGuideOpen(true)}><CircleHelp size={14} />指引</button>
       </div>
-      <div className="workspace-tabs">
-        <button className={view === 'config' ? 'workspace-tab active' : 'workspace-tab'} onClick={() => onNavigate(planPath('config'))}><Calculator size={14} />项目配置</button>
-        <button className={view === 'calculation' ? 'workspace-tab active' : 'workspace-tab'} onClick={() => onNavigate(planPath('calculation'))}><TableProperties size={14} />计算底稿</button>
-        <button className={view === 'report' ? 'workspace-tab active' : 'workspace-tab'} onClick={() => onNavigate(planPath('report'))}><FileChartColumn size={14} />项目报告</button>
-      </div>
-      <div className="workspace-head-actions">
-        <button className="btn" onClick={() => setGuideOpen(true)}>操作指引</button>
-        <span className="workspace-guide-separator" aria-hidden="true" />
-        <span className={`workspace-save-state ${dirty || adjustmentsDirty ? 'dirty' : ''}`}>{view === 'calculation' && adjustmentsDirty ? '调整未保存' : statusText}</span>
-        {view === 'config' && <><button className="btn" disabled={busy || !dirty} onClick={() => void saveFromToolbar()}><Save size={14} />保存</button><button className="btn primary" disabled={busy} onClick={() => void calculate()}><Calculator size={14} />计算</button></>}
-        {view === 'calculation' && <button className="btn primary" disabled={busy || !adjustmentsDirty} onClick={() => void saveAdjustments()}><Save size={14} />保存调整</button>}
-      </div>
-    </div>
-    <div className="project-plan-bar">
-      <span className="project-plan-label">测算方案</span>
-      <div className="project-plan-select-wrap" ref={createPlanMenuRef}>
-        <select aria-label="切换测算方案" value={currentPlanId} onChange={(event) => {
-          const targetPlanId = event.target.value
-          if (targetPlanId === '__create__') {
-            setVersionMemberId(`方案 ${workspace.projectPlans.length + 1}`)
-            setVersionMenuOpen(true)
-            return
-          }
-          if (targetPlanId === currentPlanId) return
-          setVersionMenuOpen(false)
-          onNavigate(planPath(view, targetPlanId))
-        }}>
-          {workspace.projectPlans.filter((item) => item.status === 'active').map((item) => <option key={item.planId} value={item.planId}>{item.name}</option>)}
-          <option value="__create__">＋ 新建方案</option>
-        </select>
-        {versionMenuOpen && <div className="project-plan-popover">
-          <label>方案名称<input autoFocus value={versionMemberId} onChange={(event) => setVersionMemberId(event.target.value)} /></label>
-          <p>选择创建方式</p>
-          <div><button className="btn" onClick={() => setVersionMenuOpen(false)}>取消</button><button className="btn" disabled={busy || !versionMemberId.trim()} onClick={() => void createVersion(false)}>空白方案</button><button className="btn primary" disabled={busy || !versionMemberId.trim()} onClick={() => void createVersion(true)}><Copy size={13} />复制当前</button></div>
-        </div>}
-      </div>
-      <div className="project-plan-create">
+      <div className="workspace-plan-tools">
+        <span className="project-plan-label">测算方案</span>
+        <div className="project-plan-select-wrap" ref={createPlanMenuRef}>
+          <select aria-label="切换测算方案" value={currentPlanId} onChange={(event) => {
+            const targetPlanId = event.target.value
+            if (targetPlanId === '__create__') {
+              setVersionMemberId(`方案 ${workspace.projectPlans.length + 1}`)
+              setVersionMenuOpen(true)
+              return
+            }
+            if (targetPlanId === currentPlanId) return
+            setVersionMenuOpen(false)
+            onNavigate(planPath(view, targetPlanId))
+          }}>
+            {workspace.projectPlans.filter((item) => item.status === 'active').map((item) => <option key={item.planId} value={item.planId}>{item.name}</option>)}
+            <option value="__create__">＋ 新建方案</option>
+          </select>
+          {versionMenuOpen && <div className="project-plan-popover">
+            <label>方案名称<input autoFocus value={versionMemberId} onChange={(event) => setVersionMemberId(event.target.value)} /></label>
+            <p>选择创建方式</p>
+            <div><button className="btn" onClick={() => setVersionMenuOpen(false)}>取消</button><button className="btn" disabled={busy || !versionMemberId.trim()} onClick={() => void createVersion(false)}>空白方案</button><button className="btn primary" disabled={busy || !versionMemberId.trim()} onClick={() => void createVersion(true)}><Copy size={13} />复制当前</button></div>
+          </div>}
+        </div>
         <button className="btn" onClick={() => {
           setVersionMenuOpen(false)
           resetPlanNameDrafts(workspace.projectPlans)
@@ -790,7 +778,18 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
         }}><Settings size={14} />方案管理</button>
         <button className="btn" onClick={() => onNavigate(`/multidimensional?compareProjectId=${encodeURIComponent(projectId)}`)}><ChartNoAxesCombined size={14} />方案对比</button>
       </div>
-      <span className="project-plan-context">场景：基准场景</span>
+    </div>
+    <div className="project-plan-bar project-workspace-nav">
+      <div className="workspace-tabs">
+        <button className={view === 'config' ? 'workspace-tab active' : 'workspace-tab'} onClick={() => onNavigate(planPath('config'))}><Calculator size={14} />项目配置</button>
+        <button className={view === 'calculation' ? 'workspace-tab active' : 'workspace-tab'} onClick={() => onNavigate(planPath('calculation'))}><TableProperties size={14} />计算底稿</button>
+        <button className={view === 'report' ? 'workspace-tab active' : 'workspace-tab'} onClick={() => onNavigate(planPath('report'))}><FileChartColumn size={14} />项目报告</button>
+      </div>
+      <div className="workspace-head-actions">
+        <span className={`workspace-save-state ${dirty || adjustmentsDirty ? 'dirty' : ''}`}>{view === 'calculation' && adjustmentsDirty ? '调整未保存' : statusText}</span>
+        {view === 'config' && <><button className="btn" disabled={busy || !dirty} onClick={() => void saveFromToolbar()}><Save size={14} />保存</button><button className="btn primary" disabled={busy} onClick={() => void calculate()}><Calculator size={14} />计算</button></>}
+        {view === 'calculation' && <button className="btn primary" disabled={busy || !adjustmentsDirty} onClick={() => void saveAdjustments()}><Save size={14} />保存调整</button>}
+      </div>
     </div>
     {planManageOpen && <div className="modal-backdrop plan-management-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setPlanManageOpen(false) }}>
       <section className="modal-card plan-management-modal" role="dialog" aria-modal="true" aria-labelledby="plan-management-title" onMouseDown={(event) => event.stopPropagation()}>
@@ -1123,13 +1122,13 @@ function ProjectReportView({ report, onExport, onOpenAi }: { report?: ProjectRep
 function ProjectGuideModal({ onClose }: { onClose: () => void }) {
   const [step, setStep] = useState(0)
   const steps = [
-    { title: '选择测算方案', copy: '先选择要维护的测算方案。每个方案拥有独立的期间、参数、预测项和结果；也可以在方案管理中新增、复制、重命名或归档方案。', image: guideProjectConfig, focus: { left: 13.2, top: 6.2, width: 26, height: 5.8 } },
-    { title: '维护项目信息', copy: '点击编辑，维护项目名称、申报部门以及当前方案的开始和结束期间。项目编码由系统生成，不需要手工填写。', image: guideProjectInfo, focus: { left: 13.7, top: 12.5, width: 85.8, height: 14.5 } },
-    { title: '设置参数与测算规则', copy: '在行项目表中新增参数、收入、成本或其他现金事项。选中预测项后，在右侧配置测算方式、税口径和收付款规则，左侧分月表会实时预览。', image: guideForecastRule, focus: { left: 70.4, top: 11.2, width: 29, height: 87.8 } },
-    { title: '保存并计算', copy: '“保存”只保存项目和预测配置；“计算”会在需要时先保存，再生成当前方案最新的计算底稿和报告结果。', image: guideSaveCalculate, focus: { left: 74.9, top: 1.1, width: 24.3, height: 5.2 } },
-    { title: '复核并调整底稿', copy: '计算底稿展示最终采用的分月基础数据。黄色叶子单元格可直接修改或从 Excel 粘贴；保存调整后，项目报告和跨项目报表立即更新，不需要再次计算。', image: guideAdjustmentReport, focus: { left: 35.3, top: 28.3, width: 58.2, height: 6.2 } },
-    { title: '查看与下载报告', copy: '进入“项目报告”查看核心指标、结构和年度趋势。报告可切换含税或不含税、元或万元，并按当前视图导出 Excel 或打印为 PDF。', image: guideReportExport, focus: { left: 46.9, top: 13.2, width: 23.2, height: 4.8 } },
-    { title: '准备 AI 分析素材', copy: '点击“AI 分析素材”查看并复制固定提示词，下载仅隐藏身份信息的脱敏 Excel，再交给可信的 AI 服务分析。财务金额仍为真实数据，请注意发送范围。', image: guideAiAnalysisMaterial, focus: { left: 16.4, top: 26.9, width: 67.2, height: 55.2 } },
+    { title: '选择测算方案', copy: '先选择要维护的测算方案。每个方案拥有独立的期间、参数、预测项和结果；也可以在方案管理中新增、复制、重命名或归档方案。', image: guideProjectConfig, focus: { left: 67.7, top: 1, width: 31.9, height: 5 } },
+    { title: '维护项目信息', copy: '点击编辑，维护项目名称、申报部门以及当前方案的开始和结束期间。项目编码由系统生成，不需要手工填写。', image: guideProjectInfo, focus: { left: 13.5, top: 12.4, width: 86, height: 15 } },
+    { title: '设置参数与测算规则', copy: '在行项目表中新增参数、收入、成本或其他现金事项。选中预测项后，在右侧配置测算方式、税口径和收付款规则，左侧分月表会实时预览。', image: guideForecastRule, focus: { left: 70.4, top: 11.2, width: 29.2, height: 88.2 } },
+    { title: '保存并计算', copy: '“保存”只保存项目和预测配置；“计算”会在需要时先保存，再生成当前方案最新的计算底稿和报告结果。', image: guideSaveCalculate, focus: { left: 79.3, top: 6.9, width: 20.3, height: 5 } },
+    { title: '复核并调整底稿', copy: '计算底稿展示最终采用的分月基础数据。黄色叶子单元格可直接修改或从 Excel 粘贴；保存调整后，项目报告和跨项目报表立即更新，不需要再次计算。', image: guideAdjustmentReport, focus: { left: 35.3, top: 32.6, width: 58.3, height: 5.2 } },
+    { title: '查看与下载报告', copy: '进入“项目报告”查看核心指标、结构和年度趋势。报告可切换含税或不含税、元或万元，并按当前视图导出 Excel 或打印为 PDF。', image: guideReportExport, focus: { left: 73.3, top: 13.2, width: 23.3, height: 4.9 } },
+    { title: '准备 AI 分析素材', copy: '点击“AI 分析素材”查看并复制固定提示词，下载仅隐藏身份信息的脱敏 Excel，再交给可信的 AI 服务分析。财务金额仍为真实数据，请注意发送范围。', image: guideAiAnalysisMaterial, focus: { left: 15.6, top: 17.1, width: 68.9, height: 65.7 } },
   ]
   const current = steps[step]
   return <div className="modal-backdrop guide-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
