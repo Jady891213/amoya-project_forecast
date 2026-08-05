@@ -11,8 +11,8 @@
 双击根目录中与当前系统对应的文件：
 
 ```text
-启动项目测算.cmd       Windows
-启动项目测算.command   macOS
+启动项目测算_Windows.cmd       Windows
+启动项目测算_macOS.command     macOS
 ```
 
 浏览器会自动打开 `http://127.0.0.1:4173/projects`，页面数据实时保存到：
@@ -40,8 +40,8 @@ data/amoya_project_forecast.db
 amoya-project_forecast/
 ├── AGENTS.md                 WorkBuddy 唯一必读交接入口
 ├── README.md                 本说明
-├── 启动项目测算.cmd           Windows 启动
-├── 启动项目测算.command       macOS 启动
+├── 启动项目测算_Windows.cmd       Windows 启动
+├── 启动项目测算_macOS.command     macOS 启动
 ├── src/                      完整源码、服务、测试和依赖配置
 ├── data/                     SQLite 业务数据库
 ├── docs/                     精简后的当前文档和必要需求素材
@@ -56,9 +56,12 @@ amoya-project_forecast/
 cd src
 pnpm install
 pnpm start:local
+pnpm start:lan
 pnpm test
 pnpm build
 ```
+
+`start:lan` 是可选模式，用于让同一可信局域网中的其他设备临时访问；WorkBuddy 必须先征得使用者确认，未确认时使用 `start:local`。服务会同时打印本机地址和局域网地址，不要在公共网络或公网环境使用。
 
 ## 文档
 

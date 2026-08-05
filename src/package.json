@@ -8,7 +8,9 @@
     "dev:web": "vite",
     "build": "tsc -b && vite build",
     "serve:local": "tsx server/index.ts",
+    "serve:lan": "tsx server/index.ts --lan",
     "start:local": "pnpm build && pnpm serve:local",
+    "start:lan": "pnpm build && pnpm serve:lan",
     "test": "vitest run",
     "test:watch": "vitest"
   },

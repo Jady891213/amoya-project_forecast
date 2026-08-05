@@ -4,6 +4,7 @@ import { basename, dirname, extname, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
+import { networkInterfaces } from 'node:os'
 import { FileBackedSqliteClient } from './fileBackedSqliteClient'
 import { DATABASE_FILE_NAME } from '../shared/database'
 import { initializeSqliteDatabase } from '../app/storage/sqlite/initialize'
@@ -16,9 +17,18 @@ const staticRoot = resolve(workspaceRoot, 'dist')
 const databasePath = resolve(
   process.env.AMOYA_DB_PATH || resolve(workspaceRoot, `data/${DATABASE_FILE_NAME}`),
 )
-const host = '127.0.0.1'
 const port = Number(process.env.AMOYA_PORT || 4173)
-const baseUrl = `http://${host}:${port}`
+const lanMode = process.argv.includes('--lan')
+const host = lanMode ? '0.0.0.0' : '127.0.0.1'
+const baseUrl = `http://127.0.0.1:${port}`
+const lanUrls = lanMode
+  ? Object.entries(networkInterfaces()).flatMap(([name, items]) => (
+    /^(lo|utun|awdl|llw|bridge|anpi|ap|vmenet)/i.test(name)
+      ? []
+      : (items ?? []).filter((item) => item.family === 'IPv4' && !item.internal)
+  )).map((item) => `http://${item.address}:${port}`)
+  : []
+const trustedOrigins = new Set([baseUrl, ...lanUrls])
 const token = randomBytes(24).toString('hex')
 
 const contentTypes: Record<string, string> = {
@@ -46,7 +56,7 @@ function errorMessage(reason: unknown): string {
 function requestIsTrusted(request: IncomingMessage): boolean {
   if (request.headers['x-amoya-token'] !== token) return false
   const origin = request.headers.origin
-  if (origin && origin !== baseUrl) return false
+  if (origin && !trustedOrigins.has(origin)) return false
   const fetchSite = request.headers['sec-fetch-site']
   return !fetchSite || fetchSite === 'same-origin' || fetchSite === 'none'
 }
@@ -159,7 +169,9 @@ async function main() {
     process.exit(1)
   })
   server.listen(port, host, () => {
-    console.log(`项目测算服务：${baseUrl}`)
+    console.log(`本机访问地址：${baseUrl}`)
+    for (const url of lanUrls) console.log(`局域网访问地址：${url}`)
+    if (lanMode) console.log('局域网模式已开启，请只在可信网络中使用，结束后关闭服务。')
     console.log(`SQLite 数据库：${databasePath}`)
     openBrowser(baseUrl)
   })

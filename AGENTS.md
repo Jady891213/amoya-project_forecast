@@ -29,8 +29,8 @@ React 页面
 普通用户直接双击根目录：
 
 ```text
-启动项目测算.cmd       Windows
-启动项目测算.command   macOS
+启动项目测算_Windows.cmd       Windows
+启动项目测算_macOS.command     macOS
 ```
 
 开发或排查启动：
@@ -40,6 +40,14 @@ cd src
 pnpm install
 pnpm start:local
 ```
+
+局域网模式不是默认启动方式。需要让同一家庭或办公网络中的另一台设备临时访问时，WorkBuddy 必须先向用户确认“是否允许同一网络的其他设备访问项目数据”；只有得到明确同意后，才可以在 `src` 执行：
+
+```bash
+pnpm start:lan
+```
+
+该模式会同时打印本机地址和局域网地址。同一网络的设备用浏览器打开打印出的局域网地址即可。未获得确认时始终使用 `pnpm start:local` 或根目录启动文件。只允许在可信网络临时开启，使用结束后关闭服务；不要通过公网、端口映射或公共 Wi-Fi 暴露业务数据。
 
 `start:local` 会先构建到根目录 `dist/`，再启动服务并自动打开浏览器。
 
