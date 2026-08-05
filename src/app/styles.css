@@ -2326,12 +2326,18 @@ body {
 }
 
 .global-nav {
+  padding-top: 0;
   background: #f8f9fc;
   border-right-color: var(--line);
   box-shadow: 1px 0 4px rgba(31, 38, 55, .025);
 }
-.sidebar-header { border-bottom-color: var(--line); }
-.sidebar-brand { gap: 8px; }
+.sidebar-header {
+  height: 64px;
+  flex-basis: 64px;
+  margin-bottom: 2px;
+  border-bottom-color: var(--line);
+}
+.sidebar-brand { gap: 8px; padding: 2px 0; }
 .sidebar-brand .brand-mark,
 .loading-mark {
   border-radius: 8px;
@@ -2339,10 +2345,10 @@ body {
   box-shadow: 0 6px 14px rgba(47, 107, 255, .23);
 }
 .sidebar-brand .bestv-brand-mark {
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   padding: 0;
-  flex: 0 0 32px;
+  flex: 0 0 30px;
   color: #fff;
   border: 0;
   border-radius: 9px;
@@ -2350,13 +2356,13 @@ body {
   background: #e22424;
   box-shadow: 0 5px 13px rgba(226, 36, 36, .22);
 }
-.bestv-brand-mark img { display: block; width: 32px; height: 32px; }
+.bestv-brand-mark img { display: block; width: 30px; height: 30px; }
 .bestv-brand-mark:hover { background: #c91e1e; box-shadow: 0 6px 15px rgba(226, 36, 36, .28); }
 .sidebar-brand-copy b { color: var(--text); font-size: 13px; font-weight: 750; }
 .sidebar-brand-copy span { color: #98a2b3; font-size: 12px; }
 .sidebar-collapse { border-radius: 8px; }
 .sidebar-collapse:hover { color: var(--brand); background: var(--brand-soft); }
-.nav-collapsed .sidebar-header { height: 56px; flex-basis: 56px; flex-direction: row; }
+.nav-collapsed .sidebar-header { height: 64px; flex-basis: 64px; flex-direction: row; }
 .nav-collapsed .sidebar-brand { flex: 1; }
 .nav-title { color: #98a2b3; font-weight: 700; }
 .nav-item { border-radius: 9px; color: #596579; font-weight: 600; }
