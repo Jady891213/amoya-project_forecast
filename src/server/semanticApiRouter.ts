@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { DATABASE_FILE_NAME, type DatabaseClient } from '../shared/database'
-import type { ApiError, CreateProjectInput, CreateProjectPlanRequest, DepartmentInput, PivotRequest, SaveProjectWorkspaceRequest } from '../shared/domain/types'
+import type { ApiError, CreateProjectInput, CreateProjectPlanRequest, DepartmentInput, PivotExportRequest, PivotRequest, SaveProjectWorkspaceRequest } from '../shared/domain/types'
 import type { SavePlanAdjustmentsRequest } from '../shared/api'
 import { MetricRepository } from './repositories/metricRepository'
 import { ProjectRepository } from './repositories/projectRepository'
@@ -10,6 +10,7 @@ import { ProjectWorkspaceService } from './projectWorkspaceService'
 import { ReportWorkbookService } from './services/reportWorkbookService'
 import { AiAnalysisMaterialService } from './services/aiAnalysisMaterialService'
 import { PivotService } from './services/pivotService'
+import { PivotWorkbookService } from './services/pivotWorkbookService'
 import { initializeSqliteDatabase } from '../app/storage/sqlite/initialize'
 
 const MAX_JSON_BODY = 10 * 1024 * 1024
@@ -295,6 +296,22 @@ export class SemanticApiRouter {
       if (pathname === '/api/facts/pivot' && request.method === 'POST') {
         const payload = await readJson(request) as PivotRequest
         sendJson(response, 200, await new PivotService(this.database).build(payload))
+        return true
+      }
+      if (pathname === '/api/facts/pivot/export.xlsx' && request.method === 'POST') {
+        const payload = await readJson(request) as PivotExportRequest
+        if (!payload?.request || typeof payload.hideNoDataRows !== 'boolean') invalidRequest('项目报表下载条件不完整')
+        const pivot = new PivotService(this.database)
+        const [metadata, result] = await Promise.all([pivot.metadata(), pivot.build(payload.request)])
+        const bytes = await new PivotWorkbookService().build(metadata, result, payload)
+        const stamp = new Date().toISOString().slice(0, 16).replaceAll('-', '').replace('T', '_').replace(':', '')
+        const fileName = `项目报表_${stamp}.xlsx`
+        response.writeHead(200, {
+          'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+          'cache-control': 'no-store',
+        })
+        response.end(bytes)
         return true
       }
       if (pathname === '/api/facts/pivot/metadata' && request.method === 'GET') {

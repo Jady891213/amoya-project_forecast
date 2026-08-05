@@ -10,6 +10,7 @@ import type {
   PivotRequest,
   PivotResponse,
   PivotMetadata,
+  PivotExportRequest,
   CreateProjectInput,
   ProjectWorkspace,
   ProjectPlan,
@@ -172,6 +173,27 @@ export class ApiClient {
   }
 
   pivotMetadata(): Promise<PivotMetadata> { return this.request('/api/facts/pivot/metadata') }
+
+  async exportPivot(input: PivotExportRequest): Promise<void> {
+    const response = await fetch('/api/facts/pivot/export.xlsx', {
+      method: 'POST',
+      cache: 'no-store',
+      headers: { 'x-amoya-token': this.token, 'content-type': 'application/json' },
+      body: JSON.stringify(input),
+    })
+    if (!response.ok) {
+      const detail = await response.json() as ApiError
+      throw new Error(detail.message)
+    }
+    const disposition = response.headers.get('content-disposition') ?? ''
+    const encoded = /filename\*=UTF-8''([^;]+)/.exec(disposition)?.[1]
+    const blob = await response.blob()
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = encoded ? decodeURIComponent(encoded) : '项目报表.xlsx'
+    link.click()
+    URL.revokeObjectURL(link.href)
+  }
 
   report(projectId: string, planId?: string): Promise<ProjectReportDto> {
     const query = new URLSearchParams()

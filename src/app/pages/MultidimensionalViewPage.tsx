@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowLeftRight, BarChart3, GripVertical, PanelRightClose, PanelRightOpen, Search } from 'lucide-react'
+import { ArrowLeftRight, BarChart3, Download, GripVertical, PanelRightClose, PanelRightOpen, Search } from 'lucide-react'
 import type { PivotAxisDimension, PivotDimension, PivotMetadata, PivotPeriodLevel, PivotRequest, PivotResponse, PivotTuple } from '../../shared/domain/types'
 import type { ApiClient } from '../api/client'
 import { gridSelectionText, useGridSelection, type GridCellPosition } from '../components/useGridSelection'
 import type { AppSnapshot } from '../state/types'
+import { buildPivotHeaderRows, visiblePivotRows } from '../../shared/reporting/pivotLayout'
 
 const LABELS: Record<PivotDimension, string> = { project: '项目', plan: '方案', department: '申报部门', period: '期间', metric: '指标' }
 const ALL_PROJECTS = '__all_projects__'
@@ -74,6 +75,29 @@ function defaultRequest(metadata: PivotMetadata): PivotRequest {
   }
 }
 
+function projectPlanComparisonRequest(metadata: PivotMetadata, snapshot: AppSnapshot, projectId: string): PivotRequest | undefined {
+  const plans = plansForProject(metadata, projectId).filter((item) => item.status !== 'archived')
+  if (!plans.length) return undefined
+  const projectPlans = snapshot.plans.filter((item) => item.projectId === projectId && item.status === 'active')
+  const years = periodMembers(metadata, 'year').filter((member) => projectPlans.some((plan) => member.id >= plan.startPeriod.slice(0, 4) && member.id <= plan.endPeriod.slice(0, 4)))
+  const metricMembers = metadata.dimensions.find((item) => item.dimension === 'metric')?.members ?? []
+  const coreMetrics = ['revenue', 'cost', 'gross_profit', 'gross_margin', 'cash_inflow', 'cash_outflow', 'net_cash_flow', 'cumulative_cash_flow']
+    .filter((code) => metricMembers.some((item) => item.id === code))
+  return {
+    rows: [{ dimension: 'metric', memberIds: coreMetrics.length ? coreMetrics : metricMembers.map((item) => item.id) }],
+    columns: [
+      { dimension: 'plan', memberIds: plans.map((item) => item.id) },
+      { dimension: 'period', memberIds: years.length ? years.map((item) => item.id) : periodMembers(metadata, 'year').map((item) => item.id) },
+    ],
+    pov: [
+      { dimension: 'project', memberId: projectId },
+      { dimension: 'department', memberId: ALL_DEPARTMENTS },
+    ],
+    periodLevel: 'year',
+    scenarioId: 'baseline',
+  }
+}
+
 function cachedRequest(metadata: PivotMetadata): PivotRequest {
   const fallback = defaultRequest(metadata)
   try {
@@ -128,7 +152,8 @@ function formatValue(value: string | null, valueType: 'currency' | 'percentage',
   return `${formatted}${valueType === 'percentage' ? '%' : ''}`
 }
 
-export function MultidimensionalViewPage({ api }: Props) {
+export function MultidimensionalViewPage({ api, snapshot }: Props) {
+  const comparisonProjectId = new URLSearchParams(window.location.search).get('compareProjectId') ?? ''
   const [metadata, setMetadata] = useState<PivotMetadata>()
   const [draft, setDraft] = useState<PivotRequest>()
   const [executed, setExecuted] = useState<PivotRequest>()
@@ -136,8 +161,10 @@ export function MultidimensionalViewPage({ api }: Props) {
   const [result, setResult] = useState<PivotResponse>()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [configurationOpen, setConfigurationOpen] = useState(true)
+  const [configurationOpen, setConfigurationOpen] = useState(!comparisonProjectId)
   const [hideNoDataRows, setHideNoDataRows] = useState(false)
+  const [visibleRowKeys, setVisibleRowKeys] = useState<string[]>([])
+  const [exporting, setExporting] = useState(false)
   const [pointerDrag, setPointerDrag] = useState<PivotDragState>()
   const [dropTarget, setDropTarget] = useState<PivotDropTarget>()
   const pointerDragCleanupRef = useRef<(() => void) | undefined>(undefined)
@@ -147,13 +174,15 @@ export function MultidimensionalViewPage({ api }: Props) {
     void api.pivotMetadata().then((next) => {
       if (!active) return
       setMetadata(next)
-      const initial = cachedRequest(next)
+      const initial = comparisonProjectId
+        ? projectPlanComparisonRequest(next, snapshot, comparisonProjectId) ?? cachedRequest(next)
+        : cachedRequest(next)
       setDraft(initial)
       setExecuted(initial)
       setBackgroundPov(initial.pov)
     }).catch((reason) => setError(reason instanceof Error ? reason.message : '项目报表元数据加载失败'))
     return () => { active = false }
-  }, [api])
+  }, [api, comparisonProjectId, snapshot])
 
   useEffect(() => {
     if (!executed) return
@@ -250,8 +279,22 @@ export function MultidimensionalViewPage({ api }: Props) {
   }
 
   function requestWithBackground(request: PivotRequest): PivotRequest {
-    const projectPov: PivotRequest['pov'][number] = { dimension: 'project', memberId: ALL_PROJECTS }
+    const projectPov: PivotRequest['pov'][number] = request.pov.find((item) => item.dimension === 'project')
+      ?? { dimension: 'project', memberId: ALL_PROJECTS }
     return { ...request, pov: [projectPov, ...request.pov.filter((item) => item.dimension !== 'project')] }
+  }
+
+  async function exportCurrentView() {
+    if (!executed || !result) return
+    setExporting(true)
+    setError('')
+    try {
+      await api.exportPivot({ request: executed, hideNoDataRows, visibleRowKeys })
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '项目报表下载失败')
+    } finally {
+      setExporting(false)
+    }
   }
 
   function queryBackground() {
@@ -282,7 +325,7 @@ export function MultidimensionalViewPage({ api }: Props) {
       <section className="pivot-table-panel"><div className="pivot-table-head"><div className="pivot-background-controls">{executed && metadata && visibleBackgroundPov.length ? visibleBackgroundPov.map((item) => {
         const members = item.dimension === 'plan' ? plansForProject(metadata, ALL_PROJECTS) : item.dimension === 'period' ? periodMembers(metadata, executed?.periodLevel ?? 'month') : metadata.dimensions.find((dimension) => dimension.dimension === item.dimension)?.members ?? []
         return <label key={item.dimension}><span>{LABELS[item.dimension]}</span><select value={item.memberId} onChange={(event) => updateBackground(item.dimension, event.target.value)}>{members.map((member) => <option key={member.id} value={member.id}>{displayMemberLabel(metadata, item.dimension, member)}</option>)}</select></label>
-      }) : <span className="pivot-no-background">无背景筛选</span>}</div><div className="pivot-table-head-actions">{executed && <><label className="pivot-display-toggle"><input type="checkbox" checked={hideNoDataRows} onChange={(event) => setHideNoDataRows(event.target.checked)} />隐藏无数据行</label><span className="pivot-query-status">{backgroundChanged ? '条件已调整' : ''}</span><button className="btn primary" disabled={loading || !backgroundChanged} onClick={queryBackground}><Search size={14} />{loading ? '查询中' : '查询'}</button><button className="btn pivot-drawer-toggle" onClick={() => setConfigurationOpen((current) => !current)}>{configurationOpen ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}{configurationOpen ? '收起配置' : '展开配置'}</button></>}</div></div>{error && <div className="page-alert error">{error}</div>}{!error && executed && metadata && <PivotGrid request={executed} result={result} metadata={metadata} hideNoDataRows={hideNoDataRows} />}</section>
+      }) : <span className="pivot-no-background">无背景筛选</span>}</div><div className="pivot-table-head-actions">{executed && <><label className="pivot-display-toggle"><input type="checkbox" checked={hideNoDataRows} onChange={(event) => setHideNoDataRows(event.target.checked)} />隐藏无数据行</label><button className="btn" disabled={loading || exporting || !result?.rowTuples.length} onClick={() => void exportCurrentView()}><Download size={14} />{exporting ? '生成中' : '下载'}</button><span className="pivot-query-status">{backgroundChanged ? '条件已调整' : ''}</span><button className="btn primary" disabled={loading || !backgroundChanged} onClick={queryBackground}><Search size={14} />{loading ? '查询中' : '查询'}</button><button className="btn pivot-drawer-toggle" onClick={() => setConfigurationOpen((current) => !current)}>{configurationOpen ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}{configurationOpen ? '收起配置' : '展开配置'}</button></>}</div></div>{error && <div className="page-alert error">{error}</div>}{!error && executed && metadata && <PivotGrid request={executed} result={result} metadata={metadata} hideNoDataRows={hideNoDataRows} onVisibleRowsChange={setVisibleRowKeys} />}</section>
       {draft && metadata && <aside className="pivot-config-drawer" aria-hidden={!configurationOpen}>
         <div className="pivot-config-drawer-head"><div><b>报表配置</b><span>设置背景、行轴和列轴</span></div><button type="button" aria-label="收起报表配置" onClick={() => setConfigurationOpen(false)}><PanelRightClose size={15} /></button></div>
         <div className="pivot-config-drawer-body">
@@ -395,22 +438,7 @@ function AxisDimensionChip({ dimension, axis, metadata, periodLevel, onMembers, 
   return <div className="pivot-dimension-chip"><button ref={triggerRef} type="button" className="pivot-dimension-chip-trigger" aria-expanded={open} onClick={() => setOpen((current) => !current)}><span>{LABELS[dimension]}</span><small>{summary}</small></button>{popover}</div>
 }
 
-function spanLength(tuples: PivotTuple[], tupleIndex: number, level: number) {
-  const target = tuples[tupleIndex]
-  let count = 1
-  for (let index = tupleIndex + 1; index < tuples.length; index += 1) {
-    if (target.members.slice(0, level + 1).some((member, i) => member.memberId !== tuples[index].members[i]?.memberId)) break
-    count += 1
-  }
-  return count
-}
-
-function isRepeated(tuples: PivotTuple[], tupleIndex: number, level: number) {
-  if (!tupleIndex) return false
-  return tuples[tupleIndex].members.slice(0, level + 1).every((member, i) => member.memberId === tuples[tupleIndex - 1].members[i]?.memberId)
-}
-
-function PivotGrid({ request, result, metadata, hideNoDataRows }: { request: PivotRequest; result?: PivotResponse; metadata: PivotMetadata; hideNoDataRows: boolean }) {
+function PivotGrid({ request, result, metadata, hideNoDataRows, onVisibleRowsChange }: { request: PivotRequest; result?: PivotResponse; metadata: PivotMetadata; hideNoDataRows: boolean; onVisibleRowsChange: (keys: string[]) => void }) {
   const [unit, setUnit] = useState(10_000)
   const [decimals, setDecimals] = useState(2)
   const [grouping, setGrouping] = useState(true)
@@ -441,14 +469,18 @@ function PivotGrid({ request, result, metadata, hideNoDataRows }: { request: Piv
     return false
   }
   const rows = useMemo(
-    () => allRows.filter((row) => !hiddenByCollapsedParent(row)).filter((row) => hideNoDataRows
-      ? columns.some((column) => {
-        const cell = cells.get(`${row.key}\u001e${column.key}`)
-        return cell?.value !== null && cell?.value !== '' && cell?.value !== undefined
-      })
-      : true),
+    () => visiblePivotRows(
+      allRows.filter((row) => !hiddenByCollapsedParent(row)),
+      columns,
+      (rowKey, columnKey) => cells.get(`${rowKey}\u001e${columnKey}`)?.value,
+      hideNoDataRows,
+    ),
     [allRows, cells, columns, hideNoDataRows, collapsedMetrics, metricById],
   )
+  useEffect(() => onVisibleRowsChange(rows.map((row) => row.key)), [onVisibleRowsChange, rows])
+  const columnHeaderRows = useMemo(() => buildPivotHeaderRows(columns, request.columns.length), [columns, request.columns.length])
+  const rowHeaderRows = useMemo(() => buildPivotHeaderRows(rows, request.rows.length), [rows, request.rows.length])
+  const rowHeaderByPosition = useMemo(() => new Map(rowHeaderRows.flat().map((header) => [`${header.tupleIndex}:${header.level}`, header])), [rowHeaderRows])
   const selection = useGridSelection(rows.length, columns.length, { initialSelection: false })
 
   function focusCell(position: GridCellPosition, extend = false) {
@@ -503,17 +535,13 @@ function PivotGrid({ request, result, metadata, hideNoDataRows }: { request: Piv
       event.preventDefault()
       event.clipboardData.setData('text/plain', selectionText())
     }}
-  ><table className="pivot-table pivot-grid"><thead>{request.columns.map((axis, level) => <tr key={axis.dimension}>{level === 0 && request.rows.map((rowAxis) => <th key={rowAxis.dimension} rowSpan={request.columns.length} className="pivot-corner" onMouseDown={() => { selection.selectAll(); root.current?.focus() }}>{LABELS[rowAxis.dimension]}</th>)}{columns.map((tuple, index) => {
-    if (isRepeated(columns, index, level)) return null
-    const span = spanLength(columns, index, level)
-    return <th key={`${tuple.key}:${level}`} colSpan={span} onMouseDown={() => { selection.selectColumns(index, index + span - 1); root.current?.focus() }}>{tuple.members[level]?.label}</th>
-  })}</tr>)}</thead><tbody>{rows.map((row, rowIndex) => <tr key={row.key}>{request.rows.map((axis, level) => {
-    if (isRepeated(rows, rowIndex, level)) return null
-    const span = spanLength(rows, rowIndex, level)
+  ><table className="pivot-table pivot-grid"><thead>{request.columns.map((axis, level) => <tr key={axis.dimension}>{level === 0 && request.rows.map((rowAxis) => <th key={rowAxis.dimension} rowSpan={request.columns.length} className="pivot-corner" onMouseDown={() => { selection.selectAll(); root.current?.focus() }}>{LABELS[rowAxis.dimension]}</th>)}{columnHeaderRows[level].map((header) => <th key={`${header.memberId}:${level}:${header.tupleIndex}`} colSpan={header.span} onMouseDown={() => { selection.selectColumns(header.tupleIndex, header.tupleIndex + header.span - 1); root.current?.focus() }}>{header.label}</th>)}</tr>)}</thead><tbody>{rows.map((row, rowIndex) => <tr key={row.key}>{request.rows.map((axis, level) => {
+    const header = rowHeaderByPosition.get(`${rowIndex}:${level}`)
+    if (!header) return null
     const member = row.members[level]
     const isMetric = axis.dimension === 'metric'
     const canCollapse = isMetric && member && hasSelectedDescendant(member.memberId)
-    return <th key={axis.dimension} rowSpan={span} className={isMetric ? 'pivot-metric-row-head' : undefined} onMouseDown={() => { selection.selectRows(rowIndex, rowIndex + span - 1); root.current?.focus() }}><div style={isMetric ? { paddingLeft: (member?.hierarchyLevel ?? 0) * 14 } : undefined}>{canCollapse && <button type="button" className="pivot-tree-toggle" aria-label={`${collapsedMetrics.has(member.memberId) ? '展开' : '收起'}${member.label}`} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); setCollapsedMetrics((current) => { const next = new Set(current); if (next.has(member.memberId)) next.delete(member.memberId); else next.add(member.memberId); return next }) }}>{collapsedMetrics.has(member.memberId) ? '›' : '⌄'}</button>}<span>{member?.label}</span></div></th>
+    return <th key={axis.dimension} rowSpan={header.span} className={isMetric ? 'pivot-metric-row-head' : undefined} onMouseDown={() => { selection.selectRows(rowIndex, rowIndex + header.span - 1); root.current?.focus() }}><div style={isMetric ? { paddingLeft: (member?.hierarchyLevel ?? 0) * 14 } : undefined}>{canCollapse && <button type="button" className="pivot-tree-toggle" aria-label={`${collapsedMetrics.has(member.memberId) ? '展开' : '收起'}${member.label}`} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); setCollapsedMetrics((current) => { const next = new Set(current); if (next.has(member.memberId)) next.delete(member.memberId); else next.add(member.memberId); return next }) }}>{collapsedMetrics.has(member.memberId) ? '›' : '⌄'}</button>}<span>{member?.label}</span></div></th>
   })}{columns.map((column, columnIndex) => {
     const cell = cells.get(`${row.key}\u001e${column.key}`)
     const isSelected = selection.isSelected(rowIndex, columnIndex)

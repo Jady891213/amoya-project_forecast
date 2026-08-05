@@ -788,6 +788,7 @@ export function ProjectWorkspacePage({ api, snapshot, projectId, planId, view, o
           setEditingPlanNameId('')
           setPlanManageOpen(true)
         }}><Settings size={14} />方案管理</button>
+        <button className="btn" onClick={() => onNavigate(`/multidimensional?compareProjectId=${encodeURIComponent(projectId)}`)}><ChartNoAxesCombined size={14} />方案对比</button>
       </div>
       <span className="project-plan-context">场景：基准场景</span>
     </div>

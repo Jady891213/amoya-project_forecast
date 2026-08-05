@@ -22,6 +22,7 @@ export type {
   PivotMetadata,
   PivotRequest,
   PivotResponse,
+  PivotExportRequest,
   CreateProjectPlanRequest,
 } from './domain/types'
 

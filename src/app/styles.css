@@ -1687,6 +1687,8 @@ button, input, select, textarea, table { font-size: 12px; }
   .forecast-toolbar .btn { padding: 0 8px; }
 }
 
+.project-plan-create { display: flex; align-items: center; gap: 6px; }
+
 /* 项目配置：统一行项目工作台 */
 .project-information-card {
   overflow: hidden;
@@ -3664,3 +3666,7 @@ textarea:focus {
   .pivot-report-workbench.configuration-closed { grid-template-columns: minmax(0, 1fr) 0; }
   .pivot-table-head > div:first-child > span { display: none; }
 }
+
+/* 保持为文件末尾的最终规则，避免早期响应式样式挤压侧栏。 */
+.semantic-app:not(.nav-collapsed) .global-nav { width: 188px; min-width: 188px; max-width: 188px; flex-basis: 188px; }
+.semantic-app.nav-collapsed .global-nav { width: 54px; min-width: 54px; max-width: 54px; flex-basis: 54px; }

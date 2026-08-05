@@ -187,7 +187,7 @@ export class PivotService {
             isLeaf: metadata?.isLeaf,
           }
         }
-        if (dimension === 'plan' && !axis.some((item) => item.dimension === 'project')) {
+        if (dimension === 'plan' && !axis.some((item) => item.dimension === 'project') && pov.get('project') === ALL_PROJECTS) {
           return { ...coordinates.plan, label: `${coordinates.project.label}（${coordinates.plan.label}）` }
         }
         return coordinates[dimension]
@@ -228,18 +228,24 @@ export class PivotService {
       })
     })
     const sortMaps = new Map(metadata.dimensions.map((dimension) => [dimension.dimension, new Map(dimension.members.map((member) => [member.id, member.sortKey]))]))
-    const sortTuples = (tuples: PivotTuple[]) => tuples.sort((left, right) => {
-      for (let index = 0; index < Math.max(left.members.length, right.members.length); index += 1) {
-        const leftMember = left.members[index]
-        const rightMember = right.members[index]
-        if (!leftMember || !rightMember) return left.members.length - right.members.length
-        const difference = (sortMaps.get(leftMember.dimension)?.get(leftMember.memberId) ?? Number.MAX_SAFE_INTEGER)
-          - (sortMaps.get(rightMember.dimension)?.get(rightMember.memberId) ?? Number.MAX_SAFE_INTEGER)
-        if (difference) return difference
-      }
-      return left.key.localeCompare(right.key)
-    })
-    return { rowTuples: sortTuples([...rowTuples.values()]), columnTuples: sortTuples([...columnTuples.values()]), cells, sourceFactCount: facts.length }
+    const sortTuples = (tuples: PivotTuple[], axis: PivotAxisDimension[]) => {
+      const selectionOrder = new Map(axis.map((item) => [item.dimension, new Map(item.memberIds.map((id, index) => [id, index]))]))
+      return tuples.sort((left, right) => {
+        for (let index = 0; index < Math.max(left.members.length, right.members.length); index += 1) {
+          const leftMember = left.members[index]
+          const rightMember = right.members[index]
+          if (!leftMember || !rightMember) return left.members.length - right.members.length
+          const requested = selectionOrder.get(leftMember.dimension)
+          const difference = requested?.has(leftMember.memberId) && requested?.has(rightMember.memberId)
+            ? (requested.get(leftMember.memberId) ?? 0) - (requested.get(rightMember.memberId) ?? 0)
+            : (sortMaps.get(leftMember.dimension)?.get(leftMember.memberId) ?? Number.MAX_SAFE_INTEGER)
+              - (sortMaps.get(rightMember.dimension)?.get(rightMember.memberId) ?? Number.MAX_SAFE_INTEGER)
+          if (difference) return difference
+        }
+        return left.key.localeCompare(right.key)
+      })
+    }
+    return { rowTuples: sortTuples([...rowTuples.values()], request.rows), columnTuples: sortTuples([...columnTuples.values()], request.columns), cells, sourceFactCount: facts.length }
   }
 
   private validate(request: PivotRequest) {

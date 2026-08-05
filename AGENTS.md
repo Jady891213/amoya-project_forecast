@@ -18,7 +18,7 @@ React 页面
   → SQLite 文件 data/amoya_project_forecast.db
 ```
 
-- 当前软件版本：`v0.7.0`，唯一版本源是 `src/package.json`。
+- 当前软件版本：`v0.7.1`，唯一版本源是 `src/package.json`。
 - 当前数据结构：Schema v15。
 - 正式地址：`http://127.0.0.1:4173/projects`。
 - 已删除旧单 HTML、PWA/OPFS 运行入口和浏览器数据库持久化；不要恢复。
@@ -125,6 +125,8 @@ src/app/mocks/                   五个参考项目配置
 - `src/config/profitMetricHierarchy.ts`：4 个收入分类、5 个成本大类和 15 个成本末级分类；页面不开放维护，需要由 WorkBuddy 修改并重新构建。
 - `src/app/pages/ProjectWorkspacePage.tsx`：项目配置、底稿、报告和操作指引。
 - `src/app/pages/MultidimensionalViewPage.tsx`：跨项目项目报表。
+- `src/shared/reporting/pivotLayout.ts`：项目报表页面与 Excel 共用的多级表头合并规则。
+- `src/server/services/pivotWorkbookService.ts`：项目报表所见即所得 Excel。
 - `src/app/components/FinancialGrid.tsx`：统一财务表格选区、复制和粘贴。
 - `src/server/services/reportPresentationService.ts`：页面和 Excel 共用报告模型。
 - `src/server/services/reportWorkbookService.ts`：固定两表 Excel。
@@ -139,10 +141,11 @@ src/app/mocks/                   五个参考项目配置
 - 项目配置使用一张统一行项目表，选中行后右侧挤压抽屉编辑。
 - 逐月填写直接在主表黄色单元格中完成，支持 Excel 区域粘贴。
 - 计算底稿允许调整基础叶子值；汇总、规则现金和派生指标只读。
-- 项目报表是只读多维视图，背景、行轴和列轴支持维度卡片拖拽和成员选择。
+- 项目报表是只读多维视图，背景、行轴和列轴支持维度卡片拖拽、成员选择和多级合并表头；项目内可从“方案对比”进入年度对比预置，当前视图可直接下载 Excel。
 - 项目报告遵循 V3.1 业务报告故事线；Excel 固定为“测算报告、月度明细”两张表。
 - 工具不调用 AI；只导出版本化提示词和身份脱敏 Excel。财务数值仍是真实数据，必须保留风险提示。
 - 左侧品牌名称为“项目测算”，红色 B 标识同时承担侧栏展开/收起；软件版本取自 `src/package.json`。
+- 展开侧栏固定为 188px，收起为 54px；窄窗口不得挤压侧栏及本地数据库卡片。
 - 主数据和指标管理表支持拖动表头分隔线调整列宽，设置只保存在当前浏览器，不写数据库。
 
 ## 9. 修改与验证

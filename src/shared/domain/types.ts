@@ -551,6 +551,12 @@ export interface PivotResponse {
   sourceFactCount: number
 }
 
+export interface PivotExportRequest {
+  request: PivotRequest
+  hideNoDataRows: boolean
+  visibleRowKeys?: string[]
+}
+
 export interface FieldError {
   section: string
   itemId?: string
