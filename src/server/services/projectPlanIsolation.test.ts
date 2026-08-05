@@ -62,7 +62,7 @@ describe('项目方案隔离与项目报表', () => {
       { code: 'LINE-002', name: '成本', category: 'cost', forecastMethod: 'fixed_monthly', fixedMonthlyValue: '40', startPeriod: '2026-01', endPeriod: '2026-01', amountBasis: 'tax_exclusive', taxRate: '0', assumption: '', sortOrder: 2, monthlyValues: {} },
     ] } } })
     await service.calculate(workspace.project.id, workspace.currentPlan.planId, saved.draftRevision)
-    const view = await new PivotService(database).build({ rows: [{ dimension: 'plan', memberIds: [workspace.currentPlan.planId] }, { dimension: 'metric', memberIds: ['revenue', 'gross_profit', 'gross_margin'] }], columns: [{ dimension: 'period', memberIds: ['2026-01'] }], pov: [{ dimension: 'project', memberId: workspace.project.id }, { dimension: 'department', memberId: department.id }], scenarioId: 'baseline' })
+    const view = await new PivotService(database).build({ rows: [{ dimension: 'plan', memberIds: [workspace.currentPlan.planId] }, { dimension: 'metric', memberIds: ['revenue', 'gross_profit', 'gross_margin'] }], columns: [{ dimension: 'period', memberIds: ['2026-01'] }], pov: [{ dimension: 'project', memberId: workspace.project.id }, { dimension: 'department', memberId: department.id }], periodLevel: 'month', scenarioId: 'baseline' })
     expect(view.sourceFactCount).toBe(2)
     const value = (metric: string) => view.cells.find((cell) => view.rowTuples.find((tuple) => tuple.key === cell.rowKey)?.members.some((member) => member.memberId === metric))?.value
     expect(value('revenue')).toBe('100'); expect(value('gross_profit')).toBe('60'); expect(value('gross_margin')).toBe('0.6')
@@ -91,10 +91,44 @@ describe('项目方案隔离与项目报表', () => {
       rows: [{ dimension: 'plan', memberIds: [projectA.currentPlan.planId, projectB.currentPlan.planId] }, { dimension: 'metric', memberIds: ['revenue'] }],
       columns: [{ dimension: 'period', memberIds: ['2026-01'] }],
       pov: [{ dimension: 'project', memberId: '__all_projects__' }, { dimension: 'department', memberId: '__all_departments__' }],
+      periodLevel: 'month',
       scenarioId: 'baseline',
     })
     expect(view.sourceFactCount).toBe(2)
     expect(view.rowTuples.map((tuple) => tuple.members[0].label)).toEqual(['跨项目 A（推荐方案）', '跨项目 B（推荐方案）'])
     expect(view.cells.map((cell) => cell.value).sort()).toEqual(['100', '200'])
+  })
+
+  it('期间维度支持季度和年度聚合，并在聚合后重算毛利率', async () => {
+    const department = await new DepartmentRepository(database).save({ code: 'PERIOD', name: '期间聚合部' })
+    const service = new ProjectWorkspaceService(database)
+    const workspace = await service.createProject({ code: 'PERIOD-001', name: '期间聚合项目', departmentId: department.id, startPeriod: '2026-01', endPeriod: '2026-03' })
+    const saved = await service.saveWorkspace(workspace.project.id, {
+      planId: workspace.currentPlan.planId,
+      expectedRevision: 0,
+      draft: {
+        project: { ...workspace.project, startPeriod: '2026-01', endPeriod: '2026-03' },
+        plan: { name: '方案 1', startPeriod: '2026-01', endPeriod: '2026-03' },
+        forecast: { parameters: [], cashRules: [], lines: [
+          { code: 'LINE-001', name: '收入', category: 'revenue', forecastMethod: 'fixed_monthly', fixedMonthlyValue: '100', startPeriod: '2026-01', endPeriod: '2026-03', amountBasis: 'tax_exclusive', taxRate: '0', assumption: '', sortOrder: 1, monthlyValues: {} },
+          { code: 'LINE-002', name: '成本', category: 'cost', forecastMethod: 'fixed_monthly', fixedMonthlyValue: '40', startPeriod: '2026-01', endPeriod: '2026-03', amountBasis: 'tax_exclusive', taxRate: '0', assumption: '', sortOrder: 2, monthlyValues: {} },
+        ] },
+      },
+    })
+    await service.calculate(workspace.project.id, workspace.currentPlan.planId, saved.draftRevision)
+    const build = (periodLevel: 'quarter' | 'year', period: string) => new PivotService(database).build({
+      rows: [{ dimension: 'plan', memberIds: [workspace.currentPlan.planId] }, { dimension: 'metric', memberIds: ['revenue', 'gross_profit', 'gross_margin'] }],
+      columns: [{ dimension: 'period', memberIds: [period] }],
+      pov: [{ dimension: 'project', memberId: workspace.project.id }, { dimension: 'department', memberId: department.id }],
+      periodLevel,
+      scenarioId: 'baseline',
+    })
+    for (const view of [await build('quarter', '2026-Q1'), await build('year', '2026')]) {
+      const value = (metric: string) => view.cells.find((cell) => view.rowTuples.find((tuple) => tuple.key === cell.rowKey)?.members.some((member) => member.memberId === metric))?.value
+      expect(view.columnTuples[0]?.members[0]?.label).toMatch(/^2026/)
+      expect(value('revenue')).toBe('300')
+      expect(value('gross_profit')).toBe('180')
+      expect(value('gross_margin')).toBe('0.6')
+    }
   })
 })

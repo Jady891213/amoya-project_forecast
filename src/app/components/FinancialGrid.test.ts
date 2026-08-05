@@ -70,6 +70,45 @@ describe('FinancialGrid 数值解析', () => {
       ])
   })
 
+  it('支持等尺寸区域粘贴和单个单元格填充整片选区', () => {
+    const periods = ['2026-01', '2026-02', '2026-03']
+    const rows = [
+      { id: 'row-1', label: '收入一', editable: true, values: { '2026-01': '1', '2026-02': '2', '2026-03': '3' } },
+      { id: 'row-2', label: '收入二', editable: true, values: { '2026-01': '4', '2026-02': '5', '2026-03': '6' } },
+    ]
+    const target = { top: 0, bottom: 1, left: 1, right: 2 }
+
+    expect(buildPasteTransaction('10\t20\n30\t40', { row: 1, column: 2 }, rows, periods, target).after)
+      .toEqual([
+        { rowId: 'row-1', period: '2026-02', value: '10' },
+        { rowId: 'row-1', period: '2026-03', value: '20' },
+        { rowId: 'row-2', period: '2026-02', value: '30' },
+        { rowId: 'row-2', period: '2026-03', value: '40' },
+      ])
+    expect(buildPasteTransaction('99', { row: 1, column: 2 }, rows, periods, target).after)
+      .toEqual([
+        { rowId: 'row-1', period: '2026-02', value: '99' },
+        { rowId: 'row-1', period: '2026-03', value: '99' },
+        { rowId: 'row-2', period: '2026-02', value: '99' },
+        { rowId: 'row-2', period: '2026-03', value: '99' },
+      ])
+  })
+
+  it('多单元格复制区域与目标选区尺寸不一致时整体取消', () => {
+    const periods = ['2026-01', '2026-02', '2026-03']
+    const rows = [
+      { id: 'row-1', label: '收入一', editable: true, values: {} },
+      { id: 'row-2', label: '收入二', editable: true, values: {} },
+    ]
+    expect(() => buildPasteTransaction(
+      '10\t20',
+      { row: 0, column: 0 },
+      rows,
+      periods,
+      { top: 0, bottom: 1, left: 0, right: 1 },
+    )).toThrow('请选择相同大小的区域')
+  })
+
   it('逐月录入只允许修改配置生效期间内的单元格', () => {
     const row = {
       id: 'monthly-line',

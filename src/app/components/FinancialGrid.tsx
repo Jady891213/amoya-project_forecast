@@ -7,6 +7,7 @@ import {
   gridSelectionText,
   useGridSelection,
   type GridCellPosition,
+  type GridSelectionBounds,
 } from './useGridSelection'
 
 export interface FinancialGridRow {
@@ -119,14 +120,37 @@ export function buildPasteTransaction(
   focus: { row: number; column: number },
   rows: FinancialGridRow[],
   periods: string[],
+  targetBounds?: GridSelectionBounds,
 ): EditTransaction {
-  const matrix = text.replace(/\r/g, '').split('\n').filter((line) => line.length > 0).map((line) => line.split('\t'))
+  let matrix = text.replace(/\r/g, '').split('\n').filter((line) => line.length > 0).map((line) => line.split('\t'))
+  if (matrix.length === 0) return { before: [], after: [] }
+  const sourceColumnCount = matrix[0].length
+  if (matrix.some((line) => line.length !== sourceColumnCount)) {
+    throw new Error('复制区域的每行列数不一致')
+  }
+
+  let pasteOrigin = focus
+  if (targetBounds) {
+    const targetRowCount = targetBounds.bottom - targetBounds.top + 1
+    const targetColumnCount = targetBounds.right - targetBounds.left + 1
+    const targetIsRange = targetRowCount > 1 || targetColumnCount > 1
+    if (targetIsRange) {
+      if (matrix.length === 1 && sourceColumnCount === 1) {
+        matrix = Array.from({ length: targetRowCount }, () =>
+          Array.from({ length: targetColumnCount }, () => matrix[0][0]),
+        )
+      } else if (matrix.length !== targetRowCount || sourceColumnCount !== targetColumnCount) {
+        throw new Error(`复制区域为 ${matrix.length}×${sourceColumnCount}，当前选区为 ${targetRowCount}×${targetColumnCount}；请选择相同大小的区域，或复制一个单元格填充整片选区`)
+      }
+      pasteOrigin = { row: targetBounds.top, column: targetBounds.left }
+    }
+  }
   const before: FinancialGridChange[] = []
   const after: FinancialGridChange[] = []
   matrix.forEach((line, rowOffset) => {
     line.forEach((raw, columnOffset) => {
-      const rowIndex = focus.row + rowOffset
-      const columnIndex = focus.column + columnOffset
+      const rowIndex = pasteOrigin.row + rowOffset
+      const columnIndex = pasteOrigin.column + columnOffset
       const row = rows[rowIndex]
       const period = periods[columnIndex]
       if (!row || !period) throw new Error('粘贴区域超出表格范围')
@@ -266,16 +290,20 @@ export function FinancialGrid({
     if (matrix.length === 0) return
     try {
       if (!selection.focus) return
-      applyTransaction(buildPasteTransaction(text, selection.focus, rows, periods))
+      applyTransaction(buildPasteTransaction(text, selection.focus, rows, periods, selection.bounds))
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : '粘贴内容无效'
       void dialog.alert(message.includes('整个粘贴') ? message : `${message}，整个粘贴已取消。`, { title: '无法粘贴数据', tone: 'warning' })
       return
     }
-    focusCell({
-      row: selection.focus.row + matrix.length - 1,
-      column: selection.focus.column + Math.max(...matrix.map((line) => line.length)) - 1,
-    }, true)
+    const selectedRows = selection.bounds ? selection.bounds.bottom - selection.bounds.top + 1 : 1
+    const selectedColumns = selection.bounds ? selection.bounds.right - selection.bounds.left + 1 : 1
+    if (selectedRows === 1 && selectedColumns === 1) {
+      focusCell({
+        row: selection.focus.row + matrix.length - 1,
+        column: selection.focus.column + Math.max(...matrix.map((line) => line.length)) - 1,
+      }, true)
+    }
   }
 
   function clearSelection() {
@@ -445,7 +473,7 @@ export function FinancialGrid({
                 tabIndex={rowIndex === selection.focus?.row && columnIndex === selection.focus?.column ? 0 : -1}
                 className={`${cellEditable ? 'editable-cell' : 'readonly-cell'} ${isSelected ? 'selected-cell grid-selected-cell' : ''} ${overridden ? 'overridden-cell' : ''}`}
                 aria-selected={isSelected}
-                title={overridden ? `原计算值：${row.originalValues?.[period] ?? '—'}；人工调整值：${row.values[period] ?? ''}` : cellEditable ? '双击编辑；支持从 Excel 粘贴区域' : '只读'}
+                title={overridden ? `原计算值：${row.originalValues?.[period] ?? '—'}；人工调整值：${row.values[period] ?? ''}` : cellEditable ? '双击编辑；支持表格内复制粘贴及 Excel 区域粘贴' : '只读'}
                 onMouseDown={(event) => {
                   if (event.button === 0) {
                     event.preventDefault()

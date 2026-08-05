@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { ArrowLeftRight, BarChart3, GripVertical, PanelRightClose, PanelRightOpen, Search } from 'lucide-react'
-import type { PivotAxisDimension, PivotDimension, PivotMetadata, PivotRequest, PivotResponse, PivotTuple } from '../../shared/domain/types'
+import type { PivotAxisDimension, PivotDimension, PivotMetadata, PivotPeriodLevel, PivotRequest, PivotResponse, PivotTuple } from '../../shared/domain/types'
 import type { ApiClient } from '../api/client'
 import { gridSelectionText, useGridSelection, type GridCellPosition } from '../components/useGridSelection'
 import type { AppSnapshot } from '../state/types'
@@ -9,7 +9,8 @@ import type { AppSnapshot } from '../state/types'
 const LABELS: Record<PivotDimension, string> = { project: '项目', plan: '方案', department: '申报部门', period: '期间', metric: '指标' }
 const ALL_PROJECTS = '__all_projects__'
 const ALL_DEPARTMENTS = '__all_departments__'
-const PIVOT_PAGE_CACHE_KEY = 'amoya-project-report-pivot-v2'
+const PIVOT_PAGE_CACHE_KEY = 'amoya-project-report-pivot-v3'
+const PERIOD_LEVEL_LABELS: Record<PivotPeriodLevel, string> = { month: '月度', quarter: '季度', year: '年度' }
 
 interface Props { api: ApiClient; snapshot: AppSnapshot }
 type Placement = 'rows' | 'columns' | 'pov'
@@ -19,6 +20,37 @@ interface PivotDropTarget { placement: Placement; index: number }
 function memberIds(metadata: PivotMetadata, dimension: PivotDimension, excludeVirtual = false) {
   return metadata.dimensions.find((item) => item.dimension === dimension)?.members
     .filter((item) => !excludeVirtual || !item.id.startsWith('__all_')).map((item) => item.id) ?? []
+}
+
+function periodMembers(metadata: PivotMetadata, level: PivotPeriodLevel) {
+  const months = metadata.dimensions.find((item) => item.dimension === 'period')?.members ?? []
+  if (level === 'month') return months
+  const result = new Map<string, (typeof months)[number]>()
+  months.forEach((member) => {
+    const year = member.id.slice(0, 4)
+    const quarter = Math.floor((Number(member.id.slice(5, 7)) - 1) / 3) + 1
+    const id = level === 'year' ? year : `${year}-Q${quarter}`
+    if (!result.has(id)) result.set(id, {
+      id,
+      label: level === 'year' ? `${year}年` : `${year}年 Q${quarter}`,
+      sortKey: level === 'year' ? Number(year) : Number(year) * 10 + quarter,
+    })
+  })
+  return [...result.values()].sort((left, right) => left.sortKey - right.sortKey)
+}
+
+function periodMemberMonths(id: string, level: PivotPeriodLevel) {
+  if (level === 'month') return [id]
+  const year = id.slice(0, 4)
+  if (level === 'year') return Array.from({ length: 12 }, (_, index) => `${year}-${String(index + 1).padStart(2, '0')}`)
+  const quarter = Number(id.match(/-Q([1-4])$/)?.[1]) || 1
+  const start = (quarter - 1) * 3 + 1
+  return Array.from({ length: 3 }, (_, index) => `${year}-${String(start + index).padStart(2, '0')}`)
+}
+
+function convertPeriodSelection(metadata: PivotMetadata, ids: string[], from: PivotPeriodLevel, to: PivotPeriodLevel) {
+  const selectedMonths = new Set(ids.flatMap((id) => periodMemberMonths(id, from)))
+  return periodMembers(metadata, to).filter((member) => periodMemberMonths(member.id, to).some((month) => selectedMonths.has(month))).map((member) => member.id)
 }
 
 function plansForProject(metadata: PivotMetadata, projectId: string) {
@@ -37,6 +69,7 @@ function defaultRequest(metadata: PivotMetadata): PivotRequest {
       { dimension: 'project', memberId: ALL_PROJECTS },
       { dimension: 'department', memberId: ALL_DEPARTMENTS },
     ],
+    periodLevel: 'month',
     scenarioId: 'baseline',
   }
 }
@@ -52,7 +85,7 @@ function cachedRequest(metadata: PivotMetadata): PivotRequest {
     if (!parsed.pov.some((item) => item.dimension === 'project' && item.memberId === ALL_PROJECTS)) return fallback
     if ([...parsed.rows, ...parsed.columns].some((item) => !Array.isArray(item.memberIds) || !item.memberIds.length)) return fallback
     if (parsed.pov.some((item) => typeof item.memberId !== 'string' || !item.memberId)) return fallback
-    return { ...parsed, scenarioId: 'baseline' }
+    return { ...parsed, periodLevel: ['month', 'quarter', 'year'].includes(parsed.periodLevel) ? parsed.periodLevel : 'month', scenarioId: 'baseline' }
   } catch {
     return fallback
   }
@@ -70,7 +103,7 @@ export function movePivotDimension(draft: PivotRequest, metadata: PivotMetadata,
   const columns = draft.columns.filter((item) => item.dimension !== dimension)
   const visiblePov = draft.pov.filter((item) => item.dimension !== 'project' && item.dimension !== dimension)
   if (target === 'rows' || target === 'columns') {
-    const axis = existingAxis ?? { dimension, memberIds: memberIds(metadata, dimension, true) }
+    const axis = existingAxis ?? { dimension, memberIds: existingPov ? [existingPov.memberId] : memberIds(metadata, dimension, true) }
     const targetAxis = target === 'rows' ? rows : columns
     targetAxis.splice(Math.max(0, Math.min(targetIndex, targetAxis.length)), 0, axis)
   } else {
@@ -80,7 +113,7 @@ export function movePivotDimension(draft: PivotRequest, metadata: PivotMetadata,
       : dimension === 'plan'
         ? plansForProject(metadata, ALL_PROJECTS)[0]?.id ?? ''
         : members.find((item) => !item.id.startsWith('__all_'))?.id ?? ''
-    visiblePov.splice(Math.max(0, Math.min(targetIndex, visiblePov.length)), 0, existingPov ?? { dimension, memberId: defaultMember })
+    visiblePov.splice(Math.max(0, Math.min(targetIndex, visiblePov.length)), 0, existingPov ?? { dimension, memberId: existingAxis?.memberIds[0] ?? defaultMember })
   }
   return { ...draft, rows, columns, pov: [{ dimension: 'project', memberId: ALL_PROJECTS }, ...visiblePov] }
 }
@@ -151,7 +184,10 @@ export function MultidimensionalViewPage({ api }: Props) {
     const targetAt = (x: number, y: number): PivotDropTarget | undefined => {
       const element = document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-pivot-drop-placement]')
       const placement = element?.dataset.pivotDropPlacement as Placement | undefined
-      const index = Number(element?.dataset.pivotDropIndex)
+      const baseIndex = Number(element?.dataset.pivotDropIndex)
+      const isDimensionRow = element?.classList.contains('pivot-dimension-config-row')
+      const rect = isDimensionRow && element ? element.getBoundingClientRect() : undefined
+      const index = isDimensionRow && rect && y > rect.top + rect.height / 2 ? baseIndex + 1 : baseIndex
       return placement && Number.isFinite(index) ? { placement, index } : undefined
     }
     const cleanup = () => {
@@ -194,6 +230,20 @@ export function MultidimensionalViewPage({ api }: Props) {
     setDraft({ ...draft, rows: replace(draft.rows), columns: replace(draft.columns) })
   }
 
+  function updatePeriodLevel(level: PivotPeriodLevel) {
+    if (!draft || !metadata || level === draft.periodLevel) return
+    const currentLevel = draft.periodLevel ?? 'month'
+    const currentAxis = [...draft.rows, ...draft.columns].find((item) => item.dimension === 'period')
+    const currentPov = draft.pov.find((item) => item.dimension === 'period')
+    const currentIds = currentAxis?.memberIds ?? (currentPov ? [currentPov.memberId] : [])
+    const mapped = convertPeriodSelection(metadata, currentIds, currentLevel, level)
+    const fallback = periodMembers(metadata, level).map((item) => item.id)
+    const nextIds = mapped.length ? mapped : fallback
+    const replaceAxis = (axis: PivotAxisDimension[]) => axis.map((item) => item.dimension === 'period' ? { ...item, memberIds: nextIds } : item)
+    const replacePov = (pov: PivotRequest['pov']) => pov.map((item) => item.dimension === 'period' ? { ...item, memberId: nextIds[0] ?? '' } : item)
+    setDraft({ ...draft, periodLevel: level, rows: replaceAxis(draft.rows), columns: replaceAxis(draft.columns), pov: replacePov(draft.pov) })
+  }
+
   function updateBackground(dimension: PivotDimension, memberId: string) {
     if (!metadata) return
     setBackgroundPov(backgroundPov.map((item) => item.dimension === dimension ? { ...item, memberId } : item))
@@ -215,7 +265,8 @@ export function MultidimensionalViewPage({ api }: Props) {
 
   function confirmConfiguration() {
     if (!draft || !selectionComplete) return
-    const next = requestWithBackground({ ...draft, pov: draft.pov.map((item) => backgroundPov.find((candidate) => candidate.dimension === item.dimension) ?? item) })
+    const periodLevelChanged = draft.periodLevel !== executed?.periodLevel
+    const next = requestWithBackground({ ...draft, pov: draft.pov.map((item) => item.dimension === 'period' && periodLevelChanged ? item : backgroundPov.find((candidate) => candidate.dimension === item.dimension) ?? item) })
     setDraft(next)
     setExecuted(structuredClone(next))
     setBackgroundPov(next.pov)
@@ -229,16 +280,16 @@ export function MultidimensionalViewPage({ api }: Props) {
     <div className="page-head"><div className="page-head-main"><h1>项目报表</h1><p>按方案、部门、期间和指标自由组织只读事实视图。</p></div><div className="page-head-actions"><span className="pivot-context"><BarChart3 size={14} />场景：基准场景</span></div></div>
     <div className={`page-body multidimensional-body pivot-report-workbench ${configurationOpen ? 'configuration-open' : 'configuration-closed'}`}>
       <section className="pivot-table-panel"><div className="pivot-table-head"><div className="pivot-background-controls">{executed && metadata && visibleBackgroundPov.length ? visibleBackgroundPov.map((item) => {
-        const members = item.dimension === 'plan' ? plansForProject(metadata, ALL_PROJECTS) : metadata.dimensions.find((dimension) => dimension.dimension === item.dimension)?.members ?? []
+        const members = item.dimension === 'plan' ? plansForProject(metadata, ALL_PROJECTS) : item.dimension === 'period' ? periodMembers(metadata, executed?.periodLevel ?? 'month') : metadata.dimensions.find((dimension) => dimension.dimension === item.dimension)?.members ?? []
         return <label key={item.dimension}><span>{LABELS[item.dimension]}</span><select value={item.memberId} onChange={(event) => updateBackground(item.dimension, event.target.value)}>{members.map((member) => <option key={member.id} value={member.id}>{displayMemberLabel(metadata, item.dimension, member)}</option>)}</select></label>
       }) : <span className="pivot-no-background">无背景筛选</span>}</div><div className="pivot-table-head-actions">{executed && <><label className="pivot-display-toggle"><input type="checkbox" checked={hideNoDataRows} onChange={(event) => setHideNoDataRows(event.target.checked)} />隐藏无数据行</label><span className="pivot-query-status">{backgroundChanged ? '条件已调整' : ''}</span><button className="btn primary" disabled={loading || !backgroundChanged} onClick={queryBackground}><Search size={14} />{loading ? '查询中' : '查询'}</button><button className="btn pivot-drawer-toggle" onClick={() => setConfigurationOpen((current) => !current)}>{configurationOpen ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}{configurationOpen ? '收起配置' : '展开配置'}</button></>}</div></div>{error && <div className="page-alert error">{error}</div>}{!error && executed && <PivotGrid request={executed} result={result} hideNoDataRows={hideNoDataRows} />}</section>
       {draft && metadata && <aside className="pivot-config-drawer" aria-hidden={!configurationOpen}>
         <div className="pivot-config-drawer-head"><div><b>报表配置</b><span>设置背景、行轴和列轴</span></div><button type="button" aria-label="收起报表配置" onClick={() => setConfigurationOpen(false)}><PanelRightClose size={15} /></button></div>
         <div className="pivot-config-drawer-body">
-          <PlacementArea title="1. 背景" placement="pov" dimensions={draft.pov.filter((item) => item.dimension !== 'project').map((item) => item.dimension)} metadata={metadata} request={draft} draggedDimension={pointerDrag?.dimension} dropTarget={dropTarget} onMembers={updateAxis} onPointerDragStart={startPointerDrag} />
-          <PlacementArea title="2. 行轴" placement="rows" dimensions={draft.rows.map((item) => item.dimension)} metadata={metadata} request={draft} draggedDimension={pointerDrag?.dimension} dropTarget={dropTarget} onMembers={updateAxis} onPointerDragStart={startPointerDrag} />
+          <PlacementArea title="1. 背景" placement="pov" dimensions={draft.pov.filter((item) => item.dimension !== 'project').map((item) => item.dimension)} metadata={metadata} request={draft} draggedDimension={pointerDrag?.dimension} dropTarget={dropTarget} onMembers={updateAxis} onPeriodLevel={updatePeriodLevel} onPointerDragStart={startPointerDrag} />
+          <PlacementArea title="2. 行轴" placement="rows" dimensions={draft.rows.map((item) => item.dimension)} metadata={metadata} request={draft} draggedDimension={pointerDrag?.dimension} dropTarget={dropTarget} onMembers={updateAxis} onPeriodLevel={updatePeriodLevel} onPointerDragStart={startPointerDrag} />
           <div className="pivot-axis-swap-row"><button className="btn" title="交换行列" onClick={() => setDraft({ ...draft, rows: draft.columns, columns: draft.rows })}><ArrowLeftRight size={14} />交换行列</button></div>
-          <PlacementArea title="3. 列轴" placement="columns" dimensions={draft.columns.map((item) => item.dimension)} metadata={metadata} request={draft} draggedDimension={pointerDrag?.dimension} dropTarget={dropTarget} onMembers={updateAxis} onPointerDragStart={startPointerDrag} />
+          <PlacementArea title="3. 列轴" placement="columns" dimensions={draft.columns.map((item) => item.dimension)} metadata={metadata} request={draft} draggedDimension={pointerDrag?.dimension} dropTarget={dropTarget} onMembers={updateAxis} onPeriodLevel={updatePeriodLevel} onPointerDragStart={startPointerDrag} />
         </div>
         <div className="pivot-config-drawer-footer"><span>{!draft.rows.length || !draft.columns.length ? '行轴和列轴各需至少一个维度' : !selectionComplete ? '请至少选择一个成员' : changed ? '配置已修改' : '配置未修改'}</span><button className="btn primary" disabled={!selectionComplete || loading} onClick={confirmConfiguration}>确认</button></div>
       </aside>}
@@ -264,25 +315,26 @@ interface PlacementAreaProps {
   draggedDimension?: PivotDimension
   dropTarget?: PivotDropTarget
   onMembers: (dimension: PivotDimension, ids: string[]) => void
+  onPeriodLevel: (level: PivotPeriodLevel) => void
   onPointerDragStart: (event: ReactPointerEvent<HTMLButtonElement>, dimension: PivotDimension) => void
 }
 
-function PlacementArea({ title, placement, dimensions, metadata, request, draggedDimension, dropTarget, onMembers, onPointerDragStart }: PlacementAreaProps) {
+function PlacementArea({ title, placement, dimensions, metadata, request, draggedDimension, dropTarget, onMembers, onPeriodLevel, onPointerDragStart }: PlacementAreaProps) {
   const tailActive = dropTarget?.placement === placement && dropTarget.index === dimensions.length
   return <section className="pivot-config-section"><div className="pivot-config-section-head"><b>{title}</b><span>{placement === 'pov' ? '成员在表格顶部选择' : `${dimensions.length} 个维度，拖拽调整层级`}</span></div><div data-pivot-drop-placement={placement} data-pivot-drop-index={dimensions.length} className={`pivot-config-list ${draggedDimension ? 'drag-active' : ''} ${tailActive ? 'drop-target' : ''}`}>{dimensions.map((dimension, index) => {
     const axis = [...request.rows, ...request.columns].find((item) => item.dimension === dimension)
     const rowActive = dropTarget?.placement === placement && dropTarget.index === index
-    return <div data-pivot-drop-placement={placement} data-pivot-drop-index={index} className={`pivot-dimension-config-row ${draggedDimension === dimension ? 'dragging' : ''} ${rowActive ? 'drop-target' : ''}`} key={dimension}><button type="button" className="pivot-drag-handle" aria-label={`拖动${LABELS[dimension]}`} title="按住拖动调整位置" onPointerDown={(event) => onPointerDragStart(event, dimension)}><GripVertical size={16} /></button>{placement === 'pov' ? <div className="pivot-background-dimension"><b>{LABELS[dimension]}</b><span>表格顶部选择成员</span></div> : axis && <AxisDimensionChip dimension={dimension} axis={axis} metadata={metadata} onMembers={onMembers} />}</div>
-  })}{draggedDimension && <div className="pivot-drop-tail">拖到这里放在末尾</div>}</div></section>
+    return <div data-pivot-drop-placement={placement} data-pivot-drop-index={index} className={`pivot-dimension-config-row ${draggedDimension === dimension ? 'dragging' : ''} ${rowActive ? 'drop-target' : ''}`} key={dimension}><button type="button" className="pivot-drag-handle" aria-label={`拖动${LABELS[dimension]}`} title="按住拖动调整位置" onPointerDown={(event) => onPointerDragStart(event, dimension)}><GripVertical size={16} /></button>{placement === 'pov' ? <div className="pivot-background-dimension"><b>{LABELS[dimension]}</b>{dimension === 'period' ? <select aria-label="期间层级" value={request.periodLevel} onChange={(event) => onPeriodLevel(event.target.value as PivotPeriodLevel)}><option value="month">月度</option><option value="quarter">季度</option><option value="year">年度</option></select> : <span>表格顶部选择成员</span>}</div> : axis && <AxisDimensionChip dimension={dimension} axis={axis} metadata={metadata} periodLevel={request.periodLevel} onMembers={onMembers} onPeriodLevel={onPeriodLevel} />}</div>
+  })}</div></section>
 }
 
-function AxisDimensionChip({ dimension, axis, metadata, onMembers }: { dimension: PivotDimension; axis: PivotAxisDimension; metadata: PivotMetadata; onMembers: (dimension: PivotDimension, ids: string[]) => void }) {
+function AxisDimensionChip({ dimension, axis, metadata, periodLevel, onMembers, onPeriodLevel }: { dimension: PivotDimension; axis: PivotAxisDimension; metadata: PivotMetadata; periodLevel: PivotPeriodLevel; onMembers: (dimension: PivotDimension, ids: string[]) => void; onPeriodLevel: (level: PivotPeriodLevel) => void }) {
   const [searchText, setSearchText] = useState('')
   const [open, setOpen] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const popoverRef = useRef<HTMLDivElement>(null)
   const [popoverStyle, setPopoverStyle] = useState<CSSProperties>()
-  const members = metadata.dimensions.find((item) => item.dimension === dimension)?.members.filter((item) => !item.id.startsWith('__all_')) ?? []
+  const members = dimension === 'period' ? periodMembers(metadata, periodLevel) : metadata.dimensions.find((item) => item.dimension === dimension)?.members.filter((item) => !item.id.startsWith('__all_')) ?? []
   const selectedIndexes = axis.memberIds.map((id) => members.findIndex((member) => member.id === id)).filter((index) => index >= 0).sort((a, b) => a - b)
   const rangeStart = selectedIndexes[0] ?? 0
   const rangeEnd = selectedIndexes.at(-1) ?? Math.max(0, members.length - 1)
@@ -316,11 +368,12 @@ function AxisDimensionChip({ dimension, axis, metadata, onMembers }: { dimension
   }, [open])
   const renderMember = (member: (typeof members)[number]) => <label key={member.id}><input type="checkbox" checked={axis.memberIds.includes(member.id)} onChange={() => onMembers(dimension, axis.memberIds.includes(member.id) ? axis.memberIds.filter((id) => id !== member.id) : [...axis.memberIds, member.id])} /><span>{displayMemberLabel(metadata, dimension, member)}</span></label>
   const summary = dimension === 'period' && axis.memberIds.length
-    ? `${members[rangeStart]?.label}—${members[rangeEnd]?.label}，${axis.memberIds.length}期`
+    ? `${PERIOD_LEVEL_LABELS[periodLevel]} · ${members[rangeStart]?.label}—${members[rangeEnd]?.label}，${axis.memberIds.length}期`
     : `${axis.memberIds.length} 个成员`
-  const popover = open && popoverStyle ? createPortal(<div ref={popoverRef} className="pivot-member-popover pivot-member-popover-floating" style={popoverStyle}>
+  const popover = open && popoverStyle ? createPortal(<div ref={popoverRef} className={`pivot-member-popover pivot-member-popover-floating ${dimension === 'period' ? 'period-level-enabled' : ''}`} style={popoverStyle}>
     <div className="pivot-member-popover-head"><div><b>{LABELS[dimension]}</b><span>已选 {axis.memberIds.length} / {members.length}</span></div><div className="pivot-member-actions"><button type="button" onClick={() => onMembers(dimension, filtered.map((item) => item.id))}>全选结果</button><button type="button" onClick={() => onMembers(dimension, [])}>清空</button></div></div>
     <label className="pivot-member-search"><Search size={14} /><input value={searchText} onChange={(event) => setSearchText(event.target.value)} placeholder={`搜索${LABELS[dimension]}`} autoFocus /></label>
+    {dimension === 'period' && <div className="pivot-period-level" role="group" aria-label="期间层级">{(['month', 'quarter', 'year'] as PivotPeriodLevel[]).map((level) => <button type="button" className={periodLevel === level ? 'active' : ''} key={level} onClick={() => onPeriodLevel(level)}>{PERIOD_LEVEL_LABELS[level]}</button>)}</div>}
     {dimension === 'period' && <div className="pivot-period-range"><select value={rangeStart} onChange={(event) => applyPeriodRange(Number(event.target.value), rangeEnd)}>{members.map((member, index) => <option key={member.id} value={index}>{member.label}</option>)}</select><span>至</span><select value={rangeEnd} onChange={(event) => applyPeriodRange(rangeStart, Number(event.target.value))}>{members.map((member, index) => <option key={member.id} value={index}>{member.label}</option>)}</select></div>}
     <div className="pivot-member-list">{filtered.length ? filtered.map(renderMember) : <div className="pivot-member-empty">没有匹配的成员</div>}</div>
   </div>, document.body) : null

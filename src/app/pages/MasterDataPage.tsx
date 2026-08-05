@@ -7,11 +7,13 @@ import {
   PackageOpen,
   Plus,
 } from 'lucide-react'
-import type { Department, DepartmentInput } from '../../shared/domain/types'
+import type { Department, DepartmentInput, PivotPeriodLevel } from '../../shared/domain/types'
 import type { AppSnapshot } from '../state/types'
 import { DepartmentDialog } from '../ui/DepartmentDialog'
 import { formatDateTime } from '../ui/formatters'
 import { PageBreadcrumbs } from '../components/PageBreadcrumbs'
+
+const PERIOD_LEVEL_LABELS: Record<PivotPeriodLevel, string> = { month: '月度', quarter: '季度', year: '年度' }
 
 export type MasterDataTab =
   | 'projects'
@@ -43,6 +45,7 @@ export function MasterDataPage({
   const [editingDepartment, setEditingDepartment] = useState<Department>()
   const [departmentDialogOpen, setDepartmentDialogOpen] = useState(false)
   const [selectedYear, setSelectedYear] = useState(2026)
+  const [periodLevel, setPeriodLevel] = useState<PivotPeriodLevel>('month')
   const visiblePeriods = useMemo(
     () => snapshot.periods.filter((period) => period.year >= 2024 && period.year <= 2030),
     [snapshot.periods],
@@ -52,6 +55,11 @@ export function MasterDataPage({
     [visiblePeriods],
   )
   const periods = visiblePeriods.filter((period) => period.year === selectedYear)
+  const periodHierarchyRows = useMemo(() => {
+    if (periodLevel === 'month') return periods.map((period) => ({ id: period.period, label: period.displayName, year: period.year, quarter: `Q${period.quarter}`, memberCount: 1, sortKey: period.sortKey }))
+    if (periodLevel === 'quarter') return [1, 2, 3, 4].map((quarter) => ({ id: `${selectedYear}-Q${quarter}`, label: `${selectedYear}年 Q${quarter}`, year: selectedYear, quarter: `Q${quarter}`, memberCount: 3, sortKey: selectedYear * 10 + quarter }))
+    return [{ id: String(selectedYear), label: `${selectedYear}年`, year: selectedYear, quarter: '—', memberCount: 12, sortKey: selectedYear }]
+  }, [periodLevel, periods, selectedYear])
   const activeDefinition = MASTER_DATA_TABS.find((tab) => tab.key === activeTab)
   const departmentName = (id: string) =>
     snapshot.departments.find((department) => department.id === id)?.name ?? '未知部门'
@@ -104,12 +112,7 @@ export function MasterDataPage({
                   <Plus size={14} />新增部门
                 </button>
               ) : activeTab === 'periods' ? (
-                <label className="inline-filter">
-                  年度
-                  <select value={selectedYear} onChange={(event) => setSelectedYear(Number(event.target.value))}>
-                    {availableYears.map((year) => <option key={year} value={year}>{year}年</option>)}
-                  </select>
-                </label>
+                <div className="master-period-filters"><label className="inline-filter">层级<select value={periodLevel} onChange={(event) => setPeriodLevel(event.target.value as PivotPeriodLevel)}><option value="month">月度</option><option value="quarter">季度</option><option value="year">年度</option></select></label><label className="inline-filter">年度<select value={selectedYear} onChange={(event) => setSelectedYear(Number(event.target.value))}>{availableYears.map((year) => <option key={year} value={year}>{year}年</option>)}</select></label></div>
               ) : activeTab === 'projects' ? (
                 <span className="readonly-mark">随项目管理同步</span>
               ) : activeTab === 'plans' ? (
@@ -152,14 +155,15 @@ export function MasterDataPage({
 
               {activeTab === 'periods' && (
                 <table>
-                  <thead><tr><th>期间</th><th>显示名称</th><th>年度</th><th>季度</th><th>月份</th><th>排序键</th></tr></thead>
-                  <tbody>{periods.map((period) => (
-                    <tr key={period.period}>
-                      <td><code>{period.period}</code></td>
-                      <td>{period.displayName}</td>
+                  <thead><tr><th>期间成员</th><th>显示名称</th><th>层级</th><th>年度</th><th>季度</th><th>包含月份</th><th>排序键</th></tr></thead>
+                  <tbody>{periodHierarchyRows.map((period) => (
+                    <tr key={period.id}>
+                      <td><code>{period.id}</code></td>
+                      <td>{period.label}</td>
+                      <td>{PERIOD_LEVEL_LABELS[periodLevel]}</td>
                       <td>{period.year}</td>
-                      <td>Q{period.quarter}</td>
-                      <td>{period.monthNumber}</td>
+                      <td>{period.quarter}</td>
+                      <td>{period.memberCount}</td>
                       <td>{period.sortKey}</td>
                     </tr>
                   ))}</tbody>

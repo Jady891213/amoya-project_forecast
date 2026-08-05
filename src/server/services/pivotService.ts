@@ -5,6 +5,7 @@ import type {
   PivotAxisDimension,
   PivotDimension,
   PivotMetadata,
+  PivotPeriodLevel,
   PivotRequest,
   PivotResponse,
   PivotTuple,
@@ -30,6 +31,34 @@ interface FactRow {
 }
 
 type Coordinate = Record<Exclude<PivotDimension, 'metric'>, PivotTupleMember>
+
+function periodBucket(period: string, level: PivotPeriodLevel) {
+  const year = period.slice(0, 4)
+  if (level === 'year') return { id: year, label: `${year}年` }
+  if (level === 'quarter') {
+    const quarter = Math.floor((Number(period.slice(5, 7)) - 1) / 3) + 1
+    return { id: `${year}-Q${quarter}`, label: `${year}年 Q${quarter}` }
+  }
+  return { id: period, label: period }
+}
+
+function expandPeriodSelection(memberIds: string[], level: PivotPeriodLevel) {
+  if (level === 'month') return memberIds
+  const periods: string[] = []
+  memberIds.forEach((memberId) => {
+    const year = Number(memberId.slice(0, 4))
+    if (!Number.isInteger(year)) return
+    if (level === 'year') {
+      for (let month = 1; month <= 12; month += 1) periods.push(`${year}-${String(month).padStart(2, '0')}`)
+      return
+    }
+    const quarter = Number(memberId.match(/-Q([1-4])$/)?.[1])
+    if (!quarter) return
+    const startMonth = (quarter - 1) * 3 + 1
+    for (let month = startMonth; month < startMonth + 3; month += 1) periods.push(`${year}-${String(month).padStart(2, '0')}`)
+  })
+  return periods
+}
 
 export class PivotService {
   constructor(private readonly database: DatabaseClient) {}
@@ -61,6 +90,7 @@ export class PivotService {
 
   async build(request: PivotRequest): Promise<PivotResponse> {
     this.validate(request)
+    const periodLevel = request.periodLevel ?? 'month'
     const placements = [...request.rows, ...request.columns]
     const pov = new Map(request.pov.map((item) => [item.dimension, item.memberId]))
     const selection = new Map(placements.map((item) => [item.dimension, item.memberIds]))
@@ -82,7 +112,7 @@ export class PivotService {
     addValues('fact.project_id', projectIds)
     addValues('fact.plan_id', selectedFor('plan'))
     addValues('fact.department_id', departmentIds)
-    addValues('fact.period', selectedFor('period'))
+    addValues('fact.period', expandPeriodSelection(selectedFor('period'), periodLevel))
 
     const facts = await this.database.query<FactRow>(
       `SELECT fact.project_id, project.name AS project_name,
@@ -106,7 +136,10 @@ export class PivotService {
         project: { dimension: 'project', memberId: fact.project_id, label: fact.project_name },
         plan: { dimension: 'plan', memberId: fact.plan_id, label: fact.plan_name, parentId: fact.project_id },
         department: { dimension: 'department', memberId: fact.department_id, label: fact.department_name },
-        period: { dimension: 'period', memberId: fact.period, label: fact.period },
+        period: (() => {
+          const bucket = periodBucket(fact.period, periodLevel)
+          return { dimension: 'period' as const, memberId: bucket.id, label: bucket.label }
+        })(),
       }
       const key = nonMetricDimensions.map((dimension) => coordinates[dimension].memberId).join('\u001f')
       const group = groups.get(key) ?? { coordinates, metrics: new Map<string, Decimal>() }
@@ -194,6 +227,13 @@ export class PivotService {
     if ([...request.rows, ...request.columns].some((item) => !item.memberIds.length)) throw this.invalid('行列维度至少选择一个成员')
     const planPov = request.pov.find((item) => item.dimension === 'plan')
     if (planPov && (!planPov.memberId || planPov.memberId.startsWith('__all_'))) throw this.invalid('POV中的方案必须选择一个具体成员')
+    const periodLevel = request.periodLevel ?? 'month'
+    if (!['month', 'quarter', 'year'].includes(periodLevel)) throw this.invalid('期间层级必须为月、季度或年度')
+    const periodMembers = request.rows.find((item) => item.dimension === 'period')?.memberIds
+      ?? request.columns.find((item) => item.dimension === 'period')?.memberIds
+      ?? [request.pov.find((item) => item.dimension === 'period')?.memberId ?? '']
+    const pattern = periodLevel === 'month' ? /^\d{4}-(0[1-9]|1[0-2])$/ : periodLevel === 'quarter' ? /^\d{4}-Q[1-4]$/ : /^\d{4}$/
+    if (periodMembers.some((item) => !pattern.test(item))) throw this.invalid('期间成员与所选层级不匹配')
   }
 
   private invalid(message: string) { return Object.assign(new Error(message), { code: 'INVALID_REQUEST' }) }

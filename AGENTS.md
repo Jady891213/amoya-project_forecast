@@ -33,7 +33,7 @@
 
 ## 当前开发基线
 
-- 当前软件版本为 `v0.5.8`，唯一版本源是 `src/package.json`。后续开发新功能或修正现有功能时递增第三位版本号，页面不得另外写死版本。
+- 当前软件版本为 `v0.5.11`，唯一版本源是 `src/package.json`。后续开发新功能或修正现有功能时递增第三位版本号，页面不得另外写死版本。
 - `src/` 中的 React + TypeScript + Vite 工程是当前可运行开发基线；根目录只保留交付分区和用户启动入口。
 - `docs/00_文档导航.md` 是文档唯一阅读入口；需求、契约、报告和原型不得重新混放。
 - `docs/04_验收与进度/01_开发路线与阶段状态.md` 是当前开发范围、优先级和验收状态的持续维护基线；阶段完成或范围调整后同步更新。
@@ -54,7 +54,7 @@
 - `src/shared/calculation/forecastCompiler.ts` 是三种预测方式和期间覆盖展开为分月行项目结果的确定性编译入口；不得在页面中复制计算口径。
 - `src/shared/calculation/formulaEngine.ts` 和 `formulaDependencyGraph.ts` 是公式解析、计算和依赖排序的唯一入口。
 - `src/shared/calculation/cashScheduleCompiler.ts` 是将损益结算额编译为分月现金计划的唯一入口；页面不得自行拼装现金结果。
-- `src/app/components/FinancialGrid.tsx` 是逐月输入、计算底表和只读报告的统一财务表格底座；`CalculationBaseGrid.tsx` 负责把损益、现金及派生指标组织为同一张可切换视图的底表。
+- `src/app/components/FinancialGrid.tsx` 是逐月输入、计算底表和只读报告的统一财务表格底座；区域复制只输出选中值，区域粘贴要求源和目标尺寸一致，复制单格时允许填充整片目标选区，且所有写入必须原子校验；`CalculationBaseGrid.tsx` 负责把损益、现金及派生指标组织为同一张可切换视图的底表。
 - `src/server/services/reportPresentationService.ts` 负责从 `ProjectReportDto` 所需的最终事实和配置生成页面与 Excel 共用的展示模型；`src/server/services/reportWorkbookService.ts` 只消费该统一模型，固定生成“测算报告、月度明细”两张表，不得另建一套报表计算。
 - `docs/03_原型/01_当前原型_项目中心与预测工作台.html` 只保留为早期结构参考；当前正式外壳不设全局顶栏，左侧导航常驻并可折叠，产品标识和折叠按钮位于侧栏顶部，数据库状态和备份恢复位于侧栏底部。平台根页面只显示统一高度标题栏，不显示重复面包屑；项目详情把“返回＋项目名称面包屑、三步切换、保存计算”收在同一标题栏，不再重复展示独立项目标题。
 - `docs/03_原型/02_V3.1风格_项目测算平台主要页面原型.html` 是当前正式界面的视觉语言参考，不是布局实现基线。正式页面保持既有信息架构，字体、字号层级、蓝紫品牌色、8～14px 圆角、轻阴影、表单、按钮、表格和报告卡片风格向该原型对齐。

@@ -476,6 +476,7 @@ export interface CreateProjectPlanRequest {
 }
 
 export type PivotDimension = 'project' | 'plan' | 'department' | 'period' | 'metric'
+export type PivotPeriodLevel = 'month' | 'quarter' | 'year'
 
 export interface PivotAxisDimension {
   dimension: PivotDimension
@@ -491,6 +492,7 @@ export interface PivotRequest {
   rows: PivotAxisDimension[]
   columns: PivotAxisDimension[]
   pov: PivotPovDimension[]
+  periodLevel: PivotPeriodLevel
   scenarioId: 'baseline'
 }
 

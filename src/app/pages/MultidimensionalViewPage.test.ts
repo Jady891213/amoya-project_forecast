@@ -23,6 +23,7 @@ const request: PivotRequest = {
     { dimension: 'project', memberId: '__all_projects__' },
     { dimension: 'department', memberId: '__all_departments__' },
   ],
+  periodLevel: 'month',
   scenarioId: 'baseline',
 }
 

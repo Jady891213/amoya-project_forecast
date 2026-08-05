@@ -55,6 +55,7 @@ import guideProjectInfo from '../assets/guide/02_project_info.png'
 import guideForecastRule from '../assets/guide/03_forecast_rule.png'
 import guideSaveCalculate from '../assets/guide/04_save_calculate.png'
 import guideAdjustmentReport from '../assets/guide/05_adjustment_report.png'
+import guideReportExport from '../assets/guide/06_report_export.png'
 
 type WorkspaceView = 'config' | 'calculation' | 'report'
 interface Props {
@@ -1083,6 +1084,7 @@ function ProjectGuideModal({ onClose }: { onClose: () => void }) {
     { title: '设置测算规则', copy: '选择预测项后，在右侧配置测算方式、税口径和收付款规则，左侧会实时预览。', image: guideForecastRule },
     { title: '保存并计算', copy: '先保存项目配置，再点击计算，生成当前方案最新的原始计算底稿。', image: guideSaveCalculate },
     { title: '调整与查看结果', copy: '在计算底稿中调整叶子单元格并保存调整，报告和项目报表会立即更新。', image: guideAdjustmentReport },
+    { title: '查看与下载报告', copy: '进入“项目报告”查看当前方案的完整测算结果，点击“导出 Excel”下载测算报告，也可打印为 PDF。', image: guideReportExport },
   ]
   const current = steps[step]
   return <div className="modal-backdrop guide-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
